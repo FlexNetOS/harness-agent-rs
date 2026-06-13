@@ -1,0 +1,11 @@
+# Rust build artifacts
+/target
+
+# Track the hand-authored harness (cold-resume from committed state); ignore local Claude settings
+.claude/*
+!.claude/agents/
+!.claude/skills/
+
+# Loop runner logs (durable state — backlog/ledger/HANDOFF in .handoff/loop — is committed; logs are not)
+.handoff/loop/*.log
+.handoff/loop/ralph-run-*.log

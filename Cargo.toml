@@ -1,0 +1,10 @@
+# harness-agent-rs — Rust harness/agent-manager runtime (see docs/ADR via harness_hub ADR-0001).
+# Port-in-progress from meta/Archon's runtime DESIGN, mapping subsystems onto hf/weave/grit/icm.
+# This is a placeholder workspace skeleton; the rust-port harness's architect defines the real layout.
+[workspace]
+resolver = "2"
+members = ["crates/har-core"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
