@@ -8,12 +8,12 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2
-cycles_total: 5
-ledger: parity 12/79 units verified (PR-01; WF-01..08, WF-11 executor-shared, WF-12, WF-13)
-last_item: cycle 5 — WF-11 executor-shared utils (har-dag-executor) — PASS (4 divergences caught+fixed)
-status: ITERATE — cycle 5 committed; next cycle 6 = WF-14 model-validation OR PA paths leaf crate
-last_update: 2026-06-13T21:45:00Z
+cycles_this_session: 3
+cycles_total: 6
+ledger: parity 13/79 units verified (PR-01; WF-01..08, WF-11 executor-shared, WF-12, WF-13, WF-14 model-validation)
+last_item: cycle 6 — WF-14 model-validation (har-dag-executor/model_validation.rs) — PARITY-VERIFIED PASS vs bun 1.3.14 (66/67 byte-exact; 1 intentional - [≠] sorted alias list; 1 porter bug fixed: stray trailing period)
+status: ITERATE — cycle 6 committed (WF-14 verified [x]); next = WF-09 dag-executor (core state machine)
+last_update: 2026-06-13T23:20:00Z
 
 ## Verified units (parity gate PASS)
 - PR-01 har-contract ← providers/src/types.ts (QUALIFIED: pure types, wire-shape verified)
@@ -21,6 +21,11 @@ last_update: 2026-06-13T21:45:00Z
 - WF-02 workflow (envelope + discriminated unions, node-composition validation)
 - WF-03 Loop, WF-04 Retry (delay_ms f64), WF-05 Hooks ← workflows/src/schemas/*
   Differential harness: crates/har-workflow-schema/examples/parity_diff.rs; findings/parity-cycle{1,2}.md
+- WF-14 model-validation (resolveModelSpec 3-branch + 3 fallback chains, buildAiProfile 5-layer merge,
+  routePresetEffort claude/codex matrix, tier-defaults.json embedded == source). 66/67 byte-exact vs bun;
+  1 `- [≠]` (UnknownAlias lists keys SORTED vs insertion — determinism, unparsed display text);
+  porter bug fixed (stray trailing `.`). Harness: crates/har-dag-executor/examples/parity_wf14_oracle.rs
+  + tests/wf14_parity_golden.rs + tests/fixtures/wf14_ts_golden.json; findings/parity-cycle6.md
 
 ## Key parity lessons (apply to every schema unit — each was a gate FAIL caught+fixed)
 - zod `z.number()` WITHOUT `.int()` → Rust f64, NOT integer (fractional values are source-valid).

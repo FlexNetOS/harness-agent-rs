@@ -31,6 +31,9 @@
 //!     atom pattern (regex), AND/OR precedence, short-circuit, parse-fail→skip vs
 //!     unresolvable-ref→error asymmetry
 
+// Cycle 6: WF-14 model validation / AI profile
+pub mod model_validation;
+
 // Cycle 5: WF-11 executor shared utilities
 pub mod executor_shared;
 
@@ -44,6 +47,20 @@ pub use output_ref::{
     OutputRefErrorReason,
 };
 pub use condition_evaluator::{evaluate_condition, split_outside_quotes, EvaluationResult};
+pub use model_validation::{
+    // Constants
+    TIER_NAMES, CLAUDE_EFFORTS, CODEX_REASONING_EFFORTS,
+    // Types
+    TierName, ModelAliasPreset, RawAliasEntry, RawAliasesConfig, RawTiersConfig,
+    ResolvedAiProfile, ResolvedModelSpec, BuildAiProfileOptions,
+    EffortField, EffortRouting,
+    // Errors
+    ModelValidationError,
+    // Functions
+    tier_fallback_chain, is_literal_spec,
+    build_ai_profile, resolve_model_spec,
+    assert_not_reserved_pub, route_preset_effort,
+};
 pub use executor_shared::{
     // Error classification
     ErrorType, FATAL_PATTERNS, TRANSIENT_PATTERNS,
