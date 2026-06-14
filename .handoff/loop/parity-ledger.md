@@ -36,45 +36,45 @@ The heart of the port. All units here are `PORT`.
 
 ### UNIT WF-01: Workflow Schemas (dag-node types)
 **Source:** `packages/workflows/src/schemas/dag-node.ts`
-**Rust target:** `crates/workflows/src/schemas/dag_node.rs`
+**Rust target:** `crates/har-workflow-schema/src/dag_node.rs`
 
-- [ ] `TriggerRule` enum: `all_success | one_success | none_failed_min_one_success | all_done` (dag-node.ts:23-33)
-- [ ] `EffortLevel` enum: `low | medium | high | max` — Claude-SDK-only (dag-node.ts:40-42)
-- [ ] `ThinkingConfig` discriminated union: `{ type: 'adaptive' } | { type: 'enabled', budgetTokens?: u32 } | { type: 'disabled' }` with string-shorthand preprocessing (dag-node.ts:56-70)
-- [ ] `SandboxSettings` struct with passthrough/extra-fields support: `enabled`, `autoAllowBashIfSandboxed`, `allowUnsandboxedCommands`, `network`, `filesystem`, `ignoreViolations`, `enableWeakerNestedSandbox`, `enableWeakerNetworkIsolation`, `excludedCommands`, `ripgrep` (dag-node.ts:78-112)
-- [ ] `AgentDefinition` struct: `description`, `prompt`, `model?`, `tools?`, `disallowedTools?`, `skills?`, `maxTurns?` (dag-node.ts:121-129)
-- [ ] Agent ID validation regex `^[a-z0-9]+(-[a-z0-9]+)*$` — enforced at parse time (dag-node.ts:134, 165-173)
-- [ ] `DagNodeBase` struct: all common fields (`id`, `depends_on`, `when`, `trigger_rule`, `model`, `provider`, `context`, `output_format`, `allowed_tools`, `denied_tools`, `idle_timeout`, `retry`, `hooks`, `mcp`, `skills`, `agents`, `effort`, `thinking`, `maxBudgetUsd`, `systemPrompt`, `fallbackModel`, `betas`, `sandbox`, `always_run`, `persist_session`, `output_type`) (dag-node.ts:140-204)
-- [ ] `CommandNode` variant — has `command: String` (dag-node.ts:212-224)
-- [ ] `PromptNode` variant — has `prompt: String` (dag-node.ts:226-238)
-- [ ] `BashNode` variant — has `bash: String`, `timeout?: ms` (dag-node.ts:244-257)
-- [ ] `ScriptNode` variant — has `script: String`, `runtime: 'bun'|'uv'`, `deps?: String[]`, `timeout?: ms` (dag-node.ts:264-279)
-- [ ] `LoopNode` variant — has `loop: LoopNodeConfig` (dag-node.ts:286-298)
-- [ ] `ApprovalNode` variant — has `approval: { message, capture_response?, on_reject? }` (dag-node.ts:300-328)
-- [ ] `CancelNode` variant — has `cancel: String` (dag-node.ts:330-346)
-- [ ] `DagNode` discriminated union (7 variants) — mutual-exclusivity enforced at parse time, NOT by a discriminant field (dag-node.ts:348-356)
-- [ ] `dagNodeSchema` superRefine validation: non-empty id, exactly-one-mode-field, command name validity, bash timeout positive, script requires runtime, loop excludes retry, idle_timeout positive (dag-node.ts:415-567)
-- [ ] Type guards: `isBashNode`, `isLoopNode`, `isApprovalNode`, `isCancelNode`, `isScriptNode`, `isTriggerRule`, `isPersistableNode` (dag-node.ts:653-699)
-- [ ] `BASH_NODE_AI_FIELDS`, `SCRIPT_NODE_AI_FIELDS`, `LOOP_NODE_AI_FIELDS` constant lists (dag-node.ts:363-394)
-- [ ] `ApprovalOnReject` struct: `prompt: String`, `max_attempts?: 1..=10` (dag-node.ts:301-306)
-- [ ] `isApprovalContext` type guard (imported in dag-executor.ts:54 from `./schemas`) — NEEDS-HUMAN: not found in dag-node.ts; check `schemas/index.ts` for export
+- [x] `TriggerRule` enum: `all_success | one_success | none_failed_min_one_success | all_done` (dag-node.ts:23-33) — ported; tests pin wire names
+- [x] `EffortLevel` enum: `low | medium | high | max` — Claude-SDK-only (dag-node.ts:40-42) — ported; tests pin wire names
+- [x] `ThinkingConfig` discriminated union: `{ type: 'adaptive' } | { type: 'enabled', budgetTokens?: u32 } | { type: 'disabled' }` with string-shorthand preprocessing (dag-node.ts:56-70) — custom Deserialize accepts both string and object forms; tests cover all 3 shorthands + object form + reject unknown
+- [x] `SandboxSettings` struct with passthrough/extra-fields support: `enabled`, `autoAllowBashIfSandboxed`, `allowUnsandboxedCommands`, `network`, `filesystem`, `ignoreViolations`, `enableWeakerNestedSandbox`, `enableWeakerNetworkIsolation`, `excludedCommands`, `ripgrep` (dag-node.ts:78-112) — `#[serde(flatten)] extra` captures unknown fields; test verifies round-trip
+- [x] `AgentDefinition` struct: `description`, `prompt`, `model?`, `tools?`, `disallowedTools?`, `skills?`, `maxTurns?` (dag-node.ts:121-129) — ported
+- [x] Agent ID validation regex `^[a-z0-9]+(-[a-z0-9]+)*$` — enforced at parse time (dag-node.ts:134, 165-173) — `is_valid_agent_id()` + `validate_dag_node()` collects `InvalidAgentId` errors; tests pin accept/reject cases
+- [x] `DagNodeBase` struct: all common fields (`id`, `depends_on`, `when`, `trigger_rule`, `model`, `provider`, `context`, `output_format`, `allowed_tools`, `denied_tools`, `idle_timeout`, `retry`, `hooks`, `mcp`, `skills`, `agents`, `effort`, `thinking`, `maxBudgetUsd`, `systemPrompt`, `fallbackModel`, `betas`, `sandbox`, `always_run`, `persist_session`, `output_type`) (dag-node.ts:140-204) — all 27 fields present; wire names preserve snake_case and camelCase per source
+- [x] `CommandNode` variant — has `command: String` (dag-node.ts:212-224) — ported
+- [x] `PromptNode` variant — has `prompt: String` (dag-node.ts:226-238) — ported
+- [x] `BashNode` variant — has `bash: String`, `timeout?: f64` (dag-node.ts:244-257) — timeout is `f64` (no `.int()` in source)
+- [x] `ScriptNode` variant — has `script: String`, `runtime: 'bun'|'uv'`, `deps?: String[]`, `timeout?: f64` (dag-node.ts:264-279) — timeout is `f64`
+- [x] `LoopNode` variant — has `loop: LoopNodeConfig` (dag-node.ts:286-298) — ported
+- [x] `ApprovalNode` variant — has `approval: { message, capture_response?, on_reject? }` (dag-node.ts:300-328) — ported with `ApprovalConfig` + `ApprovalOnReject`
+- [x] `CancelNode` variant — has `cancel: String` (dag-node.ts:330-346) — ported
+- [x] `DagNode` discriminated union (7 variants) — mutual-exclusivity enforced at parse time, NOT by a discriminant field (dag-node.ts:348-356) — custom `Deserialize` counts mode-fields, errors on 0 or >1 with exact messages
+- [x] `dagNodeSchema` superRefine validation: non-empty id, exactly-one-mode-field, command name validity, bash timeout positive, script requires runtime, loop excludes retry, idle_timeout positive (dag-node.ts:415-567) — `validate_dag_node()` collects ALL errors (not fail-fast); exact error messages match
+- [x] Type guards: `isBashNode`, `isLoopNode`, `isApprovalNode`, `isCancelNode`, `isScriptNode`, `isTriggerRule`, `isPersistableNode` (dag-node.ts:653-699) — all 7 ported as free functions
+- [x] `BASH_NODE_AI_FIELDS`, `SCRIPT_NODE_AI_FIELDS`, `LOOP_NODE_AI_FIELDS` constant lists (dag-node.ts:363-394) — ported; LOOP excludes model+provider; SCRIPT equals BASH
+- [x] `ApprovalOnReject` struct: `prompt: String`, `max_attempts?: 1..=10` (dag-node.ts:301-306) — ported
+- [≠] `isApprovalContext` type guard — RESOLVED: `isApprovalContext` is in `workflow-run.ts` (WF-06), not dag-node.ts; confirmed via schemas/index.ts:101. Will be ported with WF-06.
 
 ### UNIT WF-02: Workflow Schema (top-level workflow)
 **Source:** `packages/workflows/src/schemas/workflow.ts`
-**Rust target:** `crates/workflows/src/schemas/workflow.rs`
+**Rust target:** `crates/har-workflow-schema/src/workflow.rs`
 
-- [ ] `ModelReasoningEffort` enum: `minimal|low|medium|high|xhigh` (workflow.ts:18-20)
-- [ ] `WebSearchMode` enum: `disabled|cached|live` (workflow.ts:22-23)
-- [ ] `WorkflowRequirement` enum: `'github'` (workflow.ts:29-31)
-- [ ] `WorkflowWorktreePolicy` struct: `enabled?: bool` (workflow.ts:49-58)
-- [ ] `WorkflowBase` struct with all common fields: `name`, `description`, `provider?`, `model?`, `modelReasoningEffort?`, `webSearchMode?`, `additionalDirectories?`, `interactive?`, `effort?`, `thinking?`, `fallbackModel?`, `betas?`, `sandbox?`, `worktree?`, `mutates_checkout?`, `persist_sessions?`, `tags?`, `requires?` (workflow.ts:66-102)
-- [ ] `WorkflowDefinition` struct: extends base + `nodes: Vec<DagNode>` (workflow.ts:114-119)
-- [ ] `LoadCommandResult` discriminated union: success (content) vs failure (reason enum + message) (workflow.ts:126-136)
-- [ ] `WorkflowExecutionResult` discriminated union: success | failure | paused (workflow.ts:143-148)
-- [ ] `WorkflowSource` enum: `bundled | global | project` (workflow.ts:162)
-- [ ] `WorkflowWithSource` struct: `workflow: WorkflowDefinition`, `source: WorkflowSource` (workflow.ts:165-168)
-- [ ] `WorkflowLoadError` struct: `filename`, `error`, `errorType: read_error|parse_error|validation_error` (workflow.ts:173-177)
-- [ ] `WorkflowLoadResult` struct: `workflows: Vec<WorkflowWithSource>`, `errors: Vec<WorkflowLoadError>` (workflow.ts:182-185)
+- [x] `ModelReasoningEffort` enum: `minimal|low|medium|high|xhigh` (workflow.ts:18-20) — ported; wire names tested
+- [x] `WebSearchMode` enum: `disabled|cached|live` (workflow.ts:22-23) — ported; wire names tested
+- [x] `WorkflowRequirement` enum: `'github'` (workflow.ts:29-31) — ported
+- [x] `WorkflowWorktreePolicy` struct: `enabled?: bool` (workflow.ts:49-58) — ported
+- [x] `WorkflowBase` struct with all common fields: `name`, `description`, `provider?`, `model?`, `modelReasoningEffort?`, `webSearchMode?`, `additionalDirectories?`, `interactive?`, `effort?`, `thinking?`, `fallbackModel?`, `betas?`, `sandbox?`, `worktree?`, `mutates_checkout?`, `persist_sessions?`, `tags?`, `requires?` (workflow.ts:66-102) — all 18 fields; camelCase fields use `#[serde(rename)]`
+- [x] `WorkflowDefinition` struct: extends base + `nodes: Vec<DagNode>` (workflow.ts:114-119) — `#[serde(flatten)]` base + nodes field; test with multi-node dag
+- [x] `LoadCommandResult` discriminated union: success (content) vs failure (reason enum + message) (workflow.ts:126-136) — 5 failure reasons; tests pin wire names
+- [x] `WorkflowExecutionResult` discriminated union: success | failure | paused (workflow.ts:143-148) — 3 variants; constructor helpers `completed()`, `paused()`, `failure()`; `is_success()` method
+- [x] `WorkflowSource` enum: `bundled | global | project` (workflow.ts:162) — wire names tested
+- [x] `WorkflowWithSource` struct: `workflow: WorkflowDefinition`, `source: WorkflowSource` (workflow.ts:165-168) — ported
+- [x] `WorkflowLoadError` struct: `filename`, `error`, `errorType: read_error|parse_error|validation_error` (workflow.ts:173-177) — wire name `error_type`; 3 variants tested
+- [x] `WorkflowLoadResult` struct: `workflows: Vec<WorkflowWithSource>`, `errors: Vec<WorkflowLoadError>` (workflow.ts:182-185) — ported
 
 ### UNIT WF-03: Loop Schema
 **Source:** `packages/workflows/src/schemas/loop.ts`
