@@ -70,3 +70,7 @@ regex = "1"
 
 # Lazy statics
 once_cell = "1"
+
+# Cryptography (SHA-256 short hashes for worktree branch naming)
+sha2 = "0.10"
+hex = "0.4"

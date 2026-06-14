@@ -636,37 +636,64 @@ Discriminant strategy: `IsolationRequest` uses `#[serde(tag = "workflowType")]` 
 
 ### UNIT IS-02: Worktree Provider
 **Source:** `packages/isolation/src/providers/worktree.ts`
-**Rust target:** `crates/isolation/src/providers/worktree.rs`
+**Rust target:** `crates/har-isolation/src/providers/worktree.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 10)
 
-- [ ] `WorktreeProvider` implementing `IIsolationProvider`
-- [ ] `create(request)` — branch naming per workflow type; `getWorktreePath()` (path resolution precedence: config.path > project-scoped > global default); submodule init; copyFiles; git identity stamp
-- [ ] `destroy(envId, options?)` — best-effort; `deleteRemoteBranch` support; returns `DestroyResult`
-- [ ] `get(envId)`, `list(codebaseId)` — git worktree list operations
-- [ ] `adopt(path)` — takes ownership of externally-created worktrees
-- [ ] `healthCheck(envId)` — filesystem existence check
-- [ ] `getWorktreePath()` — precedence: `config.path` (repo-local, `<repoRoot>/<path>/<branch>`) > project-scoped > global worktrees dir (types.ts:253-275 docs)
+LEDGER CORRECTION: target was `crates/isolation/src/providers/worktree.rs` — corrected to `crates/har-isolation/src/providers/worktree.rs`.
+
+- [x] `WorktreeProvider` implementing `IsolationProvider` — full impl; all 6 trait methods + all private helpers
+- [x] `create(request)` — branch naming per workflow type; `get_worktree_path()` (path resolution precedence: config.path > project-scoped > global default); submodule init; copyFiles; git identity stamp; adoption via `find_existing()`
+- [x] `destroy(envId, options?)` — best-effort; `deleteRemoteBranch` support; returns `DestroyResult`; verifies post-remove registration; best-effort `prune`
+- [x] `get(envId)`, `list(codebaseId)` — git worktree list operations
+- [x] `adopt(path)` — takes ownership of externally-created worktrees; "not a git repo" → None (not Err)
+- [x] `health_check(envId)` — filesystem existence check via `worktree_exists`
+- [x] `generate_branch_name()` — all 5 variants: issue/pr(same-repo|fork)/review/thread(sha256-8-hex)/task(slugify-50)
+- [x] `get_worktree_path()` — uses `get_worktree_base()` (repo-local override → workspace-scoped default)
+- [x] `resolve_repo_local_override()` — validates config.path (rejects absolute, `..` escaping, paths escaping repoRoot)
+- [x] `sync_workspace_before_create()` — managed-clone detection; hard-reset only for Archon-managed clones
+- [x] `create_from_fork_pr()` — sha provided: detached + checkout -b review; no sha: fetch pull/N/head:branch + add
+- [x] `create_from_same_repo_pr()` — fetch + worktree add; "already exists" retry; tracking setup (non-fatal)
+- [x] `create_branch_with_stale_retry()` — on "already exists": delete stale + retry
+- [x] `create_new_branch()` — `fromBranch` override → Err if branch exists; else reset + re-add
+- [x] `copy_configured_files()` — default `[".archon"]` + user config; Set-dedupled
+- [x] `init_submodules()` — `.gitmodules` existence check → skip (zero-cost); `git submodule update --init --recursive`
+- [x] `delete_branch_tracked()` / `delete_remote_branch_tracked()` — best-effort; accumulate warnings
+- [x] Tests: branch naming (all 5 variants + edge cases), slugify, short_hash, resolve_repo_local_override, directory_exists, health_check, create/get/list/adopt/destroy integration stubs
+COVERAGE NOTES: integration tests that require a real git worktree creation (create_issue_worktree_and_get_and_list) will skip gracefully if ~/.archon/workspaces is unavailable in the test environment. Parity verifier should test against a real git repo.
 
 ### UNIT IS-03: Isolation Resolver
 **Source:** `packages/isolation/src/resolver.ts`
-**Rust target:** `crates/isolation/src/resolver.rs`
+**Rust target:** `crates/har-isolation/src/resolver.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 10)
 
-- [ ] `IsolationResolver` struct with `{ store, provider, cleanup, staleThresholdDays }` (orchestrator.ts:85-98)
-- [ ] `resolve(request: ResolveRequest) -> IsolationResolution` — resolution cascade: existing env → workflow reuse → linked-issue reuse → branch adoption → create new; stale cleanup; makeRoom before create (resolver.ts)
-- [ ] Merge-base validation for reused worktrees when `baseBranch` hint present (types.ts:IsolationHints.baseBranch)
+LEDGER CORRECTION: target was `crates/isolation/src/resolver.rs` — corrected to `crates/har-isolation/src/resolver.rs`.
+
+- [x] `IsolationResolver` struct with `{ store, provider, cleanup, stale_threshold_days }` — cleanup IS stored (not in TS class but needed for resolve()); stale_threshold validated > 0
+- [x] `resolve(request: ResolveRequest) -> IsolationResolution` — 6-stage cascade: (1) existing env → (2) no-codebase shortcircuit → (3) workflow reuse → (4) linked-issue reuse → (5) branch adoption → (6) create new
+- [x] Stage 1: `resolve_existing_environment` — store.get_by_id + health_check + base-branch warnings
+- [x] Stage 3: `find_reusable_environment` — store.find_active_by_workflow + ownership-check + health-check + base-branch warnings
+- [x] Stage 4: `find_linked_issue_environment` — iterates linked_issues Vec<u32>; ownership-check + health-check per candidate
+- [x] Stage 5: `try_branch_adoption` — suggested_branch or pr_branch; find_worktree_by_branch + ownership-check + store.create
+- [x] Stage 6: `create_new_environment` — optional cleanup; build_isolation_request per workflow type; provider.create; store.create (orphan-destroy on store failure)
+- [x] `collect_base_branch_warnings` — `is_ancestor_of(working_path, "origin/{baseBranch}")` — never throws
+- [x] `build_isolation_request` — maps all 5 workflow types to IsolationRequest variants; pr requires hints.pr_branch
+- [x] `mark_destroyed_best_effort` — destroy without throwing
+- [x] `DEFAULT_STALE_THRESHOLD_DAYS = 14`; stale_threshold must be > 0
+- [x] Tests: constructor validation, no-codebase shortcircuit, nonexistent-cwd → blocked, workflow reuse (store-lookup path), linked issue (empty/None skip), branch adoption (no hint skip), build_isolation_request (all types), cleanup_fn injection, default threshold
+COVERAGE NOTES: stages involving ownership-check hit real FS; most cascade paths fall through to create-new in pure unit tests. Full cascade parity requires the parity-verifier with a real git repo.
 
 ### UNIT IS-04: Isolation Factory
 **Source:** `packages/isolation/src/factory.ts`
 **Rust target:** `crates/har-isolation/src/factory.rs`
-**Status:** `- [~]` ported, parity unproven (cycle 9)
+**Status:** `- [x]` PARITY-COMPLETE (cycle 10)
 
 LEDGER CORRECTION: target was `crates/isolation/src/factory.rs` — corrected to `crates/har-isolation/src/factory.rs`.
 
 - [x] `configureIsolation(loader)` — sets `configuredLoader`, nulls provider singleton (factory.ts:19-22); `#[serial]` tests enforce global-state isolation
-- [≠] `getIsolationProvider()` — returns Arc<dyn IsolationProvider> singleton; when provider=None + IS-02 not yet landed → panics with explanation; `set_isolation_provider()` helper for tests/IS-02 (factory.ts:28-31)  [≠ SCOPE: source returns WorktreeProvider; Rust panics until IS-02 lands next cycle — reconcile then]
+- [x] `getIsolationProvider()` — returns Arc<dyn IsolationProvider> singleton; lazily creates WorktreeProvider(loader) on first call (factory.ts:28-31); IS-04 CLOSED: panic placeholder replaced with real WorktreeProvider construction
 - [x] `resetIsolationProvider()` — sets provider=None (factory.ts:36-38)
 - [x] Default loader — no-op returning None (factory.ts:12)
 - [x] Singleton pattern — `OnceLock<Mutex<IsolationSingleton>>`; configure clears provider; tests use `#[serial_test::serial]`
-NOTE: `getIsolationProvider()` will panic until IS-02 WorktreeProvider is ported next cycle. This is correct — the factory IS complete; the impl it would call is not yet landed.
 
 ### UNIT IS-05: PR State
 **Source:** `packages/isolation/src/pr-state.ts`

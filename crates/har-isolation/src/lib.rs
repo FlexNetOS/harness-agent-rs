@@ -14,15 +14,16 @@
 //!     `reset_isolation_provider`
 //!   - `pr-state.ts`       → IS-05: `PrState`, `get_pr_state`
 //!
-//! Not yet ported (next cycle):
-//!   - `providers/worktree.ts` → IS-02 (depends on this crate's types, go next)
-//!   - `resolver.ts`           → IS-03 (depends on IS-02)
+//!   - `providers/worktree.ts` → IS-02: `WorktreeProvider`
+//!   - `resolver.ts`           → IS-03: `IsolationResolver`, `IsolationResolverDeps`, `CleanupFn`
 //!
 //! Durable state is MAP'd onto `hf`; no Postgres dependency.
 
 pub mod errors;
 pub mod factory;
 pub mod pr_state;
+pub mod providers;
+pub mod resolver;
 pub mod store;
 pub mod types;
 pub mod worktree_copy;
@@ -51,6 +52,8 @@ pub use worktree_copy::{
     CopyFileEntry, copy_worktree_file, copy_worktree_files, is_path_within_root,
     parse_copy_file_entry,
 };
+pub use providers::WorktreeProvider;
+pub use resolver::{CleanupFn, IsolationResolver, IsolationResolverDeps};
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 

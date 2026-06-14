@@ -21,6 +21,7 @@
 /// Tests that call `configure_isolation` / `reset_isolation_provider` must be
 /// marked `#[serial_test::serial]` because they mutate process-global state.
 use std::sync::{Mutex, OnceLock, Arc};
+use crate::providers::WorktreeProvider;
 use crate::types::{IsolationProvider, RepoConfigLoader, WorktreeCreateConfig};
 
 /// Global singleton state.
@@ -70,18 +71,12 @@ pub fn configure_isolation(loader: RepoConfigLoader) {
 /// IS-02 (WorktreeProvider impl) is ported next cycle; here we return the
 /// stored singleton or create a placeholder that will be replaced by IS-02.
 pub fn get_isolation_provider() -> Arc<dyn IsolationProvider> {
-    let state = global_state().lock().unwrap();
+    let mut state = global_state().lock().unwrap();
     if state.provider.is_none() {
-        // IS-02 WorktreeProvider is ported in the next cycle. For now we store
-        // the loader for that cycle to consume. We cannot create the provider yet
-        // without the IS-02 implementation.
-        //
-        // When IS-02 lands, this line becomes:
-        //   state.provider = Some(Arc::new(WorktreeProvider::new(state.loader.clone())));
-        //
-        // Until then, callers who call get_isolation_provider() before IS-02
-        // lands will get a `NoProviderConfigured` error, which is accurate.
-        panic!("WorktreeProvider (IS-02) not yet implemented — will be ported next cycle");
+        // IS-02 WorktreeProvider is now implemented.
+        // Source: `getIsolationProvider() { provider ??= new WorktreeProvider(configuredLoader); }`
+        // at factory.ts:28-31.
+        state.provider = Some(Arc::new(WorktreeProvider::new(state.loader.clone())));
     }
     state.provider.as_ref().unwrap().clone()
 }

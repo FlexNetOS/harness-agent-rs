@@ -434,10 +434,10 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### IS-02 to IS-08
 
-- [ ] unit:IS-02 `isolation/providers/worktree.ts::WorktreeProvider` → `har_isolation::providers::worktree::WorktreeProvider` (next cycle)
-- [ ] unit:IS-03 `isolation/resolver.ts::IsolationResolver` → `har_isolation::resolver::IsolationResolver` (next cycle)
+- [x] unit:IS-02 `isolation/providers/worktree.ts::WorktreeProvider` → `har_isolation::providers::worktree::WorktreeProvider` (cycle 10 — branch naming + getWorktreePath proven byte-for-byte differential vs live bun; git-mutation paths confirmed by source read; see parity-cycle10.md)
+- [x] unit:IS-03 `isolation/resolver.ts::IsolationResolver` → `har_isolation::resolver::IsolationResolver` (cycle 10 FINAL re-verify #2 2026-06-14: all 6 prior FAILs PASS differentially AND the 1 fix-induced stage-6 regression now FIXED — resolver.rs:435 calls provider.destroy(working_path, force:true, branch_name, canonical_repo_path) best-effort + propagates original store error, matching TS resolver.ts:536-559. Golden test stage6_orphan_cleanup_uses_provider_destroy_not_store_update un-ignored & passing; destroy_calls=["/new/wt"], update_status_calls=[]. Exhaustive side-effect call-site map verified 1:1 (TS 248/315/360→Rust 141/181/245 markDestroyed=update_status; TS 537→Rust 435 provider.destroy). har-isolation 139 passed/0 failed/0 ignored; clippy --all-targets green. PARITY-VERIFIED, no downgrade. See parity-cycle10.md 2026-06-14 re-verify #2)
 - [x] unit:IS-04 `isolation/factory.ts::configureIsolation` → `har_isolation::factory::configure_isolation()` (cycle 9)
-- [≠] unit:IS-04 `isolation/factory.ts::getIsolationProvider` → `har_isolation::factory::get_isolation_provider()` (cycle 9, panics until IS-02)
+- [x] unit:IS-04 `isolation/factory.ts::getIsolationProvider` → `har_isolation::factory::get_isolation_provider()` (cycle 10 — panic replaced with real WorktreeProvider construction; matches source unconfigured behavior; see parity-cycle10.md)
 - [x] unit:IS-04 `isolation/factory.ts::resetIsolationProvider` → `har_isolation::factory::reset_isolation_provider()` (cycle 9)
 - [x] unit:IS-05 `isolation/pr-state.ts::PrState` → `har_isolation::pr_state::PrState` (cycle 9) — NEEDS-HUMAN RESOLVED
 - [x] unit:IS-05 `isolation/pr-state.ts::getPrState` → `har_isolation::pr_state::get_pr_state()` (cycle 9)
