@@ -4,48 +4,54 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-14
-branch: main (commit 04fb395)
-mode: ITERATE — at cycle budget (cycles_total=14)
+branch: main (commit d0562a2)
+mode: ITERATE — stopped mid-budget at owner request (cycles_total=16, this session 2/3)
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 33/79 units verified + PR-03 Claude provider ~95% (all but native-tools sidecar)
+## Where we are: 34/79 units verified — PR-03 Claude provider COMPLETE (native-tools landed cycles 15-16)
 
-DISCOVER done; ITERATE cycles 1–14 committed. All differentially parity-verified vs live TS (bun, zod v4.4.3):
+DISCOVER done; ITERATE cycles 1–16 committed. All differentially parity-verified vs live TS (bun) / live SDK:
 
 | Crate / area | Units | Status |
 |------|------|--------|
 | har-contract | PR-01 (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` |
 | har-provider | PR-02 registry + PR-04/05/06 Claude sub-units (binary-resolver, config, native-tools-conv) | `- [x]` |
-| **har-provider PR-03 Claude** | cli_stream/ + build_claude_argv + parse_claude_stream_json + send_query + hooks + registry | `- [x]` **EXCEPT native-tools sidecar (cycle 15)** |
+| **har-provider PR-03 Claude COMPLETE** | cli_stream/ + argv + parser + send_query + hooks + registry + **native-tools loopback-MCP band-aid (cycles 15-16)** | `- [x]` |
 | har-workflow-schema | WF-01..08 (dag-node union, workflow, loop/retry/hooks, run/artifact/session) | `- [x]` |
 | har-dag-executor (pure helpers) | WF-11 executor-shared, WF-12 condition-eval, WF-13 output-ref, WF-14 model-validation | `- [x]` |
 | har-paths | PA-01 archon-paths, PA-06 env-loader, PA-07 strip-cwd-env | `- [x]` |
 | har-git | GI-01..05 (exec, branch, repo, worktree, types) | `- [x]` |
 | **har-isolation COMPLETE** | IS-01..08 (types, worktree-provider, resolver, factory, pr-state, worktree-copy, errors, store) | `- [x]` |
 
-Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (~1050 tests, 9 crates active).
+Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (**1117 tests, 2 env-gated ignored**, 9 crates active).
 Each cycle ships a durable differential/golden test as a regression gate. Source repo (Archon) kept pristine.
 
-## R8 native-tools — OWNER-DECIDED 2026-06-14 (was pending)
-Owner ruling: the 3 interim options (sidecar / mcp_hub / capability-off) are all BAND-AIDS. **The REAL fix is a
-PURE-RUST-NATIVE provider that replaces the whole claude-CLI + Claude Agent SDK + MCP stack — documented now
-(`docs/POST-PORT-UPGRADES.md` UP-1), developed AFTER the port is 100% complete.** For the port: continue
-CLI-delegation + a band-aid that KEEPS the full native-tools feature (NO downgrade; `nativeTools` cap stays
-true). **Cycle 15 = the native-tools sidecar band-aid** (the argv seam `native_tools_mcp_config_path` is wired).
-Do NOT set `nativeTools=false`. Do NOT start UP-1 until the port is done.
+## R8 native-tools — RESOLVED & IMPLEMENTED (cycles 15-16, verified)
+Owner ruling (2026-06-14): the 3 interim options are BAND-AIDS; the REAL fix is a PURE-RUST-NATIVE provider
+replacing claude-CLI + Agent SDK + MCP, documented `docs/POST-PORT-UPGRADES.md` UP-1, built AFTER 100% port.
+**For the port, the band-aid is now DONE and VERIFIED:** an in-process **loopback HTTP MCP server**
+(`cli_stream/mcp_sidecar.rs`: `McpSidecar` JSON-RPC core + `McpHttpServer` axum `POST /mcp` bound on
+127.0.0.1:0) that the claude CLI connects to — the in-process `Arc` handler closures stay in-process (no
+process boundary), so the full feature is preserved. `native_tools` cap stays `true` — NO downgrade. Cycle 15
+verified the protocol core 7/7 vs live SDK; cycle 16 verified the transport+merge+lifecycle 10/10 (verifier's
+own adversarial harness). The one live-CLI handshake leg is `SKIPPED — env-gated` (no auth), never a downgrade.
+**Do NOT start UP-1 until the port is 100% done.** Design: `target-architecture.md` §6.8 (Decisions 1-8).
 
 ## `- [≠]` divergences (recorded) — 9 total, all low-stakes / approved
 - **WF-06 / GI-02 / GI-04 date** `z.date()`→`chrono::DateTime<Utc>`: **OWNER-APPROVED**. **WF-14 / GI-01** error text: cosmetic.
 - **PA-01 getDefault*Path** seam. **PR-03 classify_and_enrich_error** abort-label: logging-only.
 
 ## Resume — next units (dependency order toward WF-09 dag-executor)
-0. **Cycle 15: PR-03 native-tools sidecar band-aid** — the last PR-03 row (`- [~]`). A sidecar MCP server the
-   claude CLI connects to (`native_tools_mcp_config_path` seam already wired) dispatching to `NativeTool.handler`;
-   keeps the full feature (`nativeTools=true`). When it lands + verifies, PR-03 flips to a full verified unit (→34/79).
-1. ~~PR-03 send_query~~ DONE cycle 14 (verified). Then differential-test the
-   end-to-end send_query via the FakeSpawner (canned stream-json), env-gated SKIP for the live model call.
-2. **PR-07 CodexProvider** (reuses the cli_stream/ substrate — codex already a CLI in source) → **PR-09/10/11
-   community** (copilot/opencode/pi). Same deterministic argv+parser differential strategy.
+0. ~~PR-03 native-tools band-aid~~ **DONE cycles 15-16 (verified). PR-03 COMPLETE → 34/79.**
+1. **Cycle 17 (NEXT): PR-07 CodexProvider** (`packages/providers/src/codex/`) — REUSES the `cli_stream/`
+   substrate (Spawner/NdjsonStream/retry/cancel/CancelGuard) built for PR-03; codex is already a CLI in source.
+   Same deterministic argv+parser differential strategy (build_codex_argv + parse_codex_stream + send_query,
+   differential vs live bun; live model call env-gated SKIP). Then **PR-09/10/11 community** (copilot/opencode/pi).
+2. **Open follow-up (track, fold into the loadMcpConfig unit, NOT a native-tools downgrade):** port `loadMcpConfig`
+   (`packages/providers/src/mcp/config.ts`) fully and wire it into `send_query` — this closes two recorded gaps:
+   (a) the `- [≈]` "cannot mix" validation throw (`write_mcp_config_merged` is currently lenient), and (b) the
+   `&[]` mcp_server_names gap (nodeConfig.mcp server `mcp__<name>__*` wildcards not yet resolved into
+   --allowed-tools; archon's IS). See loop_state.md "Open follow-ups".
 3. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore impl over hf),
    coord→`weave`/`grit`, memory→`icm` — per target-architecture.md substrate table. These integrate substrates
    (do NOT reimplement a DB); differential parity is against the IWorkflowStore CONTRACT behavior.
@@ -81,10 +87,11 @@ cd ~/Desktop/meta/harness-agent-rs && cargo clippy --all-targets -- -D warnings 
 `bun` absent ⇒ no differential parity ⇒ NEEDS-HUMAN before porting more.
 
 ## Pointers
-- State: `.handoff/loop/loop_state.md` (cycle counters, next units, lessons, open `- [≠]`).
-- Ledger: `.handoff/loop/parity-ledger.md` (79 units; 86 items `- [x]`). Symbol rollup: `symbol-map.md`.
-- Target arch: `.handoff/loop/target-architecture.md` (14-crate layout + idiom map + substrate table).
-- Findings: `.handoff/loop/findings/parity-cycle{1,2,3}.md`. Differential harnesses:
-  `crates/har-workflow-schema/{examples/parity_diff.rs, tests/parity_cycle3_differential.rs}`.
+- State: `.handoff/loop/loop_state.md` (cycle counters, next units, lessons, "Open follow-ups", open `- [≠]`).
+- Ledger: `.handoff/loop/parity-ledger.md` (79 units; **34 verified**). Symbol rollup: `symbol-map.md`.
+- Target arch: `.handoff/loop/target-architecture.md` (14-crate layout + idiom map + substrate table; **§6.8 = R8 native-tools design**).
+- Findings: `.handoff/loop/findings/parity-cycle{1,2,3,...,15,16}.md`. Latest differential harnesses:
+  `crates/har-provider/tests/parity_cycle15_mcp_sidecar.rs` (7/7 vs live SDK fixtures) +
+  `crates/har-provider/tests/parity_cycle16_loopback_transport.rs` (10/10 transport+merge).
 - ICM: `icm recall "harness-agent-rs Archon port"`; `icm recall "parity lessons" -t decisions-harness-agent-rs`.
 - Source repo (Archon) must stay pristine — delete any transient TS oracle after parity runs.
