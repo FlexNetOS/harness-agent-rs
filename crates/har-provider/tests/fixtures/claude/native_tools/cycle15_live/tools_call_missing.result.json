@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool manage_run: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"help\",\n      \"list\",\n      \"get\",\n      \"start\",\n      \"resume\",\n      \"cancel\",\n      \"abandon\",\n      \"approve\",\n      \"reject\"\n    ],\n    \"path\": [\n      \"action\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"help\\\"|\\\"list\\\"|\\\"get\\\"|\\\"start\\\"|\\\"resume\\\"|\\\"cancel\\\"|\\\"abandon\\\"|\\\"approve\\\"|\\\"reject\\\"\"\n  }\n]"
+    }
+  ],
+  "isError": true
+}

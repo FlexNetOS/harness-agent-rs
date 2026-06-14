@@ -1,0 +1,12 @@
+{
+  "protocolVersion": "2024-11-05",
+  "capabilities": {
+    "tools": {
+      "listChanged": true
+    }
+  },
+  "serverInfo": {
+    "name": "archon",
+    "version": "1.0.0"
+  }
+}
