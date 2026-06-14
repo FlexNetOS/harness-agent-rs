@@ -4,41 +4,45 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-14
-branch: main (commit 482fb9d)
-mode: ITERATE — at cycle budget (3/3 this session; cycles_total=9)
+branch: main (commit 9d91e1d)
+mode: ITERATE — at cycle budget (cycles_total=11)
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 27/79 units parity-verified — schema + executor-helpers + 3 leaf crates DONE
+## Where we are: 30/79 units parity-verified — schema + executor-helpers + 3 leaf crates + isolation + provider-registry DONE
 
-DISCOVER done; ITERATE cycles 1–9 committed. All differentially parity-verified vs live TS (bun, zod v4.4.3):
+DISCOVER done; ITERATE cycles 1–11 committed. All differentially parity-verified vs live TS (bun, zod v4.4.3):
 
 | Crate / area | Units | Status |
 |------|------|--------|
 | har-contract | PR-01 (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` |
+| har-provider | PR-02 (registry: register/lookup, builtin+community sets, 5×14 capability table) | `- [x]` |
 | har-workflow-schema | WF-01..08 (dag-node union, workflow, loop/retry/hooks, run/artifact/session) | `- [x]` |
 | har-dag-executor (pure helpers) | WF-11 executor-shared, WF-12 condition-eval, WF-13 output-ref, WF-14 model-validation | `- [x]` |
 | har-paths | PA-01 archon-paths, PA-06 env-loader, PA-07 strip-cwd-env | `- [x]` |
 | har-git | GI-01..05 (exec, branch, repo, worktree, types) | `- [x]` |
-| har-isolation (foundation) | IS-01 types, IS-04 factory, IS-05 pr-state, IS-06 worktree-copy, IS-07 errors, IS-08 store-trait | `- [x]` |
+| **har-isolation COMPLETE** | IS-01..08 (types, worktree-provider, resolver, factory, pr-state, worktree-copy, errors, store) | `- [x]` |
 
-Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (~690 tests, 8 crates active).
+Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (~790 tests, 9 crates active).
 Each cycle ships a durable differential/golden test as a regression gate. Source repo (Archon) kept pristine.
 
-## `- [≠]` divergences (recorded) — 9 total, all low-stakes / approved
-- **WF-06 date fields** `z.date()`→`chrono::DateTime<Utc>`: **OWNER-APPROVED 2026-06-13**. Closed.
+## `- [≠]` divergences (recorded) — 8 total, all low-stakes / approved (IS-04 panic CLOSED in cycle 10)
+- **WF-06 / GI-02 / GI-04 date fields** `z.date()`→`chrono::DateTime<Utc>`: **OWNER-APPROVED 2026-06-13**.
 - **WF-14 UnknownAlias** + **GI-01 error-message Display prefix**: cosmetic, no consumer parses them (logs only).
-- **GI-02/04 date** `z.date()`→chrono (same class as WF-06). **PA-01 getDefault*Path** import.meta.dir→exe-path seam.
-- **IS-04 get_isolation_provider** PANICS until IS-02 lands (source returns WorktreeProvider) — **MUST reconcile
-  when IS-02 is ported next cycle** (replace the panic with real WorktreeProvider construction).
+- **PA-01 getDefault*Path** import.meta.dir→exe-path/`ARCHON_APP_BASE` seam (path composition verified identical).
 
-## Resume — next units (dependency order)
-1. **IS-02 WorktreeProvider** (impl of IIsolationProvider over har-git — closes the IS-04 `- [≠]` panic) +
-   **IS-03 IsolationResolver** (the resolve cascade: existing→workflow-reuse→linked-issue→branch-adoption→create).
-2. **Provider track: PR-02 registry → PR-03.. claude/codex/community adapters** (the IAgentProvider impls over
-   provider CLIs — har-contract trait is done).
-3. **MAP units** the dag-executor needs: CO db→`hf` (har-ledger, WF-19 IWorkflowStore), coord→`weave`/`grit`.
-4. **Then WF-09 dag-executor** (the keystone state machine), then WF-10/15/16.. remaining workflows, server, cli.
-WF-09 depends on: schemas ✓ + provider (PR-02..) + ledger (MAP→hf) + isolation (IS-02/03) + git ✓.
+## Resume — next units (dependency order toward WF-09 dag-executor)
+1. **Provider adapters: PR-03 ClaudeProvider → PR-07 CodexProvider → PR-09/10/11 community** (copilot/opencode/pi).
+   These are `IAgentProvider` impls that SPAWN provider CLIs (claude/codex/…) — **harder to differential-test**
+   (need the real CLI or a stubbed subprocess). The registry's `UnimplementedProvider` factory seam is already
+   wired: each real impl just replaces its factory closure (capabilities already verified, won't change).
+   Strategy: differential-test the argv construction + stdout/stream parsing against the source (mock the CLI),
+   not the live model call. Read providers/src/{claude,codex,community}/* for the exact spawn args + parse logic.
+2. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore impl over hf),
+   coord→`weave`/`grit`, memory→`icm` — per target-architecture.md substrate table. These integrate substrates
+   (do NOT reimplement a DB); differential parity is against the IWorkflowStore CONTRACT behavior.
+3. **Then WF-09 dag-executor** (the keystone state machine: topological parallel layers, per-node exec,
+   loop-until, approval gates, resume/skip, cost accounting), then WF-10/15/16.. workflows, server (axum), cli.
+WF-09 deps: schemas ✓ + provider (PR-02 ✓, PR-03+ impls) + ledger (MAP→hf) + isolation ✓ + git ✓.
 
 ## Method that works (proven over 9 cycles — KEEP DOING)
 - One cohesive unit/cycle: porter (sonnet) → cargo clippy --all-targets + test → **differential**
