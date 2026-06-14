@@ -448,16 +448,39 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ## PACKAGE: git
 
-- [ ] unit:GI-01 `git/exec.ts::execFileAsync` → `git::exec::exec_file_async()`
-- [ ] unit:GI-02 `git/repo.ts::findRepoRoot` → `git::repo::find_repo_root()`
-- [ ] unit:GI-02 `git/repo.ts::getCanonicalRepoPath` → `git::repo::get_canonical_repo_path()`
-- [ ] unit:GI-02 `git/repo.ts::parseOwnerRepo` → `git::repo::parse_owner_repo()`
-- [ ] unit:GI-03 `git/branch.ts::getDefaultBranch` → `git::branch::get_default_branch()`
-- [ ] unit:GI-04 `git/worktree.ts::addWorktree` → `git::worktree::add_worktree()`
-- [ ] unit:GI-04 `git/worktree.ts::removeWorktree` → `git::worktree::remove_worktree()`
-- [ ] unit:GI-04 `git/worktree.ts::listWorktrees` → `git::worktree::list_worktrees()`
-- [ ] unit:GI-05 `git/types.ts::RepoPath` → `git::types::RepoPath`
-- [ ] unit:GI-05 `git/types.ts::BranchName` → `git::types::BranchName`
+<!-- Cycle-8 ledger correction (see parity-ledger GI-01..GI-05): unit↔file mapping is
+     GI-01=exec.ts, GI-02=branch.ts, GI-03=repo.ts, GI-04=worktree.ts, GI-05=types.ts.
+     `getCanonicalRepoPath` lives in worktree.ts; `parseOwnerRepo` is in har-paths; there is
+     no standalone `addWorktree` in the source. All cycle-8 git symbols differentially
+     parity-verified (bun ⇄ Rust) — see .handoff/loop/findings/parity-cycle8.md. -->
+- [x] unit:GI-01 `git/exec.ts::execFileAsync` → `har_git::exec::exec_file_async()` (cycle 8; error-shape + timeout/cwd/env verified; `- [≠]` cosmetic msg prefix)
+- [x] unit:GI-01 `git/exec.ts::mkdirAsync` → `har_git::exec::mkdir_async()` (cycle 8)
+- [x] unit:GI-02 `git/branch.ts::getDefaultBranch` → `har_git::branch::get_default_branch()` (cycle 8; full symbolic-ref→origin/main→throw chain)
+- [x] unit:GI-02 `git/branch.ts::checkout` → `har_git::branch::checkout()` (cycle 8; existing + create-new fallback)
+- [x] unit:GI-02 `git/branch.ts::hasUncommittedChanges` → `har_git::branch::has_uncommitted_changes()` (cycle 8; clean/dirty/ENOENT fail-safe)
+- [x] unit:GI-02 `git/branch.ts::commitAllChanges` → `har_git::branch::commit_all_changes()` (cycle 8; nothing-to-commit→false)
+- [x] unit:GI-02 `git/branch.ts::isBranchMerged` → `har_git::branch::is_branch_merged()` (cycle 8)
+- [x] unit:GI-02 `git/branch.ts::isPatchEquivalent` → `har_git::branch::is_patch_equivalent()` (cycle 8; git cherry parse)
+- [x] unit:GI-02 `git/branch.ts::isAncestorOf` → `har_git::branch::is_ancestor_of()` (cycle 8; exit-1→false)
+- [≠] unit:GI-02 `git/branch.ts::getLastCommitDate` → `har_git::branch::get_last_commit_date()` (cycle 8; Date→chrono::DateTime<Utc>, same instant)
+- [x] unit:GI-03 `git/repo.ts::findRepoRoot` → `har_git::repo::find_repo_root()` (cycle 8)
+- [x] unit:GI-03 `git/repo.ts::getRemoteUrl` → `har_git::repo::get_remote_url()` (cycle 8)
+- [x] unit:GI-03 `git/repo.ts::syncWorkspace` → `har_git::repo::sync_workspace()` (cycle 8; fetch+reset / fetch-only / badbranch)
+- [x] unit:GI-03 `git/repo.ts::cloneRepository` → `har_git::repo::clone_repository()` (cycle 8; classification + token sanitization verified)
+- [x] unit:GI-03 `git/repo.ts::syncRepository` → `har_git::repo::sync_repository()` (cycle 8; all error codes)
+- [x] unit:GI-03 `git/repo.ts::addSafeDirectory` → `har_git::repo::add_safe_directory()` (cycle 8)
+- [x] unit:GI-04 `git/worktree.ts::listWorktrees` → `har_git::worktree::list_worktrees()` (cycle 8; porcelain parse, detached excluded)
+- [x] unit:GI-04 `git/worktree.ts::worktreeExists` → `har_git::worktree::worktree_exists()` (cycle 8)
+- [x] unit:GI-04 `git/worktree.ts::findWorktreeByBranch` → `har_git::worktree::find_worktree_by_branch()` (cycle 8; exact + slugified)
+- [x] unit:GI-04 `git/worktree.ts::isWorktreePath` → `har_git::worktree::is_worktree_path()` (cycle 8)
+- [x] unit:GI-04 `git/worktree.ts::removeWorktree` → `har_git::worktree::remove_worktree()` (cycle 8)
+- [x] unit:GI-04 `git/worktree.ts::getCanonicalRepoPath` → `har_git::worktree::get_canonical_repo_path()` (cycle 8)
+- [x] unit:GI-04 `git/worktree.ts::verifyWorktreeOwnership` → `har_git::worktree::verify_worktree_ownership()` (cycle 8; all 3 error messages)
+- [x] unit:GI-04 `git/worktree.ts::extractOwnerRepo` → `har_git::worktree::extract_owner_repo()` (cycle 8; throw on <2 segments)
+- [x] unit:GI-04 `git/worktree.ts::{getWorktreeBase,isProjectScopedWorktreeBase,WorktreeLayout,WorktreeBaseOverride,resolveOwnerRepo}` (cycle 8)
+- [x] unit:GI-05 `git/types.ts::RepoPath` → `har_git::types::RepoPath` (cycle 8)
+- [x] unit:GI-05 `git/types.ts::BranchName` → `har_git::types::BranchName` (cycle 8)
+- [x] unit:GI-05 `git/types.ts::{WorktreePath,toRepoPath,toBranchName,toWorktreePath,GitResult,GitErrorCode,WorkspaceSyncResult,WorktreeInfo}` (cycle 8)
 
 ---
 

@@ -198,6 +198,7 @@ mod tests {
     // ── BUN_AUTO_LOADED_ENV_FILES membership ──────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn bun_auto_loaded_files_exact_membership() {
         // strip-cwd-env.ts:27 — exactly these 4 files in this order.
         assert_eq!(
@@ -209,6 +210,7 @@ mod tests {
     // ── CLAUDE_CODE_AUTH_VARS membership ─────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn auth_vars_exact_membership() {
         // strip-cwd-env.ts:30-34.
         let set: HashSet<&str> = CLAUDE_CODE_AUTH_VARS.iter().copied().collect();
@@ -224,6 +226,7 @@ mod tests {
     // so the operator warning differed from `bun`'s. This pins it byte-for-byte.
 
     #[test]
+    #[serial_test::serial]
     fn nested_claude_warning_exact_bytes() {
         // Differentially captured from `bun` over strip-cwd-env.ts:89-95.
         let expected = concat!(
@@ -249,6 +252,7 @@ mod tests {
     // ── strip_cwd_env: CWD key stripping ─────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn strips_cwd_env_keys() {
         // Create a temp dir with a .env file containing a unique key
         let dir = tempfile::tempdir().unwrap();
@@ -272,6 +276,7 @@ mod tests {
     // ── strip_cwd_env: CLAUDECODE removal ────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn strips_claudecode() {
         let dir = tempfile::tempdir().unwrap();
         // Set ARCHON_SUPPRESS to avoid the warning output in tests
@@ -292,6 +297,7 @@ mod tests {
     // ── strip_cwd_env: non-auth CLAUDE_CODE_* removal ────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn strips_non_auth_claude_code_vars() {
         let dir = tempfile::tempdir().unwrap();
         // A new hypothetical CLAUDE_CODE_SOMETHING marker
@@ -323,6 +329,7 @@ mod tests {
     // ── strip_cwd_env: debugger var removal ──────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn strips_node_options_and_vscode_inspector() {
         let dir = tempfile::tempdir().unwrap();
         unsafe { std::env::set_var("NODE_OPTIONS", "--inspect") };
@@ -341,6 +348,7 @@ mod tests {
     // ── safe-to-call when no .env files present ───────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn safe_when_no_env_files() {
         let dir = tempfile::tempdir().unwrap();
         // Should not panic or error
@@ -350,6 +358,7 @@ mod tests {
     // ── parses multiple CWD env files ─────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn strips_multiple_env_files() {
         let dir = tempfile::tempdir().unwrap();
 

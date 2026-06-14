@@ -7,5 +7,13 @@ description = "Git plumbing: branch ops, repo ops, worktree add/remove/list, sub
 
 [dependencies]
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process", "fs", "io-util"] }
 tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+har-paths = { path = "../har-paths" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "process", "fs"] }
+tempfile = "3"

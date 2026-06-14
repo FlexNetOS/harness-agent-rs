@@ -8,14 +8,22 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1
-cycles_total: 7
-ledger: parity 16/79 units verified (PR-01; WF-01..08, WF-11..14; PA-01 paths, PA-06 env, PA-07 strip-cwd)
-last_item: cycle 7 — har-paths PA-01/PA-06/PA-07 — PASS vs live bun (gate caught CLAUDECODE warning-indent divergence, fixed); WF-11 duplicate reconciled into har-paths
-status: ITERATE — cycle 7 committed. Next: GI git (har-git) → IS isolation (har-isolation) + PR-02 provider
-        registry, to unblock WF-09 dag-executor (the core). PA-02..05 (logger MAP→tracing, telemetry MAP→icm,
-        update-check, bundled-build) still TODO in har-paths.
-last_update: 2026-06-14T00:45:00Z
+cycles_this_session: 2
+cycles_total: 8
+ledger: parity 21/79 units verified (PR-01; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05 har-git)
+last_item: cycle 8 — har-git GI-01..05 — PASS vs live bun (56/60 byte-identical; 2 cosmetic [≠]). Also
+           fixed a flaky baseline: har-paths env-mutating tests now #[serial_test::serial] (global-env race).
+status: ITERATE — cycle 8 committed. AT/NEAR cycle budget. Next: IS isolation (har-isolation) +
+        PR-02.. provider registry/adapters, to unblock WF-09 dag-executor (the core state machine).
+last_update: 2026-06-14T02:00:00Z
+
+## Cycle-8 VERIFIED (parity PASS vs live bun — committed)
+- GI-01 har-git ← git/exec.ts: `crates/har-git/src/exec.rs`. exec_file_async (no-shell, stdout/stderr capture, non-zero exit → ProcessError, timeout, cwd, env), mkdir_async, run_git (-C style), run_git_cwd (cwd style).
+- GI-02 har-git ← git/branch.ts: `crates/har-git/src/branch.rs`. get_default_branch (symbolic-ref → origin/main fallback chain, exact error text), checkout (try→create), has_uncommitted_changes (FAIL-SAFE), commit_all_changes (nothing-to-commit edge case), is_branch_merged (branch --merged parsing), is_patch_equivalent (cherry parsing), is_ancestor_of (exit-code-1=not-ancestor), get_last_commit_date (%ci format, chrono).
+- GI-03 har-git ← git/repo.ts: `crates/har-git/src/repo.rs`. find_repo_root, get_remote_url, sync_workspace (fetch+reset-hard; fetch-only mode; configured-branch actionable error), clone_repository (GitResult + token injection + sanitization), sync_repository (cwd style, GitResult), add_safe_directory.
+- GI-04 har-git ← git/worktree.ts: `crates/har-git/src/worktree.rs`. worktree_exists (.git check), list_worktrees (porcelain parser: worktree+branch lines, strip refs/heads/), find_worktree_by_branch (exact then slugified), is_worktree_path (gitdir: prefix), remove_worktree, get_canonical_repo_path (gitdir regex), verify_worktree_ownership (EISDIR/not-gitdir/cross-clone errors), extract_owner_repo, WorktreeLayout, WorktreeBaseOverride, get_worktree_base (3-way precedence), is_project_scoped_worktree_base.
+- GI-05 har-git ← git/types.ts: `crates/har-git/src/types.rs`. RepoPath/BranchName/WorktreePath newtypes (reject empty, exact messages), to_*() constructors, GitResult<T>, GitErrorCode (5 variants), WorkspaceSyncResult, WorktreeInfo.
+- 52 har-git tests, 607 workspace total. clippy --all-targets -D warnings clean.
 
 ## Cycle-7 VERIFIED (parity PASS vs live bun — committed)
 - PA-01 har-paths ← paths/archon-paths.ts: `crates/har-paths/src/archon_paths.rs`. All path fns incl. is_docker, expand_tilde, get_archon_home (+ "undefined" guard), get_command_folder_search_paths (SINGLE SOURCE: duplicate removed from har-dag-executor). 554 workspace tests + clippy clean.
