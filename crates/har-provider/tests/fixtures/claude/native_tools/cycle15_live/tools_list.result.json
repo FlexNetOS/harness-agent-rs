@@ -1,0 +1,53 @@
+{
+  "tools": [
+    {
+      "name": "manage_run",
+      "description": "Inspect and operate this project's workflow runs.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "What to do. Call action='help' (optionally with subtool=<action>) to see exactly what each action needs before using it.",
+            "type": "string",
+            "enum": [
+              "help",
+              "list",
+              "get",
+              "start",
+              "resume",
+              "cancel",
+              "abandon",
+              "approve",
+              "reject"
+            ]
+          },
+          "subtool": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "_meta": {
+        "anthropic/alwaysLoad": true
+      }
+    }
+  ]
+}

@@ -489,3 +489,237 @@ provider-by-provider as each `argv.rs`+`parser.rs` pair passes its differential 
 
 PR-07 (codex) and PR-09/10/11 (community) reuse steps 1–6 verbatim with their own `argv.rs`/`parser.rs`;
 codex additionally reuses `shared/structured_output.rs`.
+
+---
+
+## 6.8 R8 resolved — native-tools loopback MCP sidecar (the faithful, no-downgrade band-aid)
+
+**Owner decision R8 (2026-06-14, binding):** the 3 interim options are all BAND-AIDS; the REAL fix is a
+pure-Rust-native provider (`docs/POST-PORT-UPGRADES.md` UP-1), built AFTER 100% port. For the port NOW:
+implement a band-aid that **KEEPS THE FULL native-tools feature — no downgrade**.
+`ProviderCapabilities.native_tools` for claude **stays `true`** (`har-provider/src/lib.rs:84`). The
+argv seam `native_tools_mcp_config_path` in `build_claude_argv` (`argv.rs:107,413-429`) is already wired
+(adds `--mcp-config <path>` + `mcp__archon__*`). This subsection supersedes §6.5-R8's "options
+(a)/(b)/(c) — pick one" and the "DEFERRED to UP-1 / tools will NOT be available this turn" stance in
+`claude/provider.rs:463-475`. That warning is a quiet downgrade and **must be deleted** when this lands.
+
+### The crux, verified against source (not assumed)
+
+`buildArchonMcpServer()` (`native-tools.ts:70-87`) builds an **in-process** SDK MCP server via
+`createSdkMcpServer({name:'archon',version:'1.0.0',tools,alwaysLoad:true})`, wired at
+`provider.ts:924-932` as `options.mcpServers['archon']=server` + `allowedTools.push('mcp__archon__*')`.
+Each tool handler is `async(args)=>string` wrapped to `{content:[{type:'text',text}]}` (`native-tools.ts:76-78`).
+In Rust, `NativeTool.handler` is `Arc<dyn Fn(HashMap<String,Value>)->Future<String>+Send+Sync>`
+(`har-contract/src/lib.rs:469-473`) — an **in-process closure** (the one real tool, `manage_run`, closes
+over live orchestrator run-state: `codebaseId` + `startWorkflow`, `manage-run-tool.ts:147-188`).
+
+The claude CLI's delegation model passes MCP servers as a `--mcp-config <file>` whose servers the CLI
+then **connects to as an MCP client**. The CLI's server-config schema is a discriminated union on `type`
+(extracted from the installed `claude` 2.1.177 bundle): `type:"sdk"` (in-process — unavailable from a
+separate program), `type:"stdio"{command,args?,env?}`, `type:"sse"{url,headers?}`, `type:"http"{url,headers?}`,
+`type:"ws"`. **A spawned subprocess cannot reach the parent's in-process `Arc` closure** (the closure holds
+live orchestrator state by reference; serializing it across a process boundary would sever `manage_run`
+from the run it operates on). Therefore the faithful band-aid is an **in-process loopback MCP server**: the
+Rust `har-provider` process itself serves MCP over `127.0.0.1`, the handler closure stays in-process, and
+the CLI connects in over a local transport. **Confirmed correct.**
+
+### Decision 1 — Transport: in-process loopback **HTTP** server (streamable-HTTP MCP)
+
+**Locked: `type:"http"`, `url:"http://127.0.0.1:<ephemeral-port>/mcp"`.** Rejected alternatives:
+- `type:"stdio"` — would force the CLI to *spawn* our server as a child `{command,args}`; that child is a
+  separate process and **cannot** reach the parent's `Arc` closure. Fatal — same wall as a subprocess sidecar.
+- `type:"sdk"` — in-process to the **CLI's own** process, not ours; only the TS SDK (which embeds the CLI)
+  can use it. Unavailable across the spawn boundary.
+- unix-socket — the CLI's `http`/`sse` configs take a `url` (TCP); no documented unix-socket transport in
+  the config schema. Loopback TCP is the portable, schema-supported equivalent.
+- `sse` vs `http` — both carry `{url,headers?}`. **`http`** (streamable-HTTP, the current MCP transport)
+  chosen over legacy `sse`; if the live-CLI smoke gate (§6.8 Decision 8) shows 2.1.x rejects `http` for a
+  config-file server, fall back to `sse` (identical config shape, one-line change) — recorded as the only
+  transport contingency.
+
+**Exact `--mcp-config` JSON the CLI consumes** (written to a temp file by Decision 5; satisfies BOTH the
+ported `loadMcpConfig` normalizer, `mcp/config.ts`, which accepts a bare server-map or a `{mcpServers:{…}}`
+wrapper, AND the live CLI's union schema):
+
+```json
+{ "mcpServers": { "archon": { "type": "http", "url": "http://127.0.0.1:<PORT>/mcp" } } }
+```
+
+`headers` is omitted (loopback, no auth). The CLI-side `alwaysLoad` is NOT set on the config object — it
+surfaces per-tool in `tools/list` `_meta` (Decision 3), exactly as the SDK does. `loadMcpConfig`'s env-var
+expansion (`$VAR`) is a no-op here (no `$` in the literal url) — round-trips unchanged.
+
+### Decision 2 — MCP protocol surface the in-process server implements (minimal + COMPLETE)
+
+The server (one tool, `manage_run`) must speak JSON-RPC 2.0 over streamable-HTTP and implement exactly:
+- `initialize` → result `{ protocolVersion:"<negotiated>", serverInfo:{name:"archon",version:"1.0.0"},
+  capabilities:{tools:{listChanged:true}} }`. *Captured live from the SDK server* (cycle-15 verifier-
+  confirmed, against `@anthropic-ai/claude-agent-sdk` 0.2.141): `serverInfo={name:"archon",version:"1.0.0"}`,
+  `capabilities={tools:{listChanged:true}}` (the SDK's `McpServer` auto-advertises `listChanged:true`; a
+  cycle-15 porter "correction" to `{tools:{}}` was REFUTED by the differential gate). Echo the
+  client's `protocolVersion` if supported, else the server's pinned default (mirror the MCP SDK's
+  negotiation; pin the exact version string in the smoke gate).
+- `notifications/initialized` → no response (notification).
+- `tools/list` → `{tools:[ <see Decision 3> ]}`.
+- `tools/call` → `{content:[{type:"text",text}], isError?:true}` (Decision 4).
+- `ping` → `{}` (implement; the CLI health-checks MCP servers per `claude mcp get` "health-checked").
+
+`listChanged:true` is advertised but the tool set is static (no `tools/list_changed` notification ever sent —
+matches the SDK, whose set is also fixed at build).
+
+### Decision 3 — `tools/list` `inputSchema`: emit the **`zod-to-json-schema` rendering**, NOT the original
+
+**This is the parity trap.** The wire `inputSchema` the CLI sees is the SDK's
+`zodToJsonSchema(zodShape,{strictUnions:true,pipeStrategy:"input"})` output (`sdk.mjs`: the in-process
+server lists `inputSchema:(()=>{let Y=X9(Q.inputSchema);return Y?BB(Y,{strictUnions:!0,pipeStrategy:"input"})…})`),
+where the zod shape was itself reconstructed from `NativeTool.inputSchema` by `jsonSchemaToZodShape`
+(`native-tools.ts:24-59`). So the Rust server must emit a **reconstruction that matches `zod-to-json-schema`
+output**, NOT `NativeTool.input_schema` verbatim. **Captured live** (SDK in-memory transport, `manage_run`):
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action":  { "description": "<desc>", "type": "string", "enum": ["help","list","get","start"] },
+    "subtool": { "type": "string" },
+    "runId":   { "type": "string" },
+    "confirm": { "type": "boolean" }
+  },
+  "required": ["action"],
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+```
+
+Non-obvious rules the Rust serializer MUST replicate (each verified live, byte-for-byte):
+1. **`$schema":"http://json-schema.org/draft-07/schema#"` is appended** to the inputSchema object.
+2. **`required` lists only non-optional fields**, in declaration order.
+3. **`description` is dropped on OPTIONAL fields, kept only on REQUIRED fields.** Verified: a field built
+   `z.string().describe("run id").optional()` (exactly `native-tools.ts:55-56`'s order:
+   `field=field.describe(d)` THEN `required?field:field.optional()`) serializes to `{"type":"string"}` —
+   **no description**. Only `action` (required) keeps its description. The ported `ToolField` already
+   carries `{kind,description,required}` (`native_tools.rs:59-70`) — the serializer emits `description` iff
+   `required==true`. (For `manage_run`, only `action` is required, so only `action` shows a description.)
+4. **Enum field key order: `description` FIRST, then `type`, then `enum`** (`{"description":…,"type":"string","enum":[…]}`).
+   `serde_json` with `preserve_order` (already enabled, root Cargo.toml:31) lets the serializer emit keys in
+   this exact order. Plain string/boolean fields emit `{"type":"string"}` / `{"type":"boolean"}` only.
+5. **NO `additionalProperties`** key is emitted.
+6. Each tool object ALSO carries (verified live): `"execution":{"taskSupport":"forbidden"}` and
+   `"_meta":{"anthropic/alwaysLoad":true}` (this is where `alwaysLoad:true` lands on the wire — NOT in the
+   config file). The Rust `tools/list` must emit both.
+
+**Decision: the Rust server reconstructs the wire `inputSchema` from the ported `ToolField` Vec**
+(`native_tools.rs` `validate_and_convert_schema` → `Vec<ToolField>`), NOT by passing `NativeTool.input_schema`
+through. Rationale: the original JSON Schema has no `$schema`, keeps descriptions on optional fields, and may
+order keys differently — it would **not** match the SDK's `zod-to-json-schema` wire shape, failing the
+differential. The reconstruction-from-`ToolField` path reproduces rules 1-6 deterministically.
+**Differential capture from bun (pin this fixture):** the SDK server's `tools/list` `inputSchema` (+
+`execution`/`_meta`) for `manage_run` built via the real `INPUT_SCHEMA` (`manage-run-tool.ts:54-89`) → commit
+as `tests/fixtures/claude/native_tools/tools_list.expected.json`.
+
+### Decision 4 — `tools/call`: args → handler → `{content:[{type:"text",text}]}`; faithful error behavior
+
+Verified live, two distinct paths — both MUST be reproduced:
+- **Valid args, handler returns text** → `{content:[{type:"text",text:"<handler output>"}]}` (no `isError`).
+- **Handler throws** → the SDK's `tool()` wrapper **catches** and returns
+  `{content:[{type:"text",text:"<Error.message>"}],isError:true}`. (Verified: a throwing handler with valid
+  args yields `{"content":[{"type":"text","text":"handler exploded"}],"isError":true}`.) So the Rust dispatch
+  wraps the `NativeToolHandler` call: `Ok(text)=>{content:[text]}`, and since the Rust handler returns
+  `String` (infallible — `manage-run-tool.ts:153-187` catches everything internally and returns an error
+  *string*, never throwing), `isError` is effectively never set by `manage_run` itself. **But the wrapper-catch
+  path must still exist** (faithful to the SDK) for any future fallible tool — implement it as: if the future
+  panics/aborts, surface `{content:[{type:"text",text:<msg>}],isError:true}`.
+- **Arg-validation failure (bad enum / wrong type)** → the SDK validates args against the zod shape *before*
+  the handler and returns `{content:[{type:"text",text:"MCP error -32602: Input validation error: …"}],isError:true}`
+  (verified: invalid `action` enum value). **Faithful Rust behavior:** validate `tools/call` args against the
+  `Vec<ToolField>` (required present? enum value allowed? type matches?) and on failure return the same
+  `isError:true` text-result shape. The exact `-32602` message body is zod-specific; pin it as a `- [≈]`
+  *qualified*-parity item (message text may differ in detail — the *shape* (`isError:true`, text content) is
+  the hard contract; capture the SDK's exact string as the fixture and match structure, not necessarily the
+  zod error prose). This is the one place full byte-parity is impractical without porting zod's error
+  formatter; flag as `- [≈]` in the parity ledger, not `- [≠]` (no capability lost — bad args still rejected).
+
+### Decision 5 — Lifecycle & `send_query` wiring
+
+Mirror `provider.ts:924-932` ("merge so a nodeConfig mcp config and native tools can coexist"). When
+`requestOptions.native_tools` is non-empty (`provider.rs:466`):
+1. Build the `McpServerDescriptor` (`build_archon_mcp_server`, `native_tools.rs:210`) from the tools.
+2. **Start the loopback HTTP MCP server**: bind `TcpListener` on `127.0.0.1:0` (ephemeral port), spawn the
+   axum/tower MCP router as a `tokio::task`, capture the bound port.
+3. **Write the temp mcp-config file** (`tempfile::NamedTempFile`, already a har-provider dep) with the
+   Decision-1 JSON pointing at `http://127.0.0.1:<port>/mcp`. Keep the handle alive for the query's lifetime.
+4. **Set the argv seam**: pass the temp file path as `native_tools_mcp_config_path` to `build_claude_argv`
+   (the seam at `argv.rs:413-429` already appends `--mcp-config <path>` and `mcp__archon__*` to allowed-tools)
+   — and **MERGE** with any `nodeConfig.mcp` servers: if nodeConfig already supplies a `--mcp-config`, the
+   merged config file must contain BOTH that node's servers AND `archon` (faithful to the SDK's
+   `options.mcpServers={...existing, archon}` spread). Implementation: when both are present, read the
+   nodeConfig mcp config, inject the `archon` server into its `mcpServers` map, write the merged file, and
+   pass the single merged path (the CLI accepts space-separated `--mcp-config` files too, but a single merged
+   file is cleanest and matches the SDK's single merged `mcpServers` object).
+5. **Shut down** the server + drop the temp file when the query ends, errors, or is cancelled — tie its
+   lifetime to the `send_query` stream/`CancelGuard` (`cli_stream/cancel.rs`): on stream completion or
+   `CancellationToken` trip, abort the server task and drop the `NamedTempFile`. The server outlives all
+   retry attempts within one `send_query` (the `Arc` closures and port are stable across retries — bind ONCE
+   before the retry loop, mirror how subprocess env is built once at `provider.rs:383-385`).
+
+**Placement:** the bind/write/merge/teardown lives in `ClaudeProvider::send_query` (`provider.rs`, replacing
+the inert warning block at `463-475`), delegating the server impl to the new `cli_stream/mcp_sidecar.rs`
+module. The argv mutation already lives in `claude/argv.rs` via the seam — no change there.
+
+### Decision 6 — Crate/module placement & deps
+
+New module **`crates/har-provider/src/cli_stream/mcp_sidecar.rs`** (the §6.6 layout already reserves this
+slot) — placed in the **shared `cli_stream/`** substrate, NOT under `claude/`, because codex/community
+providers with native tools reuse the identical loopback-MCP bridge (no claude specifics in the MCP protocol
+itself). `claude/native_tools.rs` stays the claude-specific JSON-Schema→`ToolField`→wire-`inputSchema`
+serializer (it owns the `zod-to-json-schema`-faithful rendering of Decision 3); `mcp_sidecar.rs` owns the
+generic JSON-RPC/HTTP server + dispatch-to-`NativeToolHandler`. **Deps — reuse workspace, add nothing new:**
+- HTTP server: **axum 0.8 + tower** (already workspace deps, root Cargo.toml:59-60; `tokio` is `full`). The
+  MCP streamable-HTTP endpoint is a single `POST /mcp` axum handler doing JSON-RPC dispatch — no extra crate.
+- temp file: **`tempfile`** (already har-provider dep, Cargo.toml:22).
+- No `rmcp`/MCP-SDK crate is pulled — the surface (Decision 2) is tiny (5 methods, one tool) and hand-rolling
+  it over axum is lighter and keeps the wire shapes under our exact control for the differential. (If a future
+  unit needs the full MCP spec, revisit `rmcp` then — out of scope now.)
+
+### Decision 7 — Cycle split (cycle-15 vs cycle-16)
+
+**Recommended split — LOCKED:**
+- **Cycle 15 (this cycle): the in-process MCP JSON-RPC server CORE + tool dispatch + wire serializer.**
+  `cli_stream/mcp_sidecar.rs` (JSON-RPC `initialize`/`initialized`/`tools/list`/`tools/call`/`ping`, dispatch
+  to `NativeToolHandler`) + the Decision-3 `tools/list` `inputSchema` serializer in `native_tools.rs`
+  (extending the existing `ToolField`→wire path). **Fully differentially testable WITHOUT a live model**: speak
+  JSON-RPC to the in-process server (in-process axum test client or direct handler calls) and diff
+  `tools/list` + `tools/call` wire JSON vs the SDK fixtures captured from bun (Decisions 3+4). No CLI, no model.
+- **Cycle 16: transport bind + mcp-config write/merge + `send_query` lifecycle wiring** (Decision 5) + the
+  argv seam activation (delete the inert warning) + the **live-CLI end-to-end smoke** (env-gated SKIP).
+
+**Justification:** the protocol core is the bulk of the risk and is 100% provable offline against captured SDK
+fixtures (it's pure request→response JSON). The transport/lifecycle/CLI-handshake is small but its end-to-end
+proof needs a live `claude` binary + auth, which is env-gated. Splitting keeps cycle-15 a fully-green,
+differentially-proven unit; cycle-16's live leg degrades to `SKIPPED — env-gated`, never blocking. This mirrors
+§6.4's deterministic-core / live-tail split for the argv+parser units.
+
+### Decision 8 — Differential-testability (what cycle-15 proves vs env-gated-skip)
+
+**Cycle-15 proves against live bun (deterministic, the parity gate):**
+- `tools/list` wire JSON (incl. `inputSchema` with `$schema`, required-only descriptions, enum key order,
+  `execution`, `_meta:{"anthropic/alwaysLoad":true}`) **byte-equal** to the SDK fixture for `manage_run`
+  built from the real `INPUT_SCHEMA` (`manage-run-tool.ts:54-89`). Capture: drive the SDK server over the MCP
+  in-memory transport (the exact method used to pin these findings) → commit `tools_list.expected.json`.
+- `tools/call` happy-path: `{action:'list'}` → `{content:[{type:'text',text:<handler output>}]}` shape
+  (the handler output itself depends on DB state — diff the **envelope shape**, with a stubbed handler
+  returning a fixed string for byte-parity).
+- `tools/call` error envelopes: handler-throw → `{content:[{text:msg}],isError:true}`; bad-enum →
+  `isError:true` text result (shape diff; the zod message body is `- [≈]` qualified, Decision 4).
+- `initialize` result (`serverInfo`, `capabilities={tools:{listChanged:true}}`) and `ping` → `{}`.
+
+**Genuinely env-gated-skip (cycle-16, cannot be diffed offline):**
+- The live `claude` 2.1.x CLI actually *connecting* to the loopback `http` server, reading `tools/list`, and
+  the model invoking `mcp__archon__manage_run` end-to-end. Proven by a single smoke gate (run iff
+  `CLAUDE_BIN_PATH`/auth present): assert the CLI health-checks the server (`mcp_servers[].status==connected`
+  in the stream-json `system:init` line — which the §6.3 parser already reads) and a trivial round-trip
+  succeeds; else mark `SKIPPED — env-gated` in the parity ledger, never `PASS`. This is also where the
+  `http`-vs-`sse` transport contingency (Decision 1) is confirmed.
+
+**Net:** the protocol core (the no-downgrade proof that `manage_run` is faithfully exposed) is provable
+offline against the captured running source; only the CLI-accepts-our-loopback-server handshake is env-gated.
+`native_tools=true` is preserved end-to-end — no field, branch, or behavior of the in-process tool is dropped.

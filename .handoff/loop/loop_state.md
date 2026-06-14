@@ -8,20 +8,28 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 3
-cycles_total: 14
-ledger: parity 33/79 units + PR-03 ~95% (cli_stream/argv/parser/send_query/hooks/registry all VERIFIED).
-        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08; PR-03 all-but-native-tools).
-        PR-03 flips to a full verified unit when cycle-15 native-tools sidecar lands (only `- [~]` row left).
-last_item: cycle 14 — ClaudeProvider::send_query orchestration + buildSDKHooksFromYAML + registry wiring —
-           PASS vs live bun (7/7; gate caught persistSession/excludeDynamicSections SILENT-DROP — the porter
-           wrongly claimed "SDK-only" but `claude --help` has --no-session-persistence + --exclude-dynamic-
-           system-prompt-sections; fixed by emitting both flags).
-status: AT CYCLE BUDGET (3/3 this session) — HAND OFF. NEXT = cycle 15: R8 native-tools SIDECAR band-aid
-        (keeps full feature per owner; the REAL fix = pure-Rust-native is post-port UP-1 in docs/POST-PORT-
-        UPGRADES.md). Then PR-07 codex (reuses cli_stream) → PR-09/10/11 community → har-ledger (CO db
-        MAP→hf) → WF-09 dag-executor (keystone).
-last_update: 2026-06-14T12:00:00Z
+cycles_this_session: 1
+cycles_total: 15
+ledger: parity 33/79 units + PR-03 ~97% (cli_stream/argv/parser/send_query/hooks/registry VERIFIED;
+        native-tools MCP server CORE VERIFIED cycle-15). Native-tools row stays `- [~]` (core proven,
+        not yet CLI-reachable) until cycle-16 transport+wiring lands; PR-03 then flips to full verified.
+        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.)
+last_item: cycle 15 — native-tools loopback MCP sidecar, the SERVER CORE (transport-agnostic JSON-RPC:
+           initialize/tools/list/tools/call/ping/unknown + wire inputSchema serializer). PASS vs live SDK
+           (@anthropic-ai/claude-agent-sdk 0.2.141, 7/7 differential). Gate REFUTED the porter's
+           `initialize.capabilities={tools:{}}` "correction" — live SDK emits {tools:{listChanged:true}};
+           fixed. tools/list inputSchema byte-exact ($schema first, required-only descriptions, enum key
+           order, execution+_meta). bad-args is `- [≈]` shape-match. New module:
+           crates/har-provider/src/cli_stream/mcp_sidecar.rs (+ wire_input_schema/wire_tool_list_item in
+           native_tools.rs). Harness: tests/parity_cycle15_mcp_sidecar.rs (7/7 vs live fixtures).
+status: cycle 15 DONE (1/3 this session). NEXT = cycle 16: native-tools transport+wiring — axum loopback
+        HTTP MCP server (bind 127.0.0.1:0) + temp mcp-config write/MERGE with nodeConfig.mcp + send_query
+        lifecycle (start-once-before-retry, teardown on end/error/cancel via CancelGuard) + activate the
+        native_tools_mcp_config_path argv seam + DELETE the inert provider.rs:463-475 "deferred" warning.
+        Live-CLI smoke = env-gated SKIP. That lands the full native-tools feature → PR-03 flips to verified
+        (→34/79). Then PR-07 codex (reuses cli_stream) → PR-09/10/11 community → har-ledger (CO db MAP→hf)
+        → WF-09 dag-executor (keystone). Design: target-architecture.md §6.8 Decisions 1,5,6.
+last_update: 2026-06-14T18:00:00Z
 
 ## Cycle-13 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-03 deterministic core: `crates/har-provider/src/cli_stream/` + `crates/har-provider/src/claude/argv.rs` + `crates/har-provider/src/claude/parser.rs`.
@@ -251,6 +259,15 @@ VERIFIER NEEDS-HUMAN notes for PA-01/06/07:
   byte-diff the message vs source. Also: don't double-escape `\` in Windows paths inside Rust string literals.
 - Self-reported "green" is NOT the gate: the port's own tests can encode wrong behavior. The live
   differential diff vs `bun` is the authority. Always cargo clippy --all-targets + differential parity.
+- **A porter can INTRODUCE a downgrade by "correcting" the spec from a MISREAD of the live source** (cycle 15:
+  porter claimed live SDK `initialize.capabilities={tools:{}}` and committed a fixture saying so; the verifier
+  independently re-captured the live SDK and found `{tools:{listChanged:true}}` — the SDK's `McpServer`
+  auto-advertises it). The verifier must build its OWN oracle from the running source, never trust the porter's
+  reported "live" values OR its captured fixture. A porter-supplied fixture is a hypothesis, not the oracle.
+- For an MCP wire port: the CLI sees the SDK's `zod-to-json-schema` rendering, NOT the original JSON Schema —
+  `$schema` draft-07 key emitted FIRST, `description` kept ONLY on required fields (describe-then-`.optional()`
+  drops it on optionals), enum key order `description,type,enum`, no `additionalProperties`, plus per-tool
+  `execution:{taskSupport:forbidden}` + `_meta:{anthropic/alwaysLoad:true}`. Reconstruct from ToolField, diff vs bun.
 
 ## OWNER DECISIONS (`- [≠]`)
 - WF-06 date fields `z.date()` ↔ `chrono::DateTime<Utc>`: **APPROVED 2026-06-13** by owner. Closed.

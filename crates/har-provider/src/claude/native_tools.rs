@@ -30,7 +30,7 @@
 
 use har_contract::NativeTool;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 
 /// The in-process MCP server name; tools are callable as `mcp__archon__<name>`.
@@ -238,6 +238,129 @@ pub fn build_archon_mcp_server(
         always_load: true,
         tools: tool_defs,
     })
+}
+
+// ─── Wire-schema serializer (Decision 3) ─────────────────────────────────────
+
+/// Reconstruct the wire `inputSchema` from a `Vec<ToolField>`.
+///
+/// This replicates the `zod-to-json-schema` output that the SDK's in-process server
+/// emits on `tools/list` — NOT the original `NativeTool.input_schema` verbatim.
+///
+/// Key ordering (verified live via SDK capture, cycle-15):
+///   Root: `$schema` → `type` → `properties` → `required`
+///   Enum field (required): `description` → `type` → `enum`
+///   Enum field (optional): `type` → `enum` (NO description)
+///   String/boolean field: `type` only (never a description on optional)
+///   `required`: only non-optional fields, in declaration order.
+///   No `additionalProperties` key.
+///
+/// Source: §6.8 Decision 3; verified against live SDK capture 2026-06-14.
+pub fn wire_input_schema(fields: &[ToolField]) -> Value {
+    // `preserve_order` feature is enabled workspace-wide (root Cargo.toml:31),
+    // so Map insertion order is the serialization order.
+    let mut root = Map::new();
+
+    // 1. `$schema` — FIRST (confirmed live; spec text said "last" but live capture wins)
+    root.insert(
+        "$schema".to_owned(),
+        Value::String("http://json-schema.org/draft-07/schema#".to_owned()),
+    );
+
+    // 2. `type`
+    root.insert("type".to_owned(), Value::String("object".to_owned()));
+
+    // 3. `properties` — in declaration order
+    let mut props = Map::new();
+    for field in fields {
+        let mut prop = Map::new();
+        match &field.kind {
+            ToolFieldKind::StringEnum { values } => {
+                // description FIRST (only if required)
+                if field.required {
+                    if let Some(desc) = &field.description {
+                        prop.insert("description".to_owned(), Value::String(desc.clone()));
+                    }
+                }
+                prop.insert("type".to_owned(), Value::String("string".to_owned()));
+                prop.insert(
+                    "enum".to_owned(),
+                    Value::Array(values.iter().map(|v| Value::String(v.clone())).collect()),
+                );
+            }
+            ToolFieldKind::String => {
+                // description only if required; plain string fields never get description
+                // in the live capture (optional strings with descriptions are dropped)
+                if field.required {
+                    if let Some(desc) = &field.description {
+                        prop.insert("description".to_owned(), Value::String(desc.clone()));
+                    }
+                }
+                prop.insert("type".to_owned(), Value::String("string".to_owned()));
+            }
+            ToolFieldKind::Boolean => {
+                // same rule: description only if required
+                if field.required {
+                    if let Some(desc) = &field.description {
+                        prop.insert("description".to_owned(), Value::String(desc.clone()));
+                    }
+                }
+                prop.insert("type".to_owned(), Value::String("boolean".to_owned()));
+            }
+        }
+        props.insert(field.name.clone(), Value::Object(prop));
+    }
+    root.insert("properties".to_owned(), Value::Object(props));
+
+    // 4. `required` — non-optional fields only, in declaration order
+    let required: Vec<Value> = fields
+        .iter()
+        .filter(|f| f.required)
+        .map(|f| Value::String(f.name.clone()))
+        .collect();
+    if !required.is_empty() {
+        root.insert("required".to_owned(), Value::Array(required));
+    }
+
+    Value::Object(root)
+}
+
+/// Build the wire `tools/list` tool object for a single `SdkToolDef`.
+///
+/// Shape (verified live, §6.8 Decision 3):
+/// ```json
+/// {
+///   "name": "...",
+///   "description": "...",
+///   "inputSchema": { ... },
+///   "execution": { "taskSupport": "forbidden" },
+///   "_meta": { "anthropic/alwaysLoad": true }
+/// }
+/// ```
+pub fn wire_tool_list_item(tool: &SdkToolDef) -> Value {
+    let mut obj = Map::new();
+    obj.insert("name".to_owned(), Value::String(tool.name.clone()));
+    obj.insert(
+        "description".to_owned(),
+        Value::String(tool.description.clone()),
+    );
+    obj.insert("inputSchema".to_owned(), wire_input_schema(&tool.fields));
+
+    let mut execution = Map::new();
+    execution.insert(
+        "taskSupport".to_owned(),
+        Value::String("forbidden".to_owned()),
+    );
+    obj.insert("execution".to_owned(), Value::Object(execution));
+
+    let mut meta = Map::new();
+    meta.insert(
+        "anthropic/alwaysLoad".to_owned(),
+        Value::Bool(true),
+    );
+    obj.insert("_meta".to_owned(), Value::Object(meta));
+
+    Value::Object(obj)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -491,5 +614,155 @@ mod tests {
         for f in &fields {
             assert!(!f.required, "field '{}' should not be required", f.name);
         }
+    }
+
+    // ── wire_input_schema — Decision 3 ───────────────────────────────────────
+
+    /// Builds the manage_run ToolFields in declaration order (matching the real INPUT_SCHEMA).
+    fn manage_run_fields() -> Vec<ToolField> {
+        vec![
+            ToolField {
+                name: "action".to_owned(),
+                kind: ToolFieldKind::StringEnum {
+                    values: vec![
+                        "help".to_owned(), "list".to_owned(), "get".to_owned(),
+                        "start".to_owned(), "resume".to_owned(), "cancel".to_owned(),
+                        "abandon".to_owned(), "approve".to_owned(), "reject".to_owned(),
+                    ],
+                },
+                description: Some("What to do. Call action='help' (optionally with subtool=<action>) to see exactly what each action needs before using it.".to_owned()),
+                required: true,
+            },
+            ToolField {
+                name: "subtool".to_owned(),
+                kind: ToolFieldKind::String,
+                description: Some("For action=help: the action to describe (e.g. 'approve'). Omit for an overview.".to_owned()),
+                required: false,
+            },
+            ToolField {
+                name: "runId".to_owned(),
+                kind: ToolFieldKind::String,
+                description: Some("Run id — required for get/resume/cancel/abandon/approve/reject. Accepts the short (8-char) or full id.".to_owned()),
+                required: false,
+            },
+            ToolField {
+                name: "workflow".to_owned(),
+                kind: ToolFieldKind::String,
+                description: Some("Workflow name to launch — required for action=start.".to_owned()),
+                required: false,
+            },
+            ToolField {
+                name: "message".to_owned(),
+                kind: ToolFieldKind::String,
+                description: Some("Free text whose meaning depends on the action: start=the prompt/instructions; approve=optional comment; reject=the reason.".to_owned()),
+                required: false,
+            },
+            ToolField {
+                name: "confirm".to_owned(),
+                kind: ToolFieldKind::Boolean,
+                description: Some("Required (true) to actually perform a destructive action (cancel/abandon/approve/reject). Omit first to get a preview.".to_owned()),
+                required: false,
+            },
+        ]
+    }
+
+    /// Pin test: the wire inputSchema for manage_run must EXACTLY match the live SDK fixture
+    /// (captured from bun/claude-agent-sdk in-process server, cycle-15, 2026-06-14).
+    #[test]
+    fn wire_input_schema_manage_run_matches_sdk_fixture() {
+        let fields = manage_run_fields();
+        let schema = wire_input_schema(&fields);
+
+        // Read the fixture file
+        let fixture_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/claude/native_tools/tools_list.expected.json"
+        );
+        let fixture_str = std::fs::read_to_string(fixture_path)
+            .expect("fixture file must exist");
+        let fixture: serde_json::Value = serde_json::from_str(&fixture_str).unwrap();
+        let expected_schema = &fixture["tools"][0]["inputSchema"];
+
+        assert_eq!(
+            &schema, expected_schema,
+            "wire inputSchema does not match live SDK fixture.\nGot: {}\nExpected: {}",
+            serde_json::to_string_pretty(&schema).unwrap(),
+            serde_json::to_string_pretty(expected_schema).unwrap()
+        );
+    }
+
+    #[test]
+    fn wire_input_schema_key_order_schema_first() {
+        // $schema must be the first key in the root object.
+        let fields = manage_run_fields();
+        let schema = wire_input_schema(&fields);
+        let obj = schema.as_object().unwrap();
+        let keys: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(keys[0], "$schema", "first key must be $schema, got: {keys:?}");
+        assert_eq!(keys[1], "type");
+        assert_eq!(keys[2], "properties");
+        assert_eq!(keys[3], "required");
+    }
+
+    #[test]
+    fn wire_input_schema_enum_field_key_order_description_type_enum() {
+        // For a required enum field: key order must be description → type → enum.
+        let fields = manage_run_fields();
+        let schema = wire_input_schema(&fields);
+        let props = schema["properties"].as_object().unwrap();
+        let action = props["action"].as_object().unwrap();
+        let keys: Vec<&str> = action.keys().map(|k| k.as_str()).collect();
+        assert_eq!(keys, vec!["description", "type", "enum"],
+            "enum field key order wrong: {keys:?}");
+    }
+
+    #[test]
+    fn wire_input_schema_optional_fields_no_description() {
+        // Optional fields must NOT have a description key, even if ToolField.description is Some.
+        let fields = manage_run_fields();
+        let schema = wire_input_schema(&fields);
+        let props = schema["properties"].as_object().unwrap();
+        for name in &["subtool", "runId", "workflow", "message", "confirm"] {
+            let field_obj = props[*name].as_object().unwrap();
+            assert!(
+                !field_obj.contains_key("description"),
+                "optional field '{name}' must not have description key"
+            );
+        }
+    }
+
+    #[test]
+    fn wire_input_schema_required_only_required_fields() {
+        let fields = manage_run_fields();
+        let schema = wire_input_schema(&fields);
+        let required = schema["required"].as_array().unwrap();
+        assert_eq!(required.len(), 1);
+        assert_eq!(required[0], "action");
+    }
+
+    #[test]
+    fn wire_input_schema_no_additional_properties() {
+        let fields = manage_run_fields();
+        let schema = wire_input_schema(&fields);
+        assert!(!schema.as_object().unwrap().contains_key("additionalProperties"));
+    }
+
+    #[test]
+    fn wire_tool_list_item_has_execution_and_meta() {
+        let tool_def = SdkToolDef {
+            name: "manage_run".to_owned(),
+            description: "test".to_owned(),
+            fields: vec![ToolField {
+                name: "action".to_owned(),
+                kind: ToolFieldKind::StringEnum { values: vec!["list".to_owned()] },
+                description: Some("desc".to_owned()),
+                required: true,
+            }],
+        };
+        let item = wire_tool_list_item(&tool_def);
+        assert_eq!(item["execution"]["taskSupport"], "forbidden");
+        assert_eq!(item["_meta"]["anthropic/alwaysLoad"], true);
+        assert_eq!(item["name"], "manage_run");
+        assert_eq!(item["description"], "test");
     }
 }

@@ -551,9 +551,26 @@ LEDGER CORRECTIONS:
 - [x] `persistSession` (provider.ts:527): `--no-session-persistence` emitted by `build_claude_argv` when `persist_session==Some(false)` — **FIXED c14-fix** (was `[≠]`; premise "no CLI flag" refuted by verifier via `claude --help` 2.1.177). true/absent = CLI default → no flag. Tests: `persist_session_false_emits_no_session_persistence`, `persist_session_true_does_not_emit_flag`, `persist_session_absent_does_not_emit_flag`.
 - [x] `systemPrompt.excludeDynamicSections` (types.ts:233, provider.ts:535): `--exclude-dynamic-system-prompt-sections` emitted by `build_claude_argv` when Preset and `exclude_dynamic_sections==Some(true)` — **FIXED c14-fix** (was `[≠]`; premise "no CLI flag" refuted by verifier). false/absent = CLI default → no flag. Tests: `exclude_dynamic_sections_true_emits_flag`, `exclude_dynamic_sections_false_does_not_emit_flag`, `exclude_dynamic_sections_absent_does_not_emit_flag`, `exclude_dynamic_sections_on_string_prompt_does_not_emit_flag`.
 - [≠] `classify_and_enrich_error` abort-label (timeout/aborted→Unknown): logging-only, msg+retry exact, never control flow
-- [~] Native tools via `createSdkMcpServer` → **R8 OWNER-DECIDED 2026-06-14**: interim BAND-AID = sidecar MCP
-  bridge (keeps full feature, nativeTools cap stays true, NO downgrade). The REAL fix = pure-Rust-native provider
-  (replaces claude-CLI + Agent SDK + MCP) is DEFERRED to post-port → docs/POST-PORT-UPGRADES.md UP-1. argv seam wired. nativeTools presence logged as warning.
+- [~] Native tools via `createSdkMcpServer` → **R8 OWNER-DECIDED 2026-06-14**: interim BAND-AID = in-process
+  loopback MCP server (keeps full feature, nativeTools cap stays true, NO downgrade). The REAL fix =
+  pure-Rust-native provider (replaces claude-CLI + Agent SDK + MCP) is DEFERRED to post-port →
+  docs/POST-PORT-UPGRADES.md UP-1. Design: target-architecture.md §6.8.
+  - [x] **MCP server CORE** (cycle 15, VERIFIED 7/7 vs live `@anthropic-ai/claude-agent-sdk` 0.2.141):
+    `crates/har-provider/src/cli_stream/mcp_sidecar.rs` — transport-agnostic JSON-RPC 2.0 handler
+    (`initialize`→`{serverInfo:{archon,1.0.0},capabilities:{tools:{listChanged:true}}}`,
+    `notifications/initialized`→none, `tools/list`, `tools/call`, `ping`→`{}`, unknown→-32601). Gate REFUTED
+    a porter `capabilities={tools:{}}` regression (live = `{tools:{listChanged:true}}`); fixed. tools/list
+    wire `inputSchema` byte-exact via `wire_input_schema`/`wire_tool_list_item` in native_tools.rs
+    (`$schema` FIRST, descriptions kept ONLY on required fields, enum key order description→type→enum, no
+    additionalProperties, per-tool `execution:{taskSupport:forbidden}` + `_meta:{anthropic/alwaysLoad:true}`).
+    tools/call: happy `{content:[{type:text,text}]}`; handler-throw catch→`isError:true`; bad-args→`isError:true`
+    text (`- [≈]` shape-match, zod prose not byte-pinned). Harness: tests/parity_cycle15_mcp_sidecar.rs +
+    fixtures/claude/native_tools/cycle15_live/. Findings: findings/parity-cycle15.md.
+  - [ ] **Transport + wiring** (cycle 16, NOT YET): axum loopback HTTP server (bind 127.0.0.1:0) serving the
+    core + temp mcp-config write/MERGE with nodeConfig.mcp + `send_query` lifecycle (start-once-before-retry,
+    teardown on end/error/cancel via CancelGuard) + activate `native_tools_mcp_config_path` seam + DELETE the
+    inert provider.rs:463-475 "deferred" warning. Live-CLI smoke = env-gated SKIP. THIS lands the reachable
+    feature → flips this `- [~]` row + PR-03 to verified (→34/79).
 - [x] **Registry wiring** (cycle 14): `register_builtin_providers()` now constructs `ClaudeProvider::new()` (real provider). UID-0 guard failure falls back to `UnimplementedProvider` (logs error). Claude factory is live.
 - AWAITING VERIFIER: differential parity test for send_query orchestration (happy path + retry + timeout + cancel + hooks) before unit `- [x]`
 

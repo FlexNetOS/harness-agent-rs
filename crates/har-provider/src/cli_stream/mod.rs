@@ -12,6 +12,7 @@
 //! - `retry`    — retry loop + exponential backoff + first-event timeout
 
 pub mod cancel;
+pub mod mcp_sidecar;
 pub mod retry;
 pub mod spawner;
 pub mod stderr;
@@ -19,6 +20,7 @@ pub mod stream;
 
 // Re-export the key public surface.
 pub use cancel::{CancelGuard, TokioCancelToken};
+pub use mcp_sidecar::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpSidecar};
 pub use retry::{
     classify_and_enrich_error, classify_subprocess_error, with_first_message_timeout, EnrichedError,
     ErrorClass, FirstEventError, RetryConfig, RetryError,

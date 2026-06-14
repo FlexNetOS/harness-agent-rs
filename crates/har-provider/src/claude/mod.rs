@@ -21,8 +21,8 @@ pub use binary_resolver::{
 };
 pub use config::parse_claude_config;
 pub use native_tools::{
-    build_archon_mcp_server, validate_and_convert_schema, McpServerDescriptor, SdkToolDef,
-    ToolField, ToolFieldKind, ARCHON_TOOL_SERVER,
+    build_archon_mcp_server, validate_and_convert_schema, wire_input_schema, wire_tool_list_item,
+    McpServerDescriptor, SdkToolDef, ToolField, ToolFieldKind, ARCHON_TOOL_SERVER,
 };
 pub use parser::{
     normalize_claude_usage, parse_claude_stream_json, parse_claude_stream_json_line, RawUsage,
