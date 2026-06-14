@@ -44,6 +44,7 @@ use regex::Regex;
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
+use har_paths::get_command_folder_search_paths;
 use har_workflow_schema::LoadCommandResult;
 
 // ─── Error Classification ─────────────────────────────────────────────────────
@@ -889,34 +890,6 @@ pub fn is_valid_command_name(name: &str) -> bool {
     true
 }
 
-/// Standard command folder search paths (relative to cwd).
-///
-/// Ports `getCommandFolderSearchPaths` from archon-paths.ts:183-196.
-/// Order (first match wins):
-///   1. `.archon/commands`          — user's custom repo commands (always included)
-///   2. `.archon/commands/defaults` — bundled default commands (always included)
-///   3. `configuredFolder`          — from config `commands.folder` (appended LAST;
-///      only if non-empty and not already in the list)
-///
-/// Note: `.claude/commands/` does NOT exist in the source; the port must not include it.
-fn command_folder_search_paths(configured_folder: Option<&str>) -> Vec<String> {
-    let mut paths = vec![
-        ".archon/commands".to_string(),
-        ".archon/commands/defaults".to_string(),
-    ];
-    // Add configured folder last (lowest precedence among repo paths), only if
-    // specified and not already covered. archon-paths.ts:187-192.
-    if let Some(folder) = configured_folder {
-        if !folder.is_empty()
-            && folder != ".archon/commands"
-            && folder != ".archon/commands/defaults"
-        {
-            paths.push(folder.to_string());
-        }
-    }
-    paths
-}
-
 /// Load a command prompt from file.
 ///
 /// # Precedence
@@ -928,7 +901,7 @@ fn command_folder_search_paths(configured_folder: Option<&str>) -> Vec<String> {
 /// 4. Home commands (`~/.archon/commands/`) — `getHomeCommandsPath()`
 /// 5. Bundled / app-defaults (when `loadDefaultCommands` is `true`, default `true`)
 ///
-/// Source: archon-paths.ts:183-196 (`getCommandFolderSearchPaths`) +
+/// Source: archon-paths.ts:183-196 (`getCommandFolderSearchPaths`) — now in `har-paths::get_command_folder_search_paths` +
 ///         executor-shared.ts:259-267 (path assembly).
 /// Each scope is walked 1 subfolder deep so `triage/review.md` resolves as `review`.
 /// executor-shared.ts:226-364.
@@ -954,7 +927,7 @@ pub async fn load_command_prompt(
     let config = deps.load_config(cwd).await;
 
     // Build search path list: repo paths + home path. executor-shared.ts:260-267.
-    let relative_folders = command_folder_search_paths(configured_folder);
+    let relative_folders = get_command_folder_search_paths(configured_folder);
     let mut search_dirs: Vec<PathBuf> = relative_folders
         .iter()
         .map(|f| cwd.join(f))
@@ -2107,30 +2080,30 @@ mod tests {
     #[test]
     fn configured_folder_dedup_matches_source() {
         assert_eq!(
-            command_folder_search_paths(None),
+            get_command_folder_search_paths(None),
             vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
         );
         // Equals index 0 → skipped (dedup guard).
         assert_eq!(
-            command_folder_search_paths(Some(".archon/commands")),
+            get_command_folder_search_paths(Some(".archon/commands")),
             vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
             "configuredFolder == '.archon/commands' must be deduped (archon-paths.ts:189)"
         );
         // Equals index 1 → skipped (dedup guard).
         assert_eq!(
-            command_folder_search_paths(Some(".archon/commands/defaults")),
+            get_command_folder_search_paths(Some(".archon/commands/defaults")),
             vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
             "configuredFolder == '.archon/commands/defaults' must be deduped (archon-paths.ts:190)"
         );
         // Empty string is falsy in TS → skipped.
         assert_eq!(
-            command_folder_search_paths(Some("")),
+            get_command_folder_search_paths(Some("")),
             vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
             "empty configuredFolder is falsy in source (archon-paths.ts:188) → not appended"
         );
         // Distinct folder → appended LAST (lowest repo precedence).
         assert_eq!(
-            command_folder_search_paths(Some("custom-cmds")),
+            get_command_folder_search_paths(Some("custom-cmds")),
             vec![
                 ".archon/commands".to_string(),
                 ".archon/commands/defaults".to_string(),

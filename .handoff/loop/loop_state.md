@@ -8,13 +8,26 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 3
-cycles_total: 6
-ledger: parity 13/79 units verified (PR-01; WF-01..08, WF-11 executor-shared, WF-12, WF-13, WF-14 model-validation)
-last_item: cycle 6 — WF-14 model-validation (har-dag-executor/model_validation.rs) — PARITY-VERIFIED PASS vs bun 1.3.14 (66/67 byte-exact; 1 intentional - [≠] sorted alias list; 1 porter bug fixed: stray trailing period)
-status: AT CYCLE BUDGET (3/3 this session) — HAND OFF. Next: leaf-crate track (PA paths → GI git →
-        IS isolation) + provider PR-02.. to unblock WF-09 dag-executor (the core state machine)
-last_update: 2026-06-14T00:00:00Z
+cycles_this_session: 1
+cycles_total: 7
+ledger: parity 16/79 units verified (PR-01; WF-01..08, WF-11..14; PA-01 paths, PA-06 env, PA-07 strip-cwd)
+last_item: cycle 7 — har-paths PA-01/PA-06/PA-07 — PASS vs live bun (gate caught CLAUDECODE warning-indent divergence, fixed); WF-11 duplicate reconciled into har-paths
+status: ITERATE — cycle 7 committed. Next: GI git (har-git) → IS isolation (har-isolation) + PR-02 provider
+        registry, to unblock WF-09 dag-executor (the core). PA-02..05 (logger MAP→tracing, telemetry MAP→icm,
+        update-check, bundled-build) still TODO in har-paths.
+last_update: 2026-06-14T00:45:00Z
+
+## Cycle-7 VERIFIED (parity PASS vs live bun — committed)
+- PA-01 har-paths ← paths/archon-paths.ts: `crates/har-paths/src/archon_paths.rs`. All path fns incl. is_docker, expand_tilde, get_archon_home (+ "undefined" guard), get_command_folder_search_paths (SINGLE SOURCE: duplicate removed from har-dag-executor). 554 workspace tests + clippy clean.
+- PA-06 har-paths ← paths/env-loader.ts: `crates/har-paths/src/env_loader.rs`. load_archon_env (dotenvy + override semantics), is_verbose_boot. Uses `dotenvy::from_path_iter` for key collection without auto-setting.
+- PA-07 har-paths ← paths/strip-cwd-env.ts + strip-cwd-env-boot.ts: `crates/har-paths/src/strip_cwd_env.rs`. strip_cwd_env (both passes), strip_cwd_env_boot, BUN_AUTO_LOADED_ENV_FILES, CLAUDE_CODE_AUTH_VARS.
+- WF-11 duplicate reconciled: command_folder_search_paths removed from executor_shared.rs; har-dag-executor now imports har_paths::get_command_folder_search_paths. All 554 tests including prior differential golden tests pass.
+
+VERIFIER NEEDS-HUMAN notes for PA-01/06/07:
+- Set `ARCHON_HOME=/tmp/test-archon` to drive path fns deterministically.
+- PA-07 cannot be diff-tested byte-for-byte (modifies process.env in-place); verify by checking the env state BEFORE and AFTER calling strip_cwd_env.
+- PA-06 override semantics: set a key first, then call load_archon_env; verify key was overridden.
+- CLAUDECODE warning: set CLAUDECODE=1 (without ARCHON_SUPPRESS_NESTED_CLAUDE_WARNING) and verify stderr output matches source exactly.
 
 ## Verified units (parity gate PASS)
 - PR-01 har-contract ← providers/src/types.ts (QUALIFIED: pure types, wire-shape verified)

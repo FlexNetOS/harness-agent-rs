@@ -463,19 +463,19 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ## PACKAGE: paths
 
-- [ ] unit:PA-01 `paths/archon-paths.ts::getArchonHome` → `paths::archon_paths::get_archon_home()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::isDocker` → `paths::archon_paths::is_docker()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::expandTilde` → `paths::archon_paths::expand_tilde()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getArchonWorkspacesPath` → `paths::archon_paths::get_archon_workspaces_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getRunArtifactsPath` → `paths::archon_paths::get_run_artifacts_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getProjectLogsPath` → `paths::archon_paths::get_project_logs_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getWorkflowFolderSearchPaths` → `paths::archon_paths::get_workflow_folder_search_paths()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getCommandFolderSearchPaths` → `paths::archon_paths::get_command_folder_search_paths()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getDefaultCommandsPath` → `paths::archon_paths::get_default_commands_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getDefaultWorkflowsPath` → `paths::archon_paths::get_default_workflows_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getHomeCommandsPath` → `paths::archon_paths::get_home_commands_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::getHomeWorkflowsPath` → `paths::archon_paths::get_home_workflows_path()`
-- [ ] unit:PA-01 `paths/archon-paths.ts::parseOwnerRepo` → [≠] also in git/repo.ts; consolidate to one location
+- [x] unit:PA-01 `paths/archon-paths.ts::getArchonHome` → `har_paths::archon_paths::get_archon_home()` (cycle 7; env-seam testable)
+- [x] unit:PA-01 `paths/archon-paths.ts::isDocker` → `har_paths::archon_paths::is_docker()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::expandTilde` → `har_paths::archon_paths::expand_tilde()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getArchonWorkspacesPath` → `har_paths::archon_paths::get_archon_workspaces_path()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getRunArtifactsPath` → `har_paths::archon_paths::get_run_artifacts_path()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getProjectLogsPath` → `har_paths::archon_paths::get_project_logs_path()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getWorkflowFolderSearchPaths` → `har_paths::archon_paths::get_workflow_folder_search_paths()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getCommandFolderSearchPaths` → `har_paths::archon_paths::get_command_folder_search_paths()` (cycle 7; SINGLE SOURCE OF TRUTH — duplicate removed from har-dag-executor/executor_shared.rs)
+- [≠] unit:PA-01 `paths/archon-paths.ts::getDefaultCommandsPath` → `har_paths::archon_paths::get_default_commands_path()` (cycle 7) — INTENTIONAL DIVERGENCE: TS import.meta.dir has no differential analog; Rust seam=ARCHON_APP_BASE/exe-path; composition verified identical (cycle 7)
+- [≠] unit:PA-01 `paths/archon-paths.ts::getDefaultWorkflowsPath` → `har_paths::archon_paths::get_default_workflows_path()` (cycle 7) — INTENTIONAL DIVERGENCE: TS import.meta.dir has no differential analog; Rust seam=ARCHON_APP_BASE/exe-path; composition verified identical (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getHomeCommandsPath` → `har_paths::archon_paths::get_home_commands_path()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::getHomeWorkflowsPath` → `har_paths::archon_paths::get_home_workflows_path()` (cycle 7)
+- [x] unit:PA-01 `paths/archon-paths.ts::parseOwnerRepo` → `har_paths::archon_paths::parse_owner_repo()` (cycle 7) [≠ also in git/repo.ts; consolidate to one location — PA-01 is the canonical source]
 - [ ] unit:PA-02 `paths/logger.ts::createLogger` → [≠] maps to `tracing::info_span!`; no direct Rust equivalent
 - [ ] unit:PA-02 `paths/logger.ts::setLogLevel` → `paths::logger::set_log_level()` [≠] tracing subscriber dynamic filter
 - [ ] unit:PA-03 `paths/telemetry.ts::captureArchonStarted` → `paths::telemetry::capture_archon_started()`
@@ -485,8 +485,12 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 - [ ] unit:PA-04 `paths/update-check.ts::checkForUpdate` → `paths::update_check::check_for_update()`
 - [ ] unit:PA-05 `paths/bundled-build.ts::BUNDLED_IS_BINARY` → `paths::bundled_build::BUNDLED_IS_BINARY`
 - [ ] unit:PA-05 `paths/bundled-build.ts::BUNDLED_VERSION` → `paths::bundled_build::BUNDLED_VERSION`
-- [ ] unit:PA-06 `paths/env-loader.ts::loadArchonEnv` → `paths::env_loader::load_archon_env()`
-- [ ] unit:PA-07 `paths/strip-cwd-env.ts::stripCwdEnv` → `paths::strip_cwd_env::strip_cwd_env()`
+- [x] unit:PA-06 `paths/env-loader.ts::loadArchonEnv` → `har_paths::env_loader::load_archon_env()` (cycle 7)
+- [x] unit:PA-06 `paths/env-loader.ts::isVerboseBoot` → `har_paths::env_loader::is_verbose_boot()` (cycle 7)
+- [x] unit:PA-07 `paths/strip-cwd-env.ts::stripCwdEnv` → `har_paths::strip_cwd_env::strip_cwd_env()` (cycle 7)
+- [x] unit:PA-07 `paths/strip-cwd-env.ts::BUN_AUTO_LOADED_ENV_FILES` → `har_paths::strip_cwd_env::BUN_AUTO_LOADED_ENV_FILES` (cycle 7)
+- [x] unit:PA-07 `paths/strip-cwd-env.ts::CLAUDE_CODE_AUTH_VARS` → `har_paths::strip_cwd_env::CLAUDE_CODE_AUTH_VARS` (cycle 7)
+- [x] unit:PA-07 `paths/strip-cwd-env-boot.ts::stripCwdEnv (boot)` → `har_paths::strip_cwd_env::strip_cwd_env_boot()` (cycle 7)
 
 ---
 
