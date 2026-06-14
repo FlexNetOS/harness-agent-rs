@@ -12,8 +12,9 @@ cycles_this_session: 3
 cycles_total: 6
 ledger: parity 13/79 units verified (PR-01; WF-01..08, WF-11 executor-shared, WF-12, WF-13, WF-14 model-validation)
 last_item: cycle 6 — WF-14 model-validation (har-dag-executor/model_validation.rs) — PARITY-VERIFIED PASS vs bun 1.3.14 (66/67 byte-exact; 1 intentional - [≠] sorted alias list; 1 porter bug fixed: stray trailing period)
-status: ITERATE — cycle 6 committed (WF-14 verified [x]); next = WF-09 dag-executor (core state machine)
-last_update: 2026-06-13T23:20:00Z
+status: AT CYCLE BUDGET (3/3 this session) — HAND OFF. Next: leaf-crate track (PA paths → GI git →
+        IS isolation) + provider PR-02.. to unblock WF-09 dag-executor (the core state machine)
+last_update: 2026-06-14T00:00:00Z
 
 ## Verified units (parity gate PASS)
 - PR-01 har-contract ← providers/src/types.ts (QUALIFIED: pure types, wire-shape verified)

@@ -293,25 +293,25 @@ NOTE: Ledger had wrong target path (`crates/workflows/src/...`) — crate `workf
 
 PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = `- [≠]`. Differential oracle (live bun ⇄ Rust example) over 67 cases exercising every branch: 3-way resolve classification, all 3 tier-fallback chains incl. medium→large and large→medium walks, 5-layer merge precedence (repo>global, tier vs alias), all 9 validation rejections (reserved×3, missing-@, empty provider/model, invalid tier name, tier empty provider/model), full routePresetEffort matrix (4 providers × 7 efforts incl. cross-provider mismatch → None), literal pass-through (incl. empty string), isLiteralSpec, effort+thinking object-form preservation, tier-defaults seeding for all 5 known providers + unknown. tier-defaults.json embedded const is semantically deep-equal to source JSON. Golden harness committed: `examples/parity_wf14_oracle.rs` + `tests/wf14_parity_golden.rs` + `tests/fixtures/wf14_ts_golden.json` (runs in CI without bun). PORTER BUG FIXED during verify: UnknownAlias `#[error]` had a stray trailing `.` after the alias list absent in source — removed for byte-exact parity. INTENTIONAL `- [≠]`: UnknownAlias lists alias keys SORTED vs TS insertion order (determinism; display-only; unparsed by any consumer; source test asserts only the prefix). 255 crate tests + clippy --all-targets -D warnings green.
 
-- [~] `TIER_NAMES`: `small | medium | large` — `pub const TIER_NAMES: &[&str]` (model-validation.ts:19)
-- [~] `ModelAliasPreset` struct: `provider, model, effort?, thinking?` — both optional, `effort` is `String` (no `.int()` equiv); `thinking?: ThinkingConfig` from har-workflow-schema (model-validation.ts:23-28)
-- [~] `RawAliasEntry` struct — identical shape to `ModelAliasPreset`; kept structurally separate (model-validation.ts:33-38)
-- [~] `RawAliasesConfig` type: `HashMap<String, RawAliasEntry>` — model-validation.ts:41
-- [~] `RawTiersConfig` type: `HashMap<String, RawAliasEntry>` — keyed by tier name string; model-validation.ts:44
-- [~] `ResolvedAiProfile` struct: `default_provider, aliases: HashMap<String, ModelAliasPreset>` — model-validation.ts:47-51
-- [~] `ResolvedModelSpec` enum: `Preset(ModelAliasPreset) | Literal { literal: String }` — model-validation.ts:54
-- [~] `TIER_FALLBACK` map: exact `large→[large,medium,small]`, `medium→[medium,large,small]`, `small→[small,medium,large]` — `tier_fallback_chain(TierName)` returns `&'static [TierName]` (model-validation.ts:62-66); all 3 chains tested
-- [~] `isLiteralSpec(spec) -> bool` — ported as `is_literal_spec(&ResolvedModelSpec) -> bool` (model-validation.ts:205-207); tested
-- [~] `resolveModelSpec(profile, model_ref) -> ResolvedModelSpec` — full 3-branch algorithm: tier (fallback chain) → '@' alias (error on unknown) → literal pass-through (model-validation.ts:182-202); all branches + fallback chain tested
-- [~] `buildAiProfile(defaultProvider, options) -> ResolvedAiProfile` — layered merge: tier-defaults (JSON) → globalTiers → repoTiers → globalAliases → repoAliases; repo beats global; all validation guards (assertNotReserved, assertCustomAliasPrefix, assertValidEntry, assertValidTierName) ported with exact error messages (model-validation.ts:134-174); precedence tested
-- [~] `routePresetEffort(provider, effort) -> Option<EffortRouting>` — returns `None` (not `null`) for cross-provider mismatches; exact provider→field table: claude→Effort, codex→ModelReasoningEffort; all values + mismatches tested (model-validation.ts:233-241 + dag-executor.ts:136-152)
-- [~] `assertNotReserved(name)` — blocks alias names `small/medium/large`; exact error message; public via `assert_not_reserved_pub()` (model-validation.ts:77-83)
-- [~] `tier-defaults.json` data — embedded as compile-time string constant `TIER_DEFAULTS_JSON`; contents identical to source JSON (5 providers, 3 tiers each with model + optional effort); parsed at runtime for tier seeding; all 5 providers + their tiers tested
-- [~] `assertCustomAliasPrefix(name)` — blocks alias names without '@' prefix; exact error message (model-validation.ts:85-91)
-- [~] `assertValidEntry(name, entry)` — blocks empty provider/model strings; exact error messages (model-validation.ts:93-99)
-- [~] `assertValidTierName(name)` — blocks invalid tier names; exact error message (model-validation.ts:102-106)
-- [~] `CLAUDE_EFFORTS` constant: `["low","medium","high","max"]` (model-validation.ts:211)
-- [~] `CODEX_REASONING_EFFORTS` constant: `["minimal","low","medium","high","xhigh"]` (model-validation.ts:212-217)
+- [x] `TIER_NAMES`: `small | medium | large` — `pub const TIER_NAMES: &[&str]` (model-validation.ts:19)
+- [x] `ModelAliasPreset` struct: `provider, model, effort?, thinking?` — both optional, `effort` is `String` (no `.int()` equiv); `thinking?: ThinkingConfig` from har-workflow-schema (model-validation.ts:23-28)
+- [x] `RawAliasEntry` struct — identical shape to `ModelAliasPreset`; kept structurally separate (model-validation.ts:33-38)
+- [x] `RawAliasesConfig` type: `HashMap<String, RawAliasEntry>` — model-validation.ts:41
+- [x] `RawTiersConfig` type: `HashMap<String, RawAliasEntry>` — keyed by tier name string; model-validation.ts:44
+- [x] `ResolvedAiProfile` struct: `default_provider, aliases: HashMap<String, ModelAliasPreset>` — model-validation.ts:47-51
+- [x] `ResolvedModelSpec` enum: `Preset(ModelAliasPreset) | Literal { literal: String }` — model-validation.ts:54
+- [x] `TIER_FALLBACK` map: exact `large→[large,medium,small]`, `medium→[medium,large,small]`, `small→[small,medium,large]` — `tier_fallback_chain(TierName)` returns `&'static [TierName]` (model-validation.ts:62-66); all 3 chains tested
+- [x] `isLiteralSpec(spec) -> bool` — ported as `is_literal_spec(&ResolvedModelSpec) -> bool` (model-validation.ts:205-207); tested
+- [≠] `resolveModelSpec(profile, model_ref) -> ResolvedModelSpec` — full 3-branch algorithm: tier (fallback chain) → '@' alias (error on unknown) → literal pass-through (model-validation.ts:182-202); all branches + fallback chain tested  [≠ non-contractual: UnknownAlias error lists aliases SORTED vs source insertion-order; no caller parses it, only logs; deterministic = upgrade]
+- [x] `buildAiProfile(defaultProvider, options) -> ResolvedAiProfile` — layered merge: tier-defaults (JSON) → globalTiers → repoTiers → globalAliases → repoAliases; repo beats global; all validation guards (assertNotReserved, assertCustomAliasPrefix, assertValidEntry, assertValidTierName) ported with exact error messages (model-validation.ts:134-174); precedence tested
+- [x] `routePresetEffort(provider, effort) -> Option<EffortRouting>` — returns `None` (not `null`) for cross-provider mismatches; exact provider→field table: claude→Effort, codex→ModelReasoningEffort; all values + mismatches tested (model-validation.ts:233-241 + dag-executor.ts:136-152)
+- [x] `assertNotReserved(name)` — blocks alias names `small/medium/large`; exact error message; public via `assert_not_reserved_pub()` (model-validation.ts:77-83)
+- [x] `tier-defaults.json` data — embedded as compile-time string constant `TIER_DEFAULTS_JSON`; contents identical to source JSON (5 providers, 3 tiers each with model + optional effort); parsed at runtime for tier seeding; all 5 providers + their tiers tested
+- [x] `assertCustomAliasPrefix(name)` — blocks alias names without '@' prefix; exact error message (model-validation.ts:85-91)
+- [x] `assertValidEntry(name, entry)` — blocks empty provider/model strings; exact error messages (model-validation.ts:93-99)
+- [x] `assertValidTierName(name)` — blocks invalid tier names; exact error message (model-validation.ts:102-106)
+- [x] `CLAUDE_EFFORTS` constant: `["low","medium","high","max"]` (model-validation.ts:211)
+- [x] `CODEX_REASONING_EFFORTS` constant: `["minimal","low","medium","high","xhigh"]` (model-validation.ts:212-217)
 
 **Deviations documented:**
 - `routePresetEffort` returns `Option<EffortRouting>` (Rust None = TS null). Same semantics.
