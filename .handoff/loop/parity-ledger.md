@@ -229,23 +229,30 @@ This is the central porting target. Extremely behavior-rich.
 
 ### UNIT WF-11: Executor Shared Utilities
 **Source:** `packages/workflows/src/executor-shared.ts`
-**Rust target:** `crates/workflows/src/executor_shared.rs`
+**Rust target:** `crates/har-dag-executor/src/executor_shared.rs`
+**Status:** `- [x]` parity-VERIFIED cycle 5 (re-verify 2026-06-13: 3 regex/encoding divergences + 1 precedence divergence found, FIXED, and DIFFERENTIALLY re-verified vs live bun; 204 crate tests pass; `cargo clippy --all-targets` clean; all 16 symbols `- [x]`)
 
-- [ ] `ErrorType` enum: `TRANSIENT | FATAL | UNKNOWN`
-- [ ] `FATAL_PATTERNS` list: unauthorized, forbidden, invalid token, authentication failed, permission denied, 401, 403, credit balance, auth error (executor-shared.ts:30-40)
-- [ ] `TRANSIENT_PATTERNS` list: timeout, econnrefused, econnreset, etimedout, rate limit, too many requests, 429, 503, 502, 529, overloaded, network error, socket hang up, exited with code, claude code crash (executor-shared.ts:43-59)
-- [ ] `matchesPattern(message, patterns)` (executor-shared.ts:64-66)
-- [ ] `classifyError(error) -> ErrorType` — FATAL takes priority over TRANSIENT (executor-shared.ts:73-83)
-- [ ] `formatSubprocessFailure(err, label)` — strips inline script body from error message/cmd/stack; max 2000 chars; returns `{userMessage, logFields}` (executor-shared.ts:97+)
-- [ ] `loadCommandPrompt(deps, cwd, command, configuredCommandFolder?)` -> `LoadCommandResult` — command name validation, precedence: `configuredCommandFolder` > `.archon/commands/` > `.claude/commands/` > home commands > bundled commands (executor-shared.ts)
-- [ ] `substituteWorkflowVariables(prompt, runId, userMessage, artifactsDir, baseBranch, docsDir, issueContext?, loopUserInput?, rejectionReason?, prevOutput?, opts?)` — replaces `$WORKFLOW_RUN_ID`, `$USER_MESSAGE`/`$ARGUMENTS`, `$ARTIFACTS_DIR`, `$BASE_BRANCH`, `$DOCS_DIR`, `$CONTEXT`/`$EXTERNAL_CONTEXT`/`$ISSUE_CONTEXT`, `$LOOP_USER_INPUT`, `$REJECTION_REASON`, `$LOOP_PREV_OUTPUT`; shell-safe variant for bash nodes; errors when `$BASE_BRANCH` referenced but empty (executor-shared.ts)
-- [ ] `buildPromptWithContext(rawPrompt, runId, userMessage, artifactsDir, baseBranch, docsDir, issueContext?, label?)` (executor-shared.ts)
-- [ ] `detectCompletionSignal(output, until)` — checks if the `until` string appears in the output (executor-shared.ts)
-- [ ] `stripCompletionTags(content, until)` — strips completion signal from display output (executor-shared.ts)
-- [ ] `isInlineScript(script)` — distinguishes inline code (multi-line or contains spaces) from named scripts (executor-shared.ts)
-- [ ] `detectCreditExhaustion(output) -> Option<String>` — pattern-matches error text in assistant content (executor-shared.ts)
-- [ ] `safeSendMessage(platform, conversationId, message, context, metadata?)` -> `bool` — never throws; returns delivery success (executor-shared.ts)
-- [ ] `SendMessageContext` type: `{ workflowId, nodeName }` (executor-shared.ts)
+- [x] `ErrorType` enum: `TRANSIENT | FATAL | UNKNOWN` (executor-shared.ts:27) — ported; `Transient`/`Fatal`/`Unknown` variants
+- [x] `FATAL_PATTERNS` list: exact 9-item membership tested (executor-shared.ts:30-40)
+- [x] `TRANSIENT_PATTERNS` list: exact 15-item membership tested (executor-shared.ts:43-59)
+- [x] `matchesPattern(message, patterns)` (executor-shared.ts:64-66) — substring scan; caller lowercases
+- [x] `classifyError(error) -> ErrorType` — FATAL takes priority over TRANSIENT; lowercases message before matching (executor-shared.ts:73-83); priority test: "unauthorized: process exited with code 1" → FATAL
+- [x] `formatSubprocessFailure(err, label)` — strips `Command failed: <cmd>` prefix; tail-truncation at 2000 chars with `\n…[truncated]` suffix; prefers stderr; returns `{userMessage, logFields}` (executor-shared.ts:116-161)
+- [x] `loadCommandPrompt(deps, cwd, command, configuredCommandFolder?)` -> `LoadCommandResult` — command name validation (`isValidCommandName`); precedence (source: archon-paths.ts:183-196 `getCommandFolderSearchPaths`): `.archon/commands` → `.archon/commands/defaults` → `configuredCommandFolder` (appended LAST, only if non-empty and not already in list) → home (`~/.archon/commands`) → bundled/app-defaults; `CommandPromptDeps` trait seam for fake-FS tests; cycle-5 re-verify 2026-06-13: precedence DIFFERENTIALLY verified vs live bun `getCommandFolderSearchPaths` (6 cases incl. both dedup-equals + empty); test cases cover invalid-name/found-in-archon/found-in-defaults/archon-beats-configured/defaults-beats-configured/configured-found/empty/permission-denied/not-found/home-fallback/bundled + `configured_folder_dedup_matches_source` (executor-shared.ts:226-364; archon-paths.ts:183-196)
+- [x] `substituteWorkflowVariables(...)` — all 9 vars substituted globally; shell-safe skips user-controlled; `$BASE_BRANCH` empty + referenced → `BaseBranchEmptyError`; `$DOCS_DIR` defaults to `docs/`; context vars cleared when no issueContext; negative lookahead `(?![A-Za-z0-9_])` replicated via capture group (executor-shared.ts:392-455)
+- [x] `buildPromptWithContext(...)` — appends context only when not already substituted; 3 test cases (executor-shared.ts:472-498)
+- [x] `detectCompletionSignal(output, until)` — XML-wrapped with case-insensitive matching-tag backreference (replicated via manual eq_ignore_ascii_case); plain end-of-output; plain own-line; no false positives for mid-sentence (executor-shared.ts:523-541)
+- [x] `stripCompletionTags(content, until)` — always strips `<promise>…</promise>`; strips XML-wrapped signal with case-insensitive tag matching; result trimmed (executor-shared.ts:550-561)
+- [x] `isInlineScript(script)` — multi-line OR matches `[;(){}&|<>$\`"' ]` (executor-shared.ts:568-570); 9 test cases
+- [x] `detectCreditExhaustion(output) -> Option<String>` — session-limit (with reset-time extraction) and credit-exhaustion patterns; case-insensitive match (executor-shared.ts:198-213)
+- [x] `safeSendMessage(platform, conversationId, message, context, metadata?, tracker?)` -> `Result<bool, SafeSendError>` — never panics; FATAL rethrown; TRANSIENT/below-threshold UNKNOWN suppressed → false; consecutive UNKNOWN tracked; `MessagePlatform` trait seam; 6 async tests (executor-shared.ts:595-649)
+- [x] `SendMessageContext` struct: `{ workflow_id, node_name }` (executor-shared.ts:575-578)
+- [x] `UnknownErrorTracker` struct: `{ count }` with `UNKNOWN_ERROR_THRESHOLD = 3` (executor-shared.ts:581-586)
+
+**Deviations documented:**
+- `CONTEXT_VAR_PATTERN_STR`: TS negative lookahead `(?![A-Za-z0-9_])` → Rust capture group `([^A-Za-z0-9_]|$)` with replacement preserving captured char. Behaviorally identical: `$CONTEXT_EXTRA` not substituted.
+- XML tag backreference case-sensitivity: JS `i`-flag backreference `\1` matches case-insensitively; `fancy-regex`/`regex` do not support this. Implemented manually via `eq_ignore_ascii_case` on captured tag names. Behaviorally identical.
+- `safeSendMessage`: TS source signature has `unknownErrorTracker?`; Rust has `Option<&mut UnknownErrorTracker>`. Same semantics, Rust ownership model.
 
 ### UNIT WF-12: Condition Evaluator
 **Source:** `packages/workflows/src/condition-evaluator.ts`

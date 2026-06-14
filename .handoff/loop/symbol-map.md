@@ -156,21 +156,21 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-11 — executor-shared.ts
 
-- [ ] unit:WF-11 `executor-shared.ts::ErrorType` → `workflows::executor_shared::ErrorType`
-- [ ] unit:WF-11 `executor-shared.ts::FATAL_PATTERNS` → `workflows::executor_shared::FATAL_PATTERNS`
-- [ ] unit:WF-11 `executor-shared.ts::TRANSIENT_PATTERNS` → `workflows::executor_shared::TRANSIENT_PATTERNS`
-- [ ] unit:WF-11 `executor-shared.ts::matchesPattern` → `workflows::executor_shared::matches_pattern()`
-- [ ] unit:WF-11 `executor-shared.ts::classifyError` → `workflows::executor_shared::classify_error()`
-- [ ] unit:WF-11 `executor-shared.ts::formatSubprocessFailure` → `workflows::executor_shared::format_subprocess_failure()`
-- [ ] unit:WF-11 `executor-shared.ts::loadCommandPrompt` → `workflows::executor_shared::load_command_prompt()`
-- [ ] unit:WF-11 `executor-shared.ts::substituteWorkflowVariables` → `workflows::executor_shared::substitute_workflow_variables()`
-- [ ] unit:WF-11 `executor-shared.ts::buildPromptWithContext` → `workflows::executor_shared::build_prompt_with_context()`
-- [ ] unit:WF-11 `executor-shared.ts::detectCompletionSignal` → `workflows::executor_shared::detect_completion_signal()`
-- [ ] unit:WF-11 `executor-shared.ts::stripCompletionTags` → `workflows::executor_shared::strip_completion_tags()`
-- [ ] unit:WF-11 `executor-shared.ts::isInlineScript` → `workflows::executor_shared::is_inline_script()`
-- [ ] unit:WF-11 `executor-shared.ts::detectCreditExhaustion` → `workflows::executor_shared::detect_credit_exhaustion()`
-- [ ] unit:WF-11 `executor-shared.ts::safeSendMessage` → `workflows::executor_shared::safe_send_message()`
-- [ ] unit:WF-11 `executor-shared.ts::SendMessageContext` → `workflows::executor_shared::SendMessageContext`
+- [x] unit:WF-11 `executor-shared.ts::ErrorType` → `workflows::executor_shared::ErrorType` (cycle-5 differential: classify oracle)
+- [x] unit:WF-11 `executor-shared.ts::FATAL_PATTERNS` → `workflows::executor_shared::FATAL_PATTERNS` (cycle-5: all 9 members + priority diff-tested)
+- [x] unit:WF-11 `executor-shared.ts::TRANSIENT_PATTERNS` → `workflows::executor_shared::TRANSIENT_PATTERNS` (cycle-5: all 15 members diff-tested)
+- [x] unit:WF-11 `executor-shared.ts::matchesPattern` → `workflows::executor_shared::matches_pattern()` (cycle-5: via classify oracle)
+- [x] unit:WF-11 `executor-shared.ts::classifyError` → `workflows::executor_shared::classify_error()` (cycle-5: FATAL>TRANSIENT priority, mixed-case, mixed-pattern diff-tested vs bun)
+- [x] unit:WF-11 `executor-shared.ts::formatSubprocessFailure` → `workflows::executor_shared::format_subprocess_failure()` (cycle-5: FIXED byte→UTF-16 truncation divergence; diff-tested incl. é/emoji tail)
+- [x] unit:WF-11 `executor-shared.ts::loadCommandPrompt` → `workflows::executor_shared::load_command_prompt()` (cycle-5 re-verify 2026-06-13: precedence aligned to ACTUAL source — `.archon/commands` → `.archon/commands/defaults` → configuredFolder(LAST) → home → bundled; no `.claude/commands/`; dedup guard matches archon-paths.ts:187-192; DIFFERENTIAL vs live bun PASS — see parity-cycle5.md)
+- [x] unit:WF-11 `executor-shared.ts::substituteWorkflowVariables` → `workflows::executor_shared::substitute_workflow_variables()` (cycle-5: FIXED $CONTEXT zero-width-boundary divergence; 800-case fuzz vs bun)
+- [x] unit:WF-11 `executor-shared.ts::buildPromptWithContext` → `workflows::executor_shared::build_prompt_with_context()` (cycle-5: append-vs-substitute diff-tested)
+- [x] unit:WF-11 `executor-shared.ts::detectCompletionSignal` → `workflows::executor_shared::detect_completion_signal()` (cycle-5: FIXED XML `\1` backreference backtracking divergence; fuzz vs bun)
+- [x] unit:WF-11 `executor-shared.ts::stripCompletionTags` → `workflows::executor_shared::strip_completion_tags()` (cycle-5: backreference + single-pass diff-tested vs bun)
+- [x] unit:WF-11 `executor-shared.ts::isInlineScript` → `workflows::executor_shared::is_inline_script()` (cycle-5: every special char in class diff-tested)
+- [x] unit:WF-11 `executor-shared.ts::detectCreditExhaustion` → `workflows::executor_shared::detect_credit_exhaustion()` (cycle-5: session/credit patterns + reset-time `[^\n·.!]+` stop-chars diff-tested)
+- [x] unit:WF-11 `executor-shared.ts::safeSendMessage` → `workflows::executor_shared::safe_send_message()` (cycle-5: never-throw, FATAL-rethrow, consecutive-UNKNOWN=3, TRANSIENT/FATAL reset — source-semantics verified + new tests)
+- [x] unit:WF-11 `executor-shared.ts::SendMessageContext` → `workflows::executor_shared::SendMessageContext` (cycle-5: log-context plumbing, no behavior)
 
 ### WF-12 — condition-evaluator.ts
 
