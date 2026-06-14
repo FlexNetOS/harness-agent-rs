@@ -1,0 +1,45 @@
+{
+  "options": {
+    "cwd": "/work",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ],
+    "agents": {
+      "dag-node-skills": {
+        "description": "override",
+        "prompt": "custom"
+      }
+    },
+    "agent": "dag-node-skills",
+    "allowedTools": [
+      "Skill"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user",
+    "--agents",
+    "{\"dag-node-skills\":{\"description\":\"override\",\"prompt\":\"custom\"}}",
+    "--agent",
+    "dag-node-skills",
+    "--allowed-tools",
+    "Skill"
+  ],
+  "warnings": []
+}

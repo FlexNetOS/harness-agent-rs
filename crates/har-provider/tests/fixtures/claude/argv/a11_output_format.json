@@ -1,0 +1,2 @@
+{ "requestOptions": {}, "assistantDefaults": {},
+  "nodeConfig": { "output_format": { "type": "object", "properties": { "answer": { "type": "number" } } } } }

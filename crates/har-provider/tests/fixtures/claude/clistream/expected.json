@@ -1,0 +1,304 @@
+{
+  "classify": [
+    {
+      "input": {
+        "errorMessage": "rate limit exceeded",
+        "stderrOutput": ""
+      },
+      "result": "rate_limit"
+    },
+    {
+      "input": {
+        "errorMessage": "request failed",
+        "stderrOutput": "got 429 from server"
+      },
+      "result": "rate_limit"
+    },
+    {
+      "input": {
+        "errorMessage": "too many requests",
+        "stderrOutput": ""
+      },
+      "result": "rate_limit"
+    },
+    {
+      "input": {
+        "errorMessage": "service overloaded",
+        "stderrOutput": ""
+      },
+      "result": "rate_limit"
+    },
+    {
+      "input": {
+        "errorMessage": "credit balance too low",
+        "stderrOutput": ""
+      },
+      "result": "auth"
+    },
+    {
+      "input": {
+        "errorMessage": "unauthorized",
+        "stderrOutput": ""
+      },
+      "result": "auth"
+    },
+    {
+      "input": {
+        "errorMessage": "authentication failed",
+        "stderrOutput": ""
+      },
+      "result": "auth"
+    },
+    {
+      "input": {
+        "errorMessage": "invalid token provided",
+        "stderrOutput": ""
+      },
+      "result": "auth"
+    },
+    {
+      "input": {
+        "errorMessage": "error 401",
+        "stderrOutput": ""
+      },
+      "result": "auth"
+    },
+    {
+      "input": {
+        "errorMessage": "error 403",
+        "stderrOutput": ""
+      },
+      "result": "auth"
+    },
+    {
+      "input": {
+        "errorMessage": "process exited with code 1",
+        "stderrOutput": ""
+      },
+      "result": "crash"
+    },
+    {
+      "input": {
+        "errorMessage": "process killed",
+        "stderrOutput": ""
+      },
+      "result": "crash"
+    },
+    {
+      "input": {
+        "errorMessage": "got signal 9",
+        "stderrOutput": ""
+      },
+      "result": "crash"
+    },
+    {
+      "input": {
+        "errorMessage": "operation aborted",
+        "stderrOutput": ""
+      },
+      "result": "crash"
+    },
+    {
+      "input": {
+        "errorMessage": "something weird happened",
+        "stderrOutput": ""
+      },
+      "result": "unknown"
+    },
+    {
+      "input": {
+        "errorMessage": "",
+        "stderrOutput": "rate limit in stderr only"
+      },
+      "result": "rate_limit"
+    },
+    {
+      "input": {
+        "errorMessage": "RATE LIMIT uppercase",
+        "stderrOutput": ""
+      },
+      "result": "rate_limit"
+    }
+  ],
+  "enrich": [
+    {
+      "input": {
+        "errorMessage": "Claude Code subprocess produced no output within 60000ms. See logs...",
+        "stderrLines": [],
+        "controllerAborted": true
+      },
+      "result": {
+        "message": "Claude Code subprocess produced no output within 60000ms. See logs...",
+        "errorClass": "timeout",
+        "shouldRetry": false
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "connection reset",
+        "stderrLines": [],
+        "controllerAborted": true
+      },
+      "result": {
+        "message": "Query aborted",
+        "errorClass": "aborted",
+        "shouldRetry": false
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "unauthorized: bad creds",
+        "stderrLines": [],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code auth error: unauthorized: bad creds",
+        "errorClass": "auth",
+        "shouldRetry": false
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "authentication failed",
+        "stderrLines": [
+          "check your API key"
+        ],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code auth error: authentication failed (check your API key)",
+        "errorClass": "auth",
+        "shouldRetry": false
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "rate limit exceeded",
+        "stderrLines": [],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code rate_limit: rate limit exceeded",
+        "errorClass": "rate_limit",
+        "shouldRetry": true
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "exited with code 1",
+        "stderrLines": [],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code crash: exited with code 1",
+        "errorClass": "crash",
+        "shouldRetry": true
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "process exited with code 1",
+        "stderrLines": [
+          "ENOENT file not found"
+        ],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code crash: process exited with code 1 (stderr: ENOENT file not found)",
+        "errorClass": "crash",
+        "shouldRetry": true
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "something weird",
+        "stderrLines": [],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code unknown: something weird",
+        "errorClass": "unknown",
+        "shouldRetry": false
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "killed",
+        "stderrLines": [
+          "line1",
+          "line2"
+        ],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code crash: killed (stderr: line1\nline2)",
+        "errorClass": "crash",
+        "shouldRetry": true
+      }
+    },
+    {
+      "input": {
+        "errorMessage": "produced no output within 5000ms",
+        "stderrLines": [
+          "noise"
+        ],
+        "controllerAborted": false
+      },
+      "result": {
+        "message": "Claude Code unknown: produced no output within 5000ms (stderr: noise)",
+        "errorClass": "unknown",
+        "shouldRetry": false
+      }
+    }
+  ],
+  "stderr": [
+    {
+      "input": "Spawning Claude Code",
+      "result": "info_banner"
+    },
+    {
+      "input": "Note: --output-format stream-json",
+      "result": "info_banner"
+    },
+    {
+      "input": "Using --permission-mode bypassPermissions",
+      "result": "info_banner"
+    },
+    {
+      "input": "error: something went wrong",
+      "result": "error"
+    },
+    {
+      "input": "fatal: cannot read config",
+      "result": "error"
+    },
+    {
+      "input": "failed to connect",
+      "result": "error"
+    },
+    {
+      "input": "uncaught exception in worker",
+      "result": "error"
+    },
+    {
+      "input": "    at Object.main (/app/index.js:42)",
+      "result": "error"
+    },
+    {
+      "input": "Error: ENOENT",
+      "result": "error"
+    },
+    {
+      "input": "Spawning Claude Code: error in name but is a banner",
+      "result": "info_banner"
+    },
+    {
+      "input": "Loading configuration...",
+      "result": "info"
+    },
+    {
+      "input": "Starting session",
+      "result": "info"
+    }
+  ]
+}

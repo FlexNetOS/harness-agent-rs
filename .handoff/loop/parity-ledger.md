@@ -529,13 +529,18 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-03: Claude Provider
 **Source:** `packages/providers/src/claude/provider.ts`
-**Rust target:** `crates/providers/src/claude/provider.rs`
+**Rust target:** `crates/har-provider/src/claude/{argv.rs, parser.rs}` + `crates/har-provider/src/cli_stream/`
+**Strategy:** SDK→CLI delegation (target-architecture.md §6). Cycle 13 verified the DETERMINISTIC CORE.
 
-- [ ] `ClaudeProvider` implementing `IAgentProvider`: `sendQuery(...)` — uses `@anthropic-ai/claude-agent-sdk`; streams `MessageChunk` events; handles `mcp`, `hooks`, `skills`, `agents`, `effort`, `thinking`, `betas`, `sandbox`, `output_format`, `allowed_tools`, `denied_tools`; fallback model; `settingSources` (provider.ts)
-- [ ] `buildSDKHooksFromYAML(hooks: unknown) -> SdkHooks` — parses node.hooks YAML shape to SDK hook objects (mentioned in dag-executor.ts:379)
-- [ ] Session resume via `sessionId` parameter (provider.ts)
-- [ ] Native tools via `createSdkMcpServer`/`tool()` (provider.ts)
-- [ ] `structuredOutput` extraction from SDK result chunk (provider.ts)
+- [x] **cli_stream/** shared CLI substrate (cycle 13, PARITY-VERIFIED): Spawner (Real+Fake), NdjsonStream framing, classify_stderr_line, classify_subprocess_error + abort-precedence, with_first_message_timeout, CancelGuard
+- [x] **build_claude_argv** (cycle 13, VERIFIED 23/23 vs live bun): full option→flag map; node.allowed_tools→options.tools roster (NOT --allowed-tools); --allowed-tools = MCP wildcards + Skill + sidecar
+- [x] **parse_claude_stream_json** (cycle 13, VERIFIED 20/20): all event types→MessageChunk; load-bearing `is_error==true && subtype=='success'`→clean-success; normalize_claude_usage
+- [x] `structuredOutput` extraction from result chunk (parser.rs, cycle 13)
+- [~] `ClaudeProvider::send_query(...)` ORCHESTRATION — ties argv+cli_stream+parser; registers real provider replacing UnimplementedProvider; + hooks→--settings, env→child-env (CYCLE 14)
+- [ ] `buildSDKHooksFromYAML(hooks) -> SdkHooks` — node.hooks YAML → settings hook objects (CYCLE 14)
+- [!] Native tools via `createSdkMcpServer` → **R8 NEEDS-HUMAN**: in-process SDK MCP server has no CLI equiv; needs SIDECAR MCP server (architect rec). argv seam wired; nativeTools cap stays true
+- [≠] `classify_and_enrich_error` abort-label (timeout/aborted→Unknown): logging-only, msg+retry exact, never control flow
+- [!] cycle-14 follow-ups: `persistSession` + `systemPrompt.excludeDynamicSections` (no CLI flag — confirm SDK-only); allowedTools order when skills+MCP combine
 
 ### UNIT PR-04: Claude Binary Resolver
 **Source:** `packages/providers/src/claude/binary-resolver.ts`

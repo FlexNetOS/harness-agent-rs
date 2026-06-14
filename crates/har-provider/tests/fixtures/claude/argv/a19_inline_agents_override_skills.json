@@ -1,0 +1,2 @@
+{ "requestOptions": {}, "assistantDefaults": {},
+  "nodeConfig": { "skills": ["skill-a"], "agents": { "dag-node-skills": { "description": "override", "prompt": "custom" } } } }

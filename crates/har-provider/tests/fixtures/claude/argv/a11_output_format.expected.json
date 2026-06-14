@@ -1,0 +1,42 @@
+{
+  "options": {
+    "cwd": "/work",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ],
+    "outputFormat": {
+      "type": "json_schema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user",
+    "--output-format-schema",
+    "{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"number\"}}}"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,32 @@
+{
+  "options": {
+    "cwd": "/work",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code",
+      "append": "Extra rules."
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--append-system-prompt",
+    "Extra rules.",
+    "--setting-sources",
+    "project,user"
+  ],
+  "warnings": []
+}

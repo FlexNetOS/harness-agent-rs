@@ -1,0 +1,11 @@
+[
+  {
+    "type": "result",
+    "sessionId": "sess-stop",
+    "tokens": {
+      "input": 20,
+      "output": 5
+    },
+    "stopReason": "stop_sequence"
+  }
+]

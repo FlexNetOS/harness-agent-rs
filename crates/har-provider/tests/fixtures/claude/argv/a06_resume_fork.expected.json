@@ -1,0 +1,33 @@
+{
+  "options": {
+    "cwd": "/work",
+    "forkSession": true,
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user",
+    "--fork-session",
+    "--resume",
+    "sess-abc-123"
+  ],
+  "warnings": []
+}

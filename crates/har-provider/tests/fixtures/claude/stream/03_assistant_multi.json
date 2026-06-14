@@ -1,0 +1,15 @@
+[
+  {
+    "type": "assistant",
+    "content": "First"
+  },
+  {
+    "type": "tool",
+    "toolName": "edit",
+    "toolInput": {}
+  },
+  {
+    "type": "assistant",
+    "content": "Second"
+  }
+]

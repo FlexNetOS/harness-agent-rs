@@ -1,0 +1,2 @@
+{ "requestOptions": {}, "assistantDefaults": {},
+  "nodeConfig": { "mcp": "/cfg/mcp.json" }, "mcpServerNames": ["alpha", "beta"], "mcpMissingVars": [] }

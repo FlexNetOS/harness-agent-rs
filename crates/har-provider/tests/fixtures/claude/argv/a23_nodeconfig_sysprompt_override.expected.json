@@ -1,0 +1,28 @@
+{
+  "options": {
+    "cwd": "/work",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": "node-level-wins",
+    "settingSources": [
+      "project",
+      "user"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--system-prompt",
+    "node-level-wins",
+    "--setting-sources",
+    "project,user"
+  ],
+  "warnings": []
+}

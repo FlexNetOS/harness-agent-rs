@@ -1,0 +1,39 @@
+{
+  "options": {
+    "cwd": "/work",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ],
+    "mcpServers": {},
+    "allowedTools": [
+      "mcp__alpha__*",
+      "mcp__beta__*"
+    ],
+    "__mcpConfigPath": "/cfg/mcp.json"
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user",
+    "--mcp-config",
+    "/cfg/mcp.json",
+    "--allowed-tools",
+    "mcp__alpha__*,mcp__beta__*"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,35 @@
+{
+  "options": {
+    "cwd": "/work",
+    "model": "claude-opus-4",
+    "fallbackModel": "claude-haiku-3",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--model",
+    "claude-opus-4",
+    "--fallback-model",
+    "claude-haiku-3",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user"
+  ],
+  "warnings": []
+}

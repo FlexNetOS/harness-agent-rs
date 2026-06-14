@@ -1,0 +1,1 @@
+{ "requestOptions": { "outputFormat": { "type": "json_schema", "schema": { "type": "object" } } }, "assistantDefaults": {} }

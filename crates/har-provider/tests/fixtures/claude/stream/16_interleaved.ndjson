@@ -1,0 +1,4 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"bash","input":{"command":"ls"},"id":"call-1"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"output-of-ls"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Done analyzing."}]}}
+{"type":"result","subtype":"success","is_error":false,"session_id":"s-int","usage":{"input_tokens":5,"output_tokens":3}}

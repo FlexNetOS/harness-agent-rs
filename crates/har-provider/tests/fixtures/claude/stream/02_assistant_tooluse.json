@@ -1,0 +1,10 @@
+[
+  {
+    "type": "tool",
+    "toolName": "bash",
+    "toolInput": {
+      "command": "ls"
+    },
+    "toolCallId": "tu-001"
+  }
+]

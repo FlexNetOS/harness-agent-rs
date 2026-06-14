@@ -1,0 +1,9 @@
+[
+  {
+    "type": "rate_limit",
+    "rateLimitInfo": {
+      "retryAfter": 60,
+      "limit": 1000
+    }
+  }
+]

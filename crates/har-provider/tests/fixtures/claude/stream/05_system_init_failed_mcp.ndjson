@@ -1,0 +1,1 @@
+{"type":"system","subtype":"init","mcp_servers":[{"name":"my-server","status":"failed"},{"name":"ok-server","status":"connected"}]}
