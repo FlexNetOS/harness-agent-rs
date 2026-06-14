@@ -1,0 +1,20 @@
+[package]
+name = "har-orchestrator"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Single-agent orchestrator path + manage_run native tool + prompt builder."
+
+[dependencies]
+har-contract = { path = "../har-contract" }
+har-provider = { path = "../har-provider" }
+har-dag-executor = { path = "../har-dag-executor" }
+har-ledger = { path = "../har-ledger" }
+har-isolation = { path = "../har-isolation" }
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+tracing.workspace = true

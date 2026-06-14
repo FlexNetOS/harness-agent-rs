@@ -1,7 +1,12 @@
-//! har-core — placeholder. The harness-agent-rs runtime is being ported from meta/Archon's design
-//! (DAG workflow executor + IAgentProvider abstraction + worktree isolation + control plane),
-//! with run-ledger->hf, coordination->weave+grit, memory->icm. See harness_hub ADR-0001.
-//! The rust-port harness (/rust-port) defines the real crate layout during DISCOVER.
+//! har-core — Thin re-export facade (ADR-0001 R1).
+//!
+//! Decision: keep `har-core` as a convenience re-export so downstream `use har_core::*` paths
+//! remain stable as more crates are ported. This avoids forcing callers to update imports every
+//! cycle. The baseline stays green; there is no duplication of logic.
+//!
+//! Re-exports:
+//!   - `har-contract` (zero-dep provider/message contract)
+//!   - `har-workflow-schema` (workflow schema types: loop, retry, hooks, and future units)
 
-/// Baseline marker so `cargo build` is green before the port begins.
-pub const PORT_STATUS: &str = "scaffold: awaiting rust-port DISCOVER";
+pub use har_contract as contract;
+pub use har_workflow_schema as workflow_schema;

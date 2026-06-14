@@ -1,0 +1,13 @@
+[package]
+name = "har-memory"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Cross-run memory surface over icm (ADR-0001 MAP)."
+
+[dependencies]
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
