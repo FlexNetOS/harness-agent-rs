@@ -29,7 +29,7 @@ license = "MIT"
 [workspace.dependencies]
 # Serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 # Error handling
 thiserror = "2"
@@ -64,3 +64,9 @@ indexmap = { version = "2", features = ["serde"] }
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
+
+# Regex
+regex = "1"
+
+# Lazy statics
+once_cell = "1"

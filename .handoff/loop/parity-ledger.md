@@ -121,7 +121,7 @@ The heart of the port. All units here are `PORT`.
 - [x] `NodeState` enum: `pending | running | completed | failed | skipped` (workflow-run.ts:52-54) — ported; `cancelled` correctly rejected; wire names tested
 - [x] `NodeOutput` discriminated union on `state` field: completed/running (output, sessionId?, structuredOutput?, declaredFields?), failed (output, sessionId?, error, structuredOutput?, declaredFields?), pending/skipped (output only) (workflow-run.ts:75-95) — ported; failed missing `error` correctly rejected; all 5 state variants tested
 - [x] `WorkflowRun` struct: `id`, `workflow_name`, `conversation_id`, `parent_conversation_id?`, `codebase_id?`, `status`, `user_message`, `metadata: Map<String,Value>`, `started_at`, `completed_at?`, `last_activity_at?`, `working_path?`, `user_id?` (workflow-run.ts:106-122) — ported; `.nullable()` fields are required-present (absent→REJECT, null→None) per zod-v4 semantics
-- [≠] WF-06 date fields `started_at`/`completed_at`/`last_activity_at`: source `z.date()` (JS Date) ↔ Rust `chrono::DateTime<Utc>`. JSON/serde has no Date type; the typed timestamp still rejects non-datetime/garbage strings (validation preserved) and serializes ISO-8601 wire-identical to `Date.toJSON()`. No capability lost. **NEEDS OWNER SIGN-OFF** per ADR-0001 `- [≠]` protocol (currently recorded, not yet approved).
+- [≠] WF-06 date fields `started_at`/`completed_at`/`last_activity_at`: source `z.date()` (JS Date) ↔ Rust `chrono::DateTime<Utc>`. JSON/serde has no Date type; the typed timestamp still rejects non-datetime/garbage strings (validation preserved) and serializes ISO-8601 wire-identical to `Date.toJSON()`. No capability lost. **OWNER-APPROVED 2026-06-13** (owner: "approve the z.date() to chrono mapping and continue"). ADR-0001 `- [≠]` protocol satisfied.
 - [x] `ApprovalContext` struct: `nodeId: String`, `message: String`, `type?: 'approval'|'interactive_loop'`, `iteration?: f64`, `sessionId?: String`, `captureResponse?: bool`, `onRejectPrompt?: String`, `onRejectMaxAttempts?: f64` (workflow-run.ts:124-140) — ported; NOTE: `iteration` and `onRejectMaxAttempts` are plain TS `number` (no zod `.int()`) → `f64` (cycle-1 lesson applied); wire camelCase names tested
 - [x] `isApprovalContext(val) -> bool` type guard: requires `nodeId: String` and `message: String` (workflow-run.ts:148-155) — ported as `is_approval_context(&Value) -> bool`; all guard cases tested
 - [x] `ArtifactType` enum: `pr | commit | file_created | file_modified | branch` (workflow-run.ts:161-168) — ported; all 5 wire names tested; `file_deleted` correctly rejected
@@ -249,25 +249,33 @@ This is the central porting target. Extremely behavior-rich.
 
 ### UNIT WF-12: Condition Evaluator
 **Source:** `packages/workflows/src/condition-evaluator.ts`
-**Rust target:** `crates/workflows/src/condition_evaluator.rs`
+**Rust target:** `crates/har-dag-executor/src/condition_evaluator.rs`
+**Status:** `- [x]` parity-VERIFIED cycle 4 (re-verify 2026-06-13: differential vs live TS oracle, PASS)
 
-- [ ] `evaluateCondition(expr: &str, nodeOutputs: &Map<String,NodeOutput>) -> {result: bool, parsed: bool}` — compound expression evaluator for `when:` field (condition-evaluator.ts:205)
-- [ ] Supported syntax: `$nodeId.output == 'VALUE'`, `$nodeId.output != 'VALUE'`, `$nodeId.output.field == 'VALUE'`, `$nodeId.field == 'VALUE'` (shorthand), numeric `>`, `>=`, `<`, `<=`, unquoted RHS numbers/booleans, compound `&&` (higher precedence) and `||` (lower) — NO parentheses
-- [ ] Parse-failure is fail-closed → `{result: false, parsed: false}` — node is skipped (condition-evaluator.ts:18-26)
-- [ ] Unresolvable `$node.output.field` THROWS `OutputRefError` → node FAILS (not silently skipped) (condition-evaluator.ts:168-171)
-- [ ] `resolveOutputRef(nodeId, field?, nodeOutputs)` — resolves `$node.output` or `$node.output.field`; unknown node → `''` + warn; bare output → output text; field via `resolveNodeOutputField` (condition-evaluator.ts:48-75)
-- [ ] `splitOutsideQuotes(expr, sep)` — quote-aware splitter for `&&`/`||` (condition-evaluator.ts:81-100)
-- [ ] `evaluateAtom(expr, nodeOutputs) -> {result, parsed}` — single atom evaluator using `atomPattern` (condition-evaluator.ts:123-195)
-- [ ] `atomPattern` regex: node ID `[a-zA-Z_][a-zA-Z0-9_-]*`, field `[a-zA-Z_][a-zA-Z0-9_]*`, operators `==|!=|<=|>=|<|>`, quoted or unquoted RHS (condition-evaluator.ts:117-118)
-- [ ] Short-circuit evaluation: AND short-circuits on first false; OR short-circuits on first true (condition-evaluator.ts:221-228)
+- [x] `evaluateCondition(expr: &str, nodeOutputs: &HashMap<String,NodeOutput>) -> Result<EvaluationResult, OutputRefError>` — compound expression evaluator for `when:` field (condition-evaluator.ts:205) — ported; propagates OutputRefError exactly
+- [x] Supported syntax: `$nodeId.output == 'VALUE'`, `$nodeId.output != 'VALUE'`, `$nodeId.output.field == 'VALUE'`, `$nodeId.field == 'VALUE'` (shorthand), numeric `>`, `>=`, `<`, `<=`, unquoted RHS numbers/booleans, compound `&&` (higher precedence) and `||` (lower) — NO parentheses — all cases tested
+- [x] Parse-failure is fail-closed → `{result: false, parsed: false}` — node is skipped (condition-evaluator.ts:18-26) — tested
+- [x] Unresolvable `$node.output.field` THROWS `OutputRefError` → node FAILS (not silently skipped) (condition-evaluator.ts:168-171) — tested: error propagates as Err, not swallowed
+- [x] `resolveOutputRef(nodeId, field?, nodeOutputs)` — resolves `$node.output` or `$node.output.field`; unknown node → `''` + warn; bare output → output text; field via `resolveNodeOutputField` (condition-evaluator.ts:48-75) — ported; null values stringified to "null" matching line 71-73
+- [x] `splitOutsideQuotes(expr, sep)` — quote-aware splitter for `&&`/`||` (condition-evaluator.ts:81-100) — ported; tested including quoted-string-with-separator cases
+- [x] `evaluateAtom(expr, nodeOutputs) -> {result, parsed}` — single atom evaluator using `atomPattern` (condition-evaluator.ts:123-195) — ported; all operator branches tested
+- [x] `atomPattern` regex: node ID `[a-zA-Z_][a-zA-Z0-9_-]*`, field `[a-zA-Z_][a-zA-Z0-9_]*`, operators `==|!=|<=|>=|<|>`, quoted or unquoted RHS (condition-evaluator.ts:117-118) — exact regex semantics replicated via `regex` crate
+- [x] Short-circuit evaluation: AND short-circuits on first false; OR short-circuits on first true (condition-evaluator.ts:221-228) — tested with truth-table and early-exit cases
 
 ### UNIT WF-13: Output Reference Resolver
 **Source:** `packages/workflows/src/output-ref.ts`
-**Rust target:** `crates/workflows/src/output_ref.rs`
+**Rust target:** `crates/har-dag-executor/src/output_ref.rs`
+**Status:** `- [x]` parity-VERIFIED cycle 4 (re-verify 2026-06-13: differential vs live TS oracle, PASS)
 
-- [ ] `declaredFieldsFromSchema(output_format: Option<Record>) -> Option<Set<String>>` — extracts field names from JSON Schema `properties` (output-ref.ts)
-- [ ] `resolveNodeOutputField(nodeOutput: NodeOutput, nodeId: String, field: String) -> Resolution` — prefers `structuredOutput`, falls back to parsing `output` as JSON, throws `OutputRefError` for unresolvable refs (no-silent-drop guarantee) (dag-executor.ts:362-376)
-- [ ] `OutputRefError` error type
+- [x] `declared_fields_from_schema(output_format: Option<&Value>) -> Option<Vec<String>>` — extracts field names from JSON Schema `properties`; None for no-schema/non-object-schema (output-ref.ts:70-77) — ported; all 5 cases tested
+- [x] `resolve_node_output_field(nodeOutput: &NodeOutput, nodeId: &str, field: &str) -> Result<FieldResolution, OutputRefError>` — full 3-path resolution table (declared-schema → lenient-structured → schemaless); prefers structuredOutput, falls back to JSON-parsing output; throws OutputRefError for unresolvable refs (output-ref.ts:107-157) — ported; code-fence stripping via FENCE_RE; all paths tested
+- [x] `OutputRefError` error type: 4 reason variants (`NotInSchema`, `Unparseable`, `MissingKey`, `ProducerNotRun`), exact error messages match TS source (output-ref.ts:47-59) — tested; message strings match source exactly
+- [x] `FieldResolution` enum: `Value(Value)` | `Empty` (output-ref.ts:79) — ported
+- [x] Skipped/pending producer → `producer-not-run` throw (output-ref.ts:116-118) — tested
+- [x] Declared-schema path: field not in schema → throw `not-in-schema`; absent/null value → Empty; field present → Value; prefers structuredOutput (output-ref.ts:125-138) — all cases tested
+- [x] Lenient-structured path: key present → Value (null value kept, not mapped to Empty); key absent → Empty (no throw) (output-ref.ts:145-149) — tested including null-kept case
+- [x] Schemaless path: non-JSON output → throw `unparseable`; JSON object missing key → throw `missing-key`; key present → Value (output-ref.ts:153-156) — all cases tested
+- [x] Markdown code-fence stripping (`FENCE_RE`, output-ref.ts:82) — ported; tested both ` ```json ` and bare ` ``` ` fences
 
 ### UNIT WF-14: Model Validation / AI Profile
 **Source:** `packages/workflows/src/model-validation.ts`

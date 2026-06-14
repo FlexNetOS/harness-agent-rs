@@ -24,4 +24,20 @@
 //!   - `withIdleTimeout` → `tokio::time::timeout` on the stream poll loop
 //!   - All runtime constants match source exactly: `CANCEL_CHECK_INTERVAL_MS = 10_000`, etc.
 //!
-//! Status: STUB — not yet ported. Will be filled in ITERATE cycles 9–12 (largest unit).
+//! Cycle 4 adds:
+//!   - UNIT WF-13: `output_ref` — `OutputRefError`, `declared_fields_from_schema`,
+//!     `resolve_node_output_field` (strict no-silent-drop contract, 3-path resolution table)
+//!   - UNIT WF-12: `condition_evaluator` — `evaluate_condition`, `split_outside_quotes`,
+//!     atom pattern (regex), AND/OR precedence, short-circuit, parse-fail→skip vs
+//!     unresolvable-ref→error asymmetry
+
+// Cycle 4: WF-13 and WF-12
+pub mod output_ref;
+pub mod condition_evaluator;
+
+// Public re-exports for downstream consumers.
+pub use output_ref::{
+    declared_fields_from_schema, resolve_node_output_field, FieldResolution, OutputRefError,
+    OutputRefErrorReason,
+};
+pub use condition_evaluator::{evaluate_condition, split_outside_quotes, EvaluationResult};

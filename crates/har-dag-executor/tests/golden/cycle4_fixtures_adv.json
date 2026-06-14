@@ -1,0 +1,123 @@
+[
+ {
+  "id": "wf12-adv-neg-exp-trail",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > -400",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "  -3.5e2x"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-dot5-trail",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 0",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": ".5abc"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-plus-dot5",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 0",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "+.5"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-two-dots",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 1",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "1.2.3"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-e5",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 0",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "e5"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-spaces",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 0",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "  "
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-traildot-exp",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 4000",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "5.e3x"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-neg3",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > -4",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "-3"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-hex-again",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 10",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "0x20"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-exp-nodigits",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 0",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "1e"
+   }
+  }
+ },
+ {
+  "id": "wf12-adv-exp-signonly",
+  "fn": "evaluateCondition",
+  "expr": "$n.output > 0",
+  "nodeOutputs": {
+   "n": {
+    "state": "completed",
+    "output": "1e+"
+   }
+  }
+ }
+]
