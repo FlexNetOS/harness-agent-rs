@@ -1,0 +1,157 @@
+{
+  "b1_duplicate_throw": {
+    "threw": true,
+    "message": "Provider 'dup' is already registered"
+  },
+  "b1b_builtin_idempotent": {
+    "threw": false,
+    "count": 2
+  },
+  "b2_insertion_order": [
+    "zebra",
+    "alpha",
+    "mike"
+  ],
+  "b3_get_agent_unknown": {
+    "threw": true,
+    "name": "UnknownProviderError",
+    "message": "Unknown provider: 'zzz'. Available: a, b, c",
+    "isUnknownProviderError": true
+  },
+  "b3_get_caps_unknown": {
+    "threw": true,
+    "message": "Unknown provider: 'zzz'. Available: a, b, c"
+  },
+  "b3_empty_unknown": {
+    "message": "Unknown provider: 'missing'. Available: "
+  },
+  "b4_capability_table": {
+    "claude": {
+      "sessionResume": true,
+      "mcp": true,
+      "hooks": true,
+      "skills": true,
+      "agents": true,
+      "toolRestrictions": true,
+      "structuredOutput": "enforced",
+      "envInjection": true,
+      "costControl": true,
+      "effortControl": true,
+      "thinkingControl": true,
+      "fallbackModel": true,
+      "sandbox": true,
+      "nativeTools": true
+    },
+    "codex": {
+      "sessionResume": true,
+      "mcp": true,
+      "hooks": false,
+      "skills": true,
+      "agents": false,
+      "toolRestrictions": false,
+      "structuredOutput": "enforced",
+      "envInjection": true,
+      "costControl": false,
+      "effortControl": false,
+      "thinkingControl": false,
+      "fallbackModel": false,
+      "sandbox": false,
+      "nativeTools": false
+    },
+    "copilot": {
+      "sessionResume": true,
+      "mcp": true,
+      "hooks": false,
+      "skills": true,
+      "agents": true,
+      "toolRestrictions": true,
+      "structuredOutput": "best-effort",
+      "envInjection": true,
+      "costControl": false,
+      "effortControl": true,
+      "thinkingControl": true,
+      "fallbackModel": false,
+      "sandbox": false,
+      "nativeTools": false
+    },
+    "pi": {
+      "sessionResume": true,
+      "mcp": false,
+      "hooks": false,
+      "skills": true,
+      "agents": false,
+      "toolRestrictions": true,
+      "structuredOutput": "best-effort",
+      "envInjection": true,
+      "costControl": false,
+      "effortControl": true,
+      "thinkingControl": true,
+      "fallbackModel": false,
+      "sandbox": false,
+      "nativeTools": true
+    },
+    "opencode": {
+      "sessionResume": true,
+      "mcp": true,
+      "hooks": true,
+      "skills": true,
+      "agents": true,
+      "toolRestrictions": true,
+      "structuredOutput": "enforced",
+      "envInjection": true,
+      "costControl": false,
+      "effortControl": false,
+      "thinkingControl": false,
+      "fallbackModel": false,
+      "sandbox": false,
+      "nativeTools": false
+    }
+  },
+  "b5_full_order": [
+    {
+      "id": "claude",
+      "displayName": "Claude (Anthropic)",
+      "builtIn": true
+    },
+    {
+      "id": "codex",
+      "displayName": "Codex (OpenAI)",
+      "builtIn": true
+    },
+    {
+      "id": "opencode",
+      "displayName": "OpenCode (community)",
+      "builtIn": false
+    },
+    {
+      "id": "pi",
+      "displayName": "Pi (community)",
+      "builtIn": false
+    },
+    {
+      "id": "copilot",
+      "displayName": "Copilot (GitHub)",
+      "builtIn": false
+    }
+  ],
+  "b5_info_keys": [
+    "builtIn",
+    "capabilities",
+    "displayName",
+    "id"
+  ],
+  "b5_community_order": [
+    "opencode",
+    "pi",
+    "copilot"
+  ],
+  "b6_clear": {
+    "before": 5,
+    "after": 0,
+    "isRegisteredAfter": false
+  },
+  "b7_is_registered": {
+    "present": true,
+    "absent": false
+  }
+}

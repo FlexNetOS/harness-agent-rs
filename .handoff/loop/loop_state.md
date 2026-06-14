@@ -8,16 +8,43 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1
-cycles_total: 10
-ledger: parity 29/79 units verified — har-isolation COMPLETE (IS-01..08). IS-04 [≠] panic CLOSED.
-        (PR-01; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08).
-last_item: cycle 10 — IS-02 WorktreeProvider + IS-03 Resolver — PASS vs live bun (gate caught 7 real
-           divergences over 2 fix rounds incl. a fix-induced regression). branch-naming byte-exact.
-status: ITERATE — cycle 10 committed. har-isolation done. Next: PR-02 provider registry → PR-03..
-        claude/codex/community adapters (IAgentProvider over provider CLIs) → har-ledger (CO db MAP→hf)
-        → WF-09 dag-executor (the keystone state machine).
-last_update: 2026-06-14T06:00:00Z
+cycles_this_session: 2
+cycles_total: 11
+ledger: parity 30/79 units verified — har-isolation COMPLETE (IS-01..08) + PR-01/PR-02 provider registry.
+        (PR-01/02; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08).
+last_item: cycle 11 — PR-02 Provider Registry — PASS vs live bun on FIRST verify (no fix rounds): 70/70
+           capability cells re-derived from source match; UnknownProviderError format exact; idempotent-vs-throw.
+status: AT/NEAR CYCLE BUDGET. Next: PR-03 ClaudeProvider (IAgentProvider over claude CLI subprocess) →
+        PR-07 CodexProvider → PR-09/10/11 community → har-ledger (CO db MAP→hf) → WF-09 dag-executor.
+        NOTE: provider adapters (PR-03+) spawn external CLIs — harder to differential-test; the registry's
+        UnimplementedProvider factory seam is wired and each real impl just replaces its factory closure.
+last_update: 2026-06-14T07:00:00Z
+
+## Cycle-11 (ported, parity UNPROVEN — awaiting verifier gate)
+- PR-02 Provider Registry: `crates/har-provider/src/lib.rs`. Full registry implementation:
+  - Global OnceLock<Mutex<IndexMap>> — insertion-order Map semantics matching JS Map.
+  - `register_provider()`: THROWS on duplicate ("Provider '…' is already registered") — exact error.
+  - `get_agent_provider()`: calls factory(), throws UnknownProviderError with exact message format.
+  - `get_registration_info()`: ProviderInfo projection (factory non-Clone in Rust, excluded).
+  - `get_provider_capabilities()`: throws UnknownProviderError.
+  - `get_registered_providers()` / `get_provider_info_list()`: insertion order preserved.
+  - `is_registered_provider()`: simple contains_key.
+  - `register_builtin_providers()`: IDEMPOTENT (skip-if-present); claude+codex; exact capabilities.
+  - `register_community_providers()`: opencode→pi→copilot order (exact source order).
+  - `register_{copilot,opencode,pi}_provider()`: each IDEMPOTENT (return-if-present); builtIn:false.
+  - `clear_registry()`: test-only.
+  - ALL 5 capability constant structs: CLAUDE/CODEX/COPILOT/PI/OPENCODE — 14 flags each, exact source.
+  - `UnknownProviderError`: exact message "Unknown provider: '…'. Available: a, b, c".
+  - Factory seam: `UnimplementedProvider` placeholder for PR-03..PR-11 (panics on send_query).
+  - 35 serial tests — all #[serial] (mutate global registry singleton).
+  - Deps added: indexmap (workspace), futures-core 0.3, serial_test 3 (dev).
+- Workspace: 786 tests total (35 new in har-provider). clippy --all-targets -D warnings CLEAN.
+
+LEDGER CORRECTIONS (cycle 11):
+- Rust target: `crates/har-provider/src/lib.rs` (ledger had `crates/providers/src/registry.rs`).
+- `getProviderFactory` is NOT a real symbol — it was the ledger's misname for `getAgentProvider`.
+- `getRegistration` and `getProviderInfoList` and `clearRegistry` are real registry.ts exports; ported.
+- Community registration order: opencode → pi → copilot (source line 157-159).
 
 ## Cycle-10 (ported, parity UNPROVEN — awaiting verifier gate)
 - IS-02 WorktreeProvider: `crates/har-isolation/src/providers/worktree.rs` (new `providers/` module). Full

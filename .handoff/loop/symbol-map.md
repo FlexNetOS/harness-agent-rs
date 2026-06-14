@@ -357,14 +357,27 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 - [x] unit:PR-01 `providers/types.ts::IAgentProvider` → `providers::types::IAgentProvider` (trait) — shape verified 2026-06-13 (send_query Stream; cancel param; sync get_type/get_capabilities)
 
 ### PR-02 — registry.ts
+NOTE: Rust target corrected to `har_provider` crate (not `providers::registry`).
 
-- [ ] unit:PR-02 `providers/registry.ts::registerProvider` → `providers::registry::register_provider()`
-- [ ] unit:PR-02 `providers/registry.ts::getRegisteredProviders` → `providers::registry::get_registered_providers()`
-- [ ] unit:PR-02 `providers/registry.ts::isRegisteredProvider` → `providers::registry::is_registered_provider()`
-- [ ] unit:PR-02 `providers/registry.ts::getProviderCapabilities` → `providers::registry::get_provider_capabilities()`
-- [ ] unit:PR-02 `providers/registry.ts::getProviderFactory` → `providers::registry::get_provider_factory()`
-- [ ] unit:PR-02 `providers/index.ts::registerBuiltinProviders` → `providers::registry::register_builtin_providers()`
-- [ ] unit:PR-02 `providers/index.ts::registerCommunityProviders` → `providers::registry::register_community_providers()`
+- [x] unit:PR-02 `providers/registry.ts::registerProvider` → `har_provider::register_provider()` — THROWS on duplicate; exact error message matched
+- [x] unit:PR-02 `providers/registry.ts::getRegisteredProviders` → `har_provider::get_registered_providers()` — returns Vec<ProviderInfo> (insertion order via IndexMap)
+- [x] unit:PR-02 `providers/registry.ts::isRegisteredProvider` → `har_provider::is_registered_provider()`
+- [x] unit:PR-02 `providers/registry.ts::getProviderCapabilities` → `har_provider::get_provider_capabilities()` — throws UnknownProviderError
+- [x] unit:PR-02 `providers/registry.ts::getAgentProvider` → `har_provider::get_agent_provider()` — calls factory(); throws UnknownProviderError (NOTE: ledger had `getProviderFactory` — not a real symbol; factory is called inside getAgentProvider)
+- [x] unit:PR-02 `providers/registry.ts::getRegistration` → `har_provider::get_registration_info()` — ProviderInfo projection (factory excluded; Rust ProviderRegistration is non-Clone)
+- [x] unit:PR-02 `providers/registry.ts::getProviderInfoList` → `har_provider::get_provider_info_list()` — alias for get_registered_providers
+- [x] unit:PR-02 `providers/registry.ts::clearRegistry` → `har_provider::clear_registry()` — test-only
+- [x] unit:PR-02 `providers/index.ts::registerBuiltinProviders` → `har_provider::register_builtin_providers()` — idempotent; claude+codex with exact capabilities; factory seam (UnimplementedProvider) for PR-03/07
+- [x] unit:PR-02 `providers/index.ts::registerCommunityProviders` → `har_provider::register_community_providers()` — opencode→pi→copilot order; idempotent
+- [x] unit:PR-02 `community/copilot/registration.ts::registerCopilotProvider` → `har_provider::register_copilot_provider()` — idempotent; builtIn:false; factory seam for PR-10
+- [x] unit:PR-02 `community/opencode/registration.ts::registerOpencodeProvider` → `har_provider::register_opencode_provider()` — idempotent; builtIn:false; factory seam for PR-11
+- [x] unit:PR-02 `community/pi/registration.ts::registerPiProvider` → `har_provider::register_pi_provider()` — idempotent; builtIn:false; factory seam for PR-09
+- [x] unit:PR-02 `providers/errors.ts::UnknownProviderError` → `har_provider::UnknownProviderError` — exact message format matched
+- [x] unit:PR-02 `claude/capabilities.ts::CLAUDE_CAPABILITIES` → `har_provider::CLAUDE_CAPABILITIES` — all 14 flags exact source values
+- [x] unit:PR-02 `codex/capabilities.ts::CODEX_CAPABILITIES` → `har_provider::CODEX_CAPABILITIES` — all 14 flags exact source values
+- [x] unit:PR-02 `community/copilot/capabilities.ts::COPILOT_CAPABILITIES` → `har_provider::COPILOT_CAPABILITIES` — all 14 flags exact source values
+- [x] unit:PR-02 `community/pi/capabilities.ts::PI_CAPABILITIES` → `har_provider::PI_CAPABILITIES` — all 14 flags exact source values
+- [x] unit:PR-02 `community/opencode/capabilities.ts::OPENCODE_CAPABILITIES` → `har_provider::OPENCODE_CAPABILITIES` — all 14 flags exact source values
 
 ### PR-03 to PR-13 (provider implementations)
 

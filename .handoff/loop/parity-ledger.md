@@ -493,15 +493,39 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 
 ### UNIT PR-02: Provider Registry
 **Source:** `packages/providers/src/registry.ts`
-**Rust target:** `crates/providers/src/registry.rs`
+**Rust target:** `crates/har-provider/src/lib.rs` (NOTE: ledger had wrong path `crates/providers/src/registry.rs`; actual target is `crates/har-provider/src/lib.rs` per target-architecture.md)
+**Status:** `- [~]` ported, parity unproven (cycle 11)
 
-- [ ] `registerProvider(registration: ProviderRegistration)` — global registry (registry.ts)
-- [ ] `getRegisteredProviders() -> Vec<ProviderRegistration>` (registry.ts)
-- [ ] `isRegisteredProvider(id: &str) -> bool` (registry.ts)
-- [ ] `getProviderCapabilities(id: &str) -> ProviderCapabilities` (registry.ts)
-- [ ] `getProviderFactory(id: &str) -> fn() -> Box<dyn IAgentProvider>` (registry.ts)
-- [ ] `registerBuiltinProviders()` — registers claude + codex (index.ts)
-- [ ] `registerCommunityProviders()` — registers pi + copilot + opencode (index.ts)
+LEDGER CORRECTIONS:
+- Rust target path corrected: `crates/har-provider/src/lib.rs` (was `crates/providers/src/registry.rs`).
+- `getProviderFactory` does not exist as a separate function in source; the factory is called via `getAgentProvider(id)` which calls `entry.factory()`. Ported as `get_agent_provider(id)`.
+- `getRegistration(id)` (throws UnknownProviderError) is an additional exported function from source (registry.ts:64-70) — ported as `get_registration_info(id)` (returns ProviderInfo projection, since Rust ProviderRegistration is non-Clone due to factory closure).
+- `getProviderInfoList()` (registry.ts:90-97) — ported as `get_provider_info_list()`.
+- `clearRegistry()` (registry.ts:163-165) — test-only; ported as `clear_registry()`.
+- Community providers order (registerCommunityProviders): opencode → pi → copilot (NOT pi → copilot → opencode as ledger implied).
+- `CLAUDE_CAPABILITIES`, `CODEX_CAPABILITIES`, `COPILOT_CAPABILITIES`, `PI_CAPABILITIES`, `OPENCODE_CAPABILITIES` constants ported from their respective capabilities.ts files.
+- `UnknownProviderError` from `packages/providers/src/errors.ts` — ported as `pub struct UnknownProviderError` with exact error message format.
+- Factory seam: PR-03/07/09/10/11 not yet ported → `UnimplementedProvider` placeholder; CAPABILITIES are the exact source values.
+
+- [x] `register_provider(entry: ProviderRegistration) -> Result<(), String>` — THROWS on duplicate: "Provider '…' is already registered" (registry.ts:39-45)
+- [x] `get_agent_provider(id: &str) -> Result<Arc<dyn AgentProvider>, UnknownProviderError>` — calls entry.factory(); throws UnknownProviderError (registry.ts:51-58)
+- [x] `get_registration_info(id: &str) -> Result<ProviderInfo, UnknownProviderError>` — ProviderInfo projection (non-Clone factory excluded) (registry.ts:64-70)
+- [x] `get_provider_capabilities(id: &str) -> Result<ProviderCapabilities, UnknownProviderError>` (registry.ts:76-78)
+- [x] `get_registered_providers() -> Vec<ProviderInfo>` — insertion order (IndexMap) (registry.ts:83-85)
+- [x] `get_provider_info_list() -> Vec<ProviderInfo>` — alias (registry.ts:90-97)
+- [x] `is_registered_provider(id: &str) -> bool` (registry.ts:102-104)
+- [x] `register_builtin_providers()` — idempotent; claude + codex with exact capabilities (registry.ts:110-134)
+- [x] `register_community_providers()` — opencode → pi → copilot order (registry.ts:156-160)
+- [x] `register_opencode_provider()` — idempotent; `builtIn: false`; OPENCODE_CAPABILITIES (community/opencode/registration.ts)
+- [x] `register_pi_provider()` — idempotent; `builtIn: false`; PI_CAPABILITIES (community/pi/registration.ts)
+- [x] `register_copilot_provider()` — idempotent; `builtIn: false`; COPILOT_CAPABILITIES (community/copilot/registration.ts)
+- [x] `clear_registry()` — test-only (registry.ts:163-165)
+- [x] `CLAUDE_CAPABILITIES` — all 14 flags exact source values (claude/capabilities.ts)
+- [x] `CODEX_CAPABILITIES` — all 14 flags exact source values (codex/capabilities.ts)
+- [x] `COPILOT_CAPABILITIES` — all 14 flags exact source values (community/copilot/capabilities.ts)
+- [x] `PI_CAPABILITIES` — all 14 flags exact source values (community/pi/capabilities.ts)
+- [x] `OPENCODE_CAPABILITIES` — all 14 flags exact source values (community/opencode/capabilities.ts)
+- [x] `UnknownProviderError` — exact message: "Unknown provider: '…'. Available: …" (errors.ts)
 
 ### UNIT PR-03: Claude Provider
 **Source:** `packages/providers/src/claude/provider.ts`
