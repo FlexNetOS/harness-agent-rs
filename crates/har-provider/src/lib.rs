@@ -1,4 +1,5 @@
-//! har-provider — Provider registry and `AgentProvider` stub implementations.
+//! har-provider — Provider registry, `AgentProvider` stub implementations,
+//! and Claude provider sub-modules (binary resolver, config parsing, native tools).
 //!
 //! UNIT PR-02 port of `packages/providers/src/registry.ts` and `packages/providers/src/index.ts`.
 //!
@@ -17,6 +18,9 @@
 //! The factory seam for unported providers returns a `UnimplementedProvider` placeholder that
 //! panics on `send_query` — this is correct: the CAPABILITIES (the consumer-facing contract)
 //! are the real source values, and will remain unchanged when PR-03+ land.
+
+// ─── Sub-modules (PR-04, PR-05, PR-06) ──────────────────────────────────────
+pub mod claude;
 
 use har_contract::{
     AgentProvider, MessageChunk, ProviderCapabilities, ProviderInfo, ProviderRegistration,

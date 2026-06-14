@@ -18,5 +18,8 @@ async-stream.workspace = true
 tracing.workspace = true
 indexmap.workspace = true
 
+directories.workspace = true
+
 [dev-dependencies]
 serial_test = "3"
+tempfile = "3"

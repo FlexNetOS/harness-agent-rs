@@ -539,22 +539,85 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-04: Claude Binary Resolver
 **Source:** `packages/providers/src/claude/binary-resolver.ts`
-**Rust target:** `crates/providers/src/claude/binary_resolver.rs`
+**Rust target:** `crates/har-provider/src/claude/binary_resolver.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 12)
 
-- [ ] `resolveCaudeBinaryPath(config: ClaudeProviderDefaults) -> PathBuf` — env var `CLAUDE_BIN_PATH` > config.claudeBinaryPath > node_modules fallback (binary-resolver.ts)
+LEDGER CORRECTIONS:
+- Rust target path corrected: `crates/har-provider/src/claude/binary_resolver.rs` (was wrong).
+- Source function name is `resolveClaudeBinaryPath` (ledger had typo "resolveCaudeBinaryPath").
+- Function signature: `resolve_claude_binary_path(config_claude_binary_path: Option<&str>, is_binary_mode: bool) -> Result<Option<PathBuf>, String>`.
+- Returns `Option<PathBuf>`: `None` in dev mode with no env var (caller omits the SDK arg).
+- `path_kind(path)` and `validate_and_expand()` are additional exported helpers.
+- `CLAUDE_BINARY_NAME`: platform constant (`claude.exe` on Windows, `claude` elsewhere).
+- `INSTALL_INSTRUCTIONS`: exact error message text from source — pinned in tests.
 
-### UNIT PR-05: Claude Capabilities + Config
-**Source:** `packages/providers/src/claude/capabilities.ts`, `packages/providers/src/claude/config.ts`
-**Rust target:** `crates/providers/src/claude/capabilities.rs`
+- [x] `CLAUDE_BINARY_NAME: &str` — `claude.exe` on Windows, `claude` elsewhere (binary-resolver.ts:32)
+- [x] `PathKind` enum: `File | Directory | Missing` (binary-resolver.ts:34)
+- [x] `path_kind(path: &Path) -> PathKind` — stat + classify; non-ENOENT errors logged + collapsed to Missing (binary-resolver.ts:48-61)
+- [x] `validate_and_expand(raw_path, source_label)` — file pass-through; dir→expand to binary; missing→error with exact message (binary-resolver.ts:70-87)
+- [x] `resolve_claude_binary_path(config?, is_binary_mode) -> Result<Option<PathBuf>>` — full precedence chain (binary-resolver.ts:126-169):
+  - Step 1: `CLAUDE_BIN_PATH` env var (empty = missing; honored in dev AND binary mode)
+  - Step 2: config path (binary mode only)
+  - Step 3: autodetect `~/.local/bin/claude[.exe]` via `directories::BaseDirs` (binary mode only)
+  - Step 4: `Err(INSTALL_INSTRUCTIONS)` (binary mode only; exact text from source)
+  - Dev mode, no env: `Ok(None)` — caller omits SDK arg
+- [x] `INSTALL_INSTRUCTIONS: &str` — exact text; mentions `CLAUDE_BIN_PATH`, install.sh, npm, claudeBinaryPath (binary-resolver.ts:96-113)
+- [x] Dev mode behavior: env honored, config+autodetect+error skipped; returns `None` (binary-resolver-dev.test.ts)
+- [x] Directory expansion: dir-containing-binary → expands transparently (both env and config)
+- [x] Empty string env var treated as unset (falsy check matches JS `if (envPath)`)
+- 21 tests; all `#[serial]` (mutate env)
 
-- [ ] `CLAUDE_CAPABILITIES: ProviderCapabilities` — all flags for Claude provider (capabilities.ts)
-- [ ] `parseClaudeConfig(raw: unknown) -> ClaudeProviderDefaults` (config.ts)
+### UNIT PR-05: Claude Config (capabilities ALREADY done in PR-02)
+**Source:** `packages/providers/src/claude/config.ts` (capabilities.ts was PR-02)
+**Rust target:** `crates/har-provider/src/claude/config.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 12)
+
+LEDGER CORRECTIONS:
+- `CLAUDE_CAPABILITIES` was already ported in PR-02 (cycle 11) as `har_provider::CLAUDE_CAPABILITIES`.
+  This unit is ONLY `parseClaudeConfig`. Do NOT redefine the capability constant.
+- Rust target path corrected: `crates/har-provider/src/claude/config.rs`.
+
+- [x] `parse_claude_config(raw: &Map<String, Value>) -> ClaudeProviderDefaults` — defensive parse:
+  - `model: String` — included if present and string; dropped otherwise (config.ts:17-19)
+  - `settingSources: Vec<SettingSource>` — filters to `'project'|'user'`; omitted if post-filter empty (config.ts:21-28)
+  - `claudeBinaryPath: String` — included if present and string; dropped otherwise (config.ts:30-32)
+  - Unknown fields NOT forwarded (strict key picker, not a pass-through)
+  - Empty map returns empty `ClaudeProviderDefaults::default()`
+- [x] `CLAUDE_CAPABILITIES` — NOT redefined here; reuse from `har_provider::CLAUDE_CAPABILITIES` (PR-02)
+- 14 tests
 
 ### UNIT PR-06: Claude Native Tools
 **Source:** `packages/providers/src/claude/native-tools.ts`
-**Rust target:** `crates/providers/src/claude/native_tools.rs`
+**Rust target:** `crates/har-provider/src/claude/native_tools.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 12)
 
-- [ ] `buildNativeToolsForClaude(tools: Vec<NativeTool>) -> SdkToolDefs` — converts `NativeTool` to SDK tool definitions (native-tools.ts)
+LEDGER CORRECTIONS:
+- Rust target path corrected: `crates/har-provider/src/claude/native_tools.rs`.
+- `buildNativeToolsForClaude` was the ledger's misname; actual export is `buildArchonMcpServer`.
+- `buildArchonMcpServer` in TS calls `createSdkMcpServer()` from `@anthropic-ai/claude-agent-sdk`
+  (in-process MCP server). NEEDS-HUMAN for PR-03: Rust CLI-delegation model has no SDK object;
+  the MCP server must be a subprocess. `build_archon_mcp_server` produces a `McpServerDescriptor`
+  (serializable) instead of an opaque SDK object.
+
+- [x] `ARCHON_TOOL_SERVER: &str = "archon"` — server name constant (native-tools.ts:14)
+- [x] `ToolFieldKind` enum: `String | StringEnum { values } | Boolean` — maps Zod types
+- [x] `ToolField` struct: `name, kind, description?, required` — per-property descriptor
+- [x] `SdkToolDef` struct: `name, description, fields` — per-tool definition
+- [x] `McpServerDescriptor` struct: `name, version, always_load, tools` — full server spec
+- [x] `validate_and_convert_schema(schema, tool_name)` — ports `jsonSchemaToZodShape` exactly:
+  - Non-object schema → Err "must be an object schema with `properties`" (native-tools.ts:26-31)
+  - Each property: `enum` array → StringEnum (must be non-empty strings); `type=string` → String;
+    `type=boolean` → Boolean; anything else → Err "unsupported type" (native-tools.ts:40-57)
+  - Empty enum → Err "non-empty strings" (native-tools.ts:42-44)
+  - `description` forwarded if string (native-tools.ts:55)
+  - `required` array → marks fields required vs optional (native-tools.ts:33-35)
+- [x] `build_archon_mcp_server(tools: &[NativeTool]) -> Result<McpServerDescriptor, String>`:
+  - Calls `validate_and_convert_schema` per tool (fail-fast on any invalid schema)
+  - Sets `name="archon"`, `version="1.0.0"`, `always_load=true` (native-tools.ts:81-87)
+  - [≠] Returns `McpServerDescriptor` instead of SDK's `McpSdkServerConfigWithInstance`.
+    The SDK object is not portable to Rust CLI mode. PR-03 must start an MCP subprocess.
+    NEEDS-HUMAN: PR-03 to decide subprocess spawn + wiring to Claude CLI.
+- 18 tests
 
 ### UNIT PR-07: Codex Provider
 **Source:** `packages/providers/src/codex/provider.ts`

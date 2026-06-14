@@ -1,0 +1,23 @@
+Claude Code not found. Archon requires the Claude Code executable to be
+reachable at a configured path in compiled builds.
+
+To fix, install Claude Code and point Archon at it:
+
+  macOS / Linux (recommended — native installer):
+    curl -fsSL https://claude.ai/install.sh | bash
+    export CLAUDE_BIN_PATH="$HOME/.local/bin/claude"
+
+  Windows (PowerShell):
+    irm https://claude.ai/install.ps1 | iex
+    $env:CLAUDE_BIN_PATH = "$env:USERPROFILE\.local\bin\claude.exe"
+
+  Or via npm (alternative):
+    npm install -g @anthropic-ai/claude-code
+    export CLAUDE_BIN_PATH="$(npm root -g)/@anthropic-ai/claude-code/cli.js"
+
+Persist the path in ~/.archon/config.yaml instead of the env var:
+    assistants:
+      claude:
+        claudeBinaryPath: /absolute/path/to/claude
+
+See: https://archon.diy/docs/reference/configuration#claude
