@@ -4,45 +4,45 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-14
-branch: main (commit 58d3eb7)
-mode: ITERATE — at cycle budget (cycles_total=13)
+branch: main (commit 04fb395)
+mode: ITERATE — at cycle budget (cycles_total=14)
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 33/79 units verified + PR-03 Claude CLI deterministic CORE verified
+## Where we are: 33/79 units verified + PR-03 Claude provider ~95% (all but native-tools sidecar)
 
-DISCOVER done; ITERATE cycles 1–13 committed. All differentially parity-verified vs live TS (bun, zod v4.4.3):
+DISCOVER done; ITERATE cycles 1–14 committed. All differentially parity-verified vs live TS (bun, zod v4.4.3):
 
 | Crate / area | Units | Status |
 |------|------|--------|
 | har-contract | PR-01 (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` |
-| har-provider | PR-02 registry + PR-04/05/06 Claude sub-units (binary-resolver, config, native-tools) | `- [x]` |
-| har-provider (PR-03 core) | cli_stream/ substrate + build_claude_argv + parse_claude_stream_json | `- [x]` (core; send_query=cycle14) |
+| har-provider | PR-02 registry + PR-04/05/06 Claude sub-units (binary-resolver, config, native-tools-conv) | `- [x]` |
+| **har-provider PR-03 Claude** | cli_stream/ + build_claude_argv + parse_claude_stream_json + send_query + hooks + registry | `- [x]` **EXCEPT native-tools sidecar (cycle 15)** |
 | har-workflow-schema | WF-01..08 (dag-node union, workflow, loop/retry/hooks, run/artifact/session) | `- [x]` |
 | har-dag-executor (pure helpers) | WF-11 executor-shared, WF-12 condition-eval, WF-13 output-ref, WF-14 model-validation | `- [x]` |
 | har-paths | PA-01 archon-paths, PA-06 env-loader, PA-07 strip-cwd-env | `- [x]` |
 | har-git | GI-01..05 (exec, branch, repo, worktree, types) | `- [x]` |
 | **har-isolation COMPLETE** | IS-01..08 (types, worktree-provider, resolver, factory, pr-state, worktree-copy, errors, store) | `- [x]` |
 
-Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (~990 tests, 9 crates active).
+Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (~1050 tests, 9 crates active).
 Each cycle ships a durable differential/golden test as a regression gate. Source repo (Archon) kept pristine.
 
-## ⚠️ OWNER DECISION PENDING — R8 native-tools MCP (gates PR-03 cycle-14 + all provider native-tools)
-Source builds an IN-PROCESS SDK MCP server (`createSdkMcpServer`, live closures e.g. `manage_run`) — a
-subprocess CLI cannot call an in-process closure. The architect (target-architecture.md §6, R8) recommends
-**(a) a sidecar stdio/socket MCP server** the CLI connects out to, dispatching back to `NativeTool.handler`.
-Alternatives: **(b)** map onto an existing `mcp_hub` substrate (ADR-0001 "map, don't reimplement"); **(c)**
-owner-approved capability `- [≠]` downgrade (set `nativeTools=false`). The argv seam (`native_tools_mcp_config_path`)
-is wired; `ProviderCapabilities.nativeTools=true` is preserved pending the decision. **Pick (a)/(b)/(c) before cycle 14
-wires the native-tools path** (the rest of send_query — non-native-tool nodes — can land regardless).
+## R8 native-tools — OWNER-DECIDED 2026-06-14 (was pending)
+Owner ruling: the 3 interim options (sidecar / mcp_hub / capability-off) are all BAND-AIDS. **The REAL fix is a
+PURE-RUST-NATIVE provider that replaces the whole claude-CLI + Claude Agent SDK + MCP stack — documented now
+(`docs/POST-PORT-UPGRADES.md` UP-1), developed AFTER the port is 100% complete.** For the port: continue
+CLI-delegation + a band-aid that KEEPS the full native-tools feature (NO downgrade; `nativeTools` cap stays
+true). **Cycle 15 = the native-tools sidecar band-aid** (the argv seam `native_tools_mcp_config_path` is wired).
+Do NOT set `nativeTools=false`. Do NOT start UP-1 until the port is done.
 
 ## `- [≠]` divergences (recorded) — 9 total, all low-stakes / approved
 - **WF-06 / GI-02 / GI-04 date** `z.date()`→`chrono::DateTime<Utc>`: **OWNER-APPROVED**. **WF-14 / GI-01** error text: cosmetic.
 - **PA-01 getDefault*Path** seam. **PR-03 classify_and_enrich_error** abort-label: logging-only.
 
 ## Resume — next units (dependency order toward WF-09 dag-executor)
-1. **PR-03 cycle 14: ClaudeProvider::send_query orchestration** — tie argv+cli_stream+parser together (hooks→
-   `--settings` file, env→child-env, register the real ClaudeProvider replacing UnimplementedProvider) +
-   `buildSDKHooksFromYAML`. **Native-tools path gated on the R8 decision above.** Then differential-test the
+0. **Cycle 15: PR-03 native-tools sidecar band-aid** — the last PR-03 row (`- [~]`). A sidecar MCP server the
+   claude CLI connects to (`native_tools_mcp_config_path` seam already wired) dispatching to `NativeTool.handler`;
+   keeps the full feature (`nativeTools=true`). When it lands + verifies, PR-03 flips to a full verified unit (→34/79).
+1. ~~PR-03 send_query~~ DONE cycle 14 (verified). Then differential-test the
    end-to-end send_query via the FakeSpawner (canned stream-json), env-gated SKIP for the live model call.
 2. **PR-07 CodexProvider** (reuses the cli_stream/ substrate — codex already a CLI in source) → **PR-09/10/11
    community** (copilot/opencode/pi). Same deterministic argv+parser differential strategy.
