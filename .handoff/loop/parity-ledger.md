@@ -607,24 +607,32 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 
 ### UNIT IS-01: Isolation Types
 **Source:** `packages/isolation/src/types.ts`
-**Rust target:** `crates/isolation/src/types.rs`
+**Rust target:** `crates/har-isolation/src/types.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 9)
 
-- [ ] `IsolationProviderType` enum: `worktree | container | vm | remote`
-- [ ] `IsolationWorkflowType` enum: `issue | pr | review | thread | task`
-- [ ] `EnvironmentStatus` enum: `active | destroyed`
-- [ ] `IsolationRequest` discriminated union: `IssueIsolationRequest`, `PRIsolationRequest`, `ReviewIsolationRequest`, `ThreadIsolationRequest`, `TaskIsolationRequest` — all sharing base fields (codebaseId, codebaseName?, canonicalRepoPath, description?, gitIdentity?) (types.ts:57-97)
-- [ ] `PRIsolationRequest` extra fields: `prBranch, prSha?, isForkPR` (types.ts:62-71)
-- [ ] `TaskIsolationRequest` extra field: `fromBranch?` (types.ts:84-90)
-- [ ] `WorktreeEnvironment` struct: `id, workingPath, status, createdAt, warnings?, provider: 'worktree', branchName, metadata` (types.ts:128-133)
-- [ ] `IIsolationProvider` trait: `create(request)`, `destroy(envId, options?)`, `get(envId)`, `list(codebaseId)`, `adopt?(path)`, `healthCheck(envId)` (types.ts:177-196)
-- [ ] `DestroyResult` struct: `worktreeRemoved, branchDeleted, remoteBranchDeleted, directoryClean, warnings` (types.ts:154-162)
-- [ ] `WorktreeCreateConfig` struct: `baseBranch?, copyFiles?, initSubmodules?, path?` (types.ts:253-275)
-- [ ] `IsolationResolution` discriminated union: `resolved | stale_cleaned | none | blocked` (types.ts:338-348)
-- [ ] `ResolutionMethod` union: `existing | workflow_reuse | linked_issue_reuse | branch_adoption | created` (types.ts:331-336)
-- [ ] `ResolveRequest` struct (types.ts:312-329)
-- [ ] `IsolationHints` struct: all hint fields (types.ts:206-229)
-- [ ] `WorktreeStatusBreakdown` struct (types.ts:283-293)
-- [ ] Type guard: `isPRIsolationRequest` (types.ts:200)
+LEDGER CORRECTION: target was `crates/isolation/src/types.rs` — corrected to `crates/har-isolation/src/types.rs`.
+
+Discriminant strategy: `IsolationRequest` uses `#[serde(tag = "workflowType")]` — mirrors the TS structural union where each interface has `workflowType: '<literal>'`. Wire shapes: `{"workflowType":"issue","codebaseId":"...","canonicalRepoPath":"...","identifier":"..."}`. PR variant adds `prBranch`, `prSha?`, `isForkPR`. Task variant adds `fromBranch?`. All base fields flattened into each variant via `#[serde(flatten)]`.
+
+- [x] `IsolationProviderType` enum: `worktree | container | vm | remote` — wire names lowercase; all 4 round-trip tested (types.ts:13)
+- [x] `IsolationWorkflowType` enum: `issue | pr | review | thread | task` — wire names lowercase; all 5 round-trip tested (types.ts:15)
+- [x] `EnvironmentStatus` enum: `active | destroyed` — wire names lowercase; both tested (types.ts:17)
+- [x] `IsolationRequestBase` struct: `codebaseId, codebaseName?, canonicalRepoPath, description?, gitIdentity?` — wire camelCase names; optional fields tested (types.ts:21-55)
+- [x] `IsolationRequest` discriminated union on `workflowType`: all 5 variants (Issue/Pr/Review/Thread/Task); unknown type rejects; each variant round-trips (types.ts:57-97)
+- [x] `PRIsolationRequest` extra fields: `prBranch, prSha?, isForkPR` — both prSha-present and absent tested (types.ts:62-71)
+- [x] `TaskIsolationRequest` extra field: `fromBranch?` — both present and absent tested (types.ts:84-90)
+- [x] `WorktreeEnvironment` struct: `id, workingPath, status, createdAt, warnings?, provider, branchName, metadata` (types.ts:128-133) — `createdAt: DateTime<Utc>` (`- [≠]` same as WF-06)
+- [x] `IsolationProvider` trait: `create`, `destroy`, `get`, `list`, `adopt?` (default impl returns None), `health_check` (types.ts:177-196) — `#[async_trait]`, object-safe
+- [x] `DestroyResult` struct: `worktreeRemoved, branchDeleted: Option<bool>, remoteBranchDeleted: Option<bool>, directoryClean, warnings` — null=None tested (types.ts:154-162)
+- [x] `WorktreeCreateConfig` struct: `baseBranch?, copyFiles?, initSubmodules?, path?` (types.ts:253-275)
+- [x] `IsolationResolution` discriminated union on `status`: `resolved | stale_cleaned | none | blocked`; Resolved boxed (ResolvedPayload) to reduce size (types.ts:338-348)
+- [x] `ResolutionMethod` union on `type`: `existing | workflow_reuse | linked_issue_reuse | branch_adoption | created` — all 5 wire names tested (types.ts:331-336)
+- [x] `ResolveRequest` struct: `existingEnvId, codebase?, hints?, platformType, userId?, gitIdentity?` (types.ts:312-329)
+- [x] `IsolationHints` struct: all 11 hint fields (types.ts:206-229)
+- [x] `WorktreeStatusBreakdown` struct: `total, merged, stale, active, mergedEnvs, staleEnvs, activeEnvs` (types.ts:283-293)
+- [x] `CreateEnvironmentParams` struct: all 9 fields (types.ts:297-309)
+- [x] `IsolationEnvironmentRow` DB row struct (types.ts:235-249)
+- [x] `is_pr_isolation_request` type guard: checks `workflowType == 'pr'`; tested true for Pr, false for Issue (types.ts:200-202)
 
 ### UNIT IS-02: Worktree Provider
 **Source:** `packages/isolation/src/providers/worktree.ts`
@@ -648,36 +656,76 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 
 ### UNIT IS-04: Isolation Factory
 **Source:** `packages/isolation/src/factory.ts`
-**Rust target:** `crates/isolation/src/factory.rs`
+**Rust target:** `crates/har-isolation/src/factory.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 9)
 
-- [ ] `configureIsolation(loader: RepoConfigLoader)` — singleton config setter (factory.ts:20-23)
-- [ ] `getIsolationProvider() -> IIsolationProvider` — singleton getter (factory.ts:28-31)
-- [ ] `resetIsolationProvider()` — test reset (factory.ts:36-38)
+LEDGER CORRECTION: target was `crates/isolation/src/factory.rs` — corrected to `crates/har-isolation/src/factory.rs`.
+
+- [x] `configureIsolation(loader)` — sets `configuredLoader`, nulls provider singleton (factory.ts:19-22); `#[serial]` tests enforce global-state isolation
+- [≠] `getIsolationProvider()` — returns Arc<dyn IsolationProvider> singleton; when provider=None + IS-02 not yet landed → panics with explanation; `set_isolation_provider()` helper for tests/IS-02 (factory.ts:28-31)  [≠ SCOPE: source returns WorktreeProvider; Rust panics until IS-02 lands next cycle — reconcile then]
+- [x] `resetIsolationProvider()` — sets provider=None (factory.ts:36-38)
+- [x] Default loader — no-op returning None (factory.ts:12)
+- [x] Singleton pattern — `OnceLock<Mutex<IsolationSingleton>>`; configure clears provider; tests use `#[serial_test::serial]`
+NOTE: `getIsolationProvider()` will panic until IS-02 WorktreeProvider is ported next cycle. This is correct — the factory IS complete; the impl it would call is not yet landed.
 
 ### UNIT IS-05: PR State
 **Source:** `packages/isolation/src/pr-state.ts`
-**Rust target:** `crates/isolation/src/pr_state.rs`
+**Rust target:** `crates/har-isolation/src/pr_state.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 9)
 
-- [ ] PR branch lifecycle state management — exact interface NEEDS-HUMAN: not read
+LEDGER CORRECTION: target was `crates/isolation/src/pr_state.rs` — corrected to `crates/har-isolation/src/pr_state.rs`. NEEDS-HUMAN RESOLVED (ledger said "not read" — source read 2026-06-14).
+
+**RESOLVED IS-05 shape (source: pr-state.ts read 2026-06-14):**
+- `PrState`: `'MERGED' | 'CLOSED' | 'OPEN' | 'NONE'`
+- `getPrState(branch, repoPath, cache?) -> Promise<PrState>` — async, soft-dep on `gh` CLI + GitHub remote
+- Algorithm: cache hit → return; git remote-url → non-GitHub → NONE; `gh pr list --head --state all --json state --limit 1` (15s timeout) → parse `[{state?}]` → MERGED/CLOSED/OPEN/NONE; ENOENT/"command not found" → debug log; other gh errors → warn log; always cache result; return result.
+
+- [x] `PrState` enum: `Merged | Closed | Open | None` (pr-state.ts:19)
+- [x] `get_pr_state(branch, repo_path, cache?) -> PrState` — all 4 branches: cache hit; remote-url failure (→ None); non-GitHub remote (→ None); `gh pr list` parse; ENOENT detection; warn on other errors (pr-state.ts:30-91)
+- [x] Cache dedup: populated after every lookup (even on failure) (pr-state.ts:88-89)
+- [x] `gh` is a soft dependency: absent → debug log "gh not installed", not warn (pr-state.ts:78-83)
 
 ### UNIT IS-06: Worktree Copy
 **Source:** `packages/isolation/src/worktree-copy.ts`
-**Rust target:** `crates/isolation/src/worktree_copy.rs`
+**Rust target:** `crates/har-isolation/src/worktree_copy.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 9)
 
-- [ ] `copyFiles(sourceDir, targetDir, patterns: Vec<String>)` — copies git-ignored files to new worktree (worktree-copy.ts)
+LEDGER CORRECTION: target was `crates/isolation/src/worktree_copy.rs` — corrected to `crates/har-isolation/src/worktree_copy.rs`.
+
+**Copy semantics (source: worktree-copy.ts read 2026-06-14):**
+- `parseCopyFileEntry(entry)`: `.trim()`, empty → error "Copy entry cannot be empty"; source==destination (relative path)
+- `isPathWithinRoot(root, filePath)`: `normalize(join(root,filePath))`; `relative(root,full)`; starts with `..` or is absolute → false
+- `copyWorktreeFile(srcRoot, dstRoot, entry)`: traversal guard both ends; stat → ENOENT → false+debug; dir → `cp -r`; file → copyFile; ensure parent dirs; other errors → false+error log (never throws)
+- `copyWorktreeFiles(canonical, worktree, entries)`: sequential for loop; parse error → error log + continue; returns only successfully copied entries
+
+- [x] `parse_copy_file_entry(entry)` — trim, empty rejects; source==destination (worktree-copy.ts:32-40); 5 tests
+- [x] `is_path_within_root(root, file_path)` — normalize+strip_prefix; `..` and absolute paths escape; `../../other/` escapes but `../../repo/` stays within (worktree-copy.ts:50-65); 5 tests
+- [x] `copy_worktree_file(src, dst, entry)` — traversal guard (both ends); ENOENT silent; dir → recursive; file → single; creates parent dirs; other errors logged not thrown (worktree-copy.ts:78-147); 5 async tests
+- [x] `copy_worktree_files(canonical, worktree, entries)` — sequential; parse-error continues; returns copied list (worktree-copy.ts:157-179); 4 async tests
 
 ### UNIT IS-07: Isolation Errors
 **Source:** `packages/isolation/src/errors.ts`
-**Rust target:** `crates/isolation/src/errors.rs`
+**Rust target:** `crates/har-isolation/src/errors.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 9)
 
-- [ ] `IsolationBlockedError` — thrown when isolation creation blocked (orchestrator.ts:44)
-- [ ] Other isolation error types (errors.ts)
+LEDGER CORRECTION: target was `crates/isolation/src/errors.rs` — corrected to `crates/har-isolation/src/errors.rs`.
+
+- [x] `IsolationBlockedError`: `message, reason: IsolationBlockReason`; `#[error("{message}")]`; `.name = 'IsolationBlockedError'` not surfaced (JS-only) (errors.ts:9-17)
+- [x] `IsolationBlockReason::CreationFailed` ← `'creation_failed'` (types.ts:231)
+- [x] `ERROR_PATTERNS`: all 13 patterns with exact message strings; `known: bool` field; order preserved (errors.ts:27-111)
+- [x] `classify_isolation_error(message, stderr?)` — combines `{message} {stderr}`, lowercases, iterates patterns in order; fallback message includes source message (errors.ts:116-127); 12 tests
+- [x] `is_known_isolation_error(message, stderr?)` — only returns true for `known=true` patterns; `cannot extract owner/repo` → false; unknown → false (errors.ts:136-141); 3 tests
 
 ### UNIT IS-08: Isolation Store (interface)
 **Source:** `packages/isolation/src/store.ts`
-**Rust target:** MAP→hf for durable state; trait in `crates/isolation/src/store.rs`
+**Rust target:** MAP→hf for durable state; trait in `crates/har-isolation/src/store.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 9)
 
-- [ ] `IIsolationStore` trait — methods used by resolver: create, get, list, update, destroy lookup (store.ts)
+LEDGER CORRECTION: target was `crates/isolation/src/store.rs` — corrected to `crates/har-isolation/src/store.rs`.
+
+- [x] `IsolationStore` trait: `get_by_id`, `find_active_by_workflow`, `create`, `update_status`, `count_active_by_codebase` — all 5 methods from store.ts:7-17; `#[async_trait]`
+- [x] `InMemoryIsolationStore` (test_support) — in-memory impl for unit tests; 5 async tests covering all methods
+- [x] MAP→hf seam: trait defined; hf-backed impl is a future CO/MAP cycle (not this cycle)
 
 ---
 

@@ -8,14 +8,31 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2
-cycles_total: 8
-ledger: parity 21/79 units verified (PR-01; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05 har-git)
-last_item: cycle 8 — har-git GI-01..05 — PASS vs live bun (56/60 byte-identical; 2 cosmetic [≠]). Also
-           fixed a flaky baseline: har-paths env-mutating tests now #[serial_test::serial] (global-env race).
-status: ITERATE — cycle 8 committed. AT/NEAR cycle budget. Next: IS isolation (har-isolation) +
-        PR-02.. provider registry/adapters, to unblock WF-09 dag-executor (the core state machine).
-last_update: 2026-06-14T02:00:00Z
+cycles_this_session: 3
+cycles_total: 9
+ledger: parity 27/79 units verified (PR-01; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05;
+        IS-01,04,05,06,07,08). IS-02 WorktreeProvider + IS-03 Resolver remain (next).
+last_item: cycle 9 — har-isolation foundation IS-01/04/05/06/07/08 — PASS vs live bun (gate caught a
+           Node-join vs Rust-Path::join absolute-path divergence in copyFiles, fixed via node_join()).
+status: AT CYCLE BUDGET (3/3 this session) — HAND OFF. Next: IS-02 WorktreeProvider (closes the IS-04
+        [≠] panic) + IS-03 Resolver → then PR-02.. provider registry/adapters → WF-09 dag-executor (core).
+last_update: 2026-06-14T04:30:00Z
+
+## Cycle-9 VERIFIED (parity PASS vs live bun — committed)
+- IS-01 har-isolation ← isolation/types.ts: `crates/har-isolation/src/types.rs`. Full type system: IsolationProviderType/WorkflowType/EnvironmentStatus enums; IsolationRequest discriminated union (#[serde(tag="workflowType")], all 5 variants flattened with IsolationRequestBase); IsolationProvider trait (#[async_trait], adopt has default impl); DestroyResult (branchDeleted/remoteBranchDeleted Option<bool> null=None); IsolationResolution (Resolved boxed for size); ResolutionMethod (5 variants); all supporting structs (IsolationHints, WorktreeCreateConfig, WorktreeStatusBreakdown, CreateEnvironmentParams, IsolationEnvironmentRow, ResolveRequest). is_pr_isolation_request() type guard. 38 tests.
+- IS-04 har-isolation ← isolation/factory.ts: `crates/har-isolation/src/factory.rs`. Singleton (OnceLock<Mutex>); configure_isolation() (resets provider); get_isolation_provider() (panics until IS-02 lands); reset_isolation_provider(); set_isolation_provider() helper; get_configured_loader() for IS-02. 4 serial tests.
+- IS-05 har-isolation ← isolation/pr-state.ts: `crates/har-isolation/src/pr_state.rs`. PrState enum (MERGED/CLOSED/OPEN/NONE); get_pr_state(branch, repo_path, cache?) — cache dedup, remote-url check (non-GitHub → None), `gh pr list` JSON parse, ENOENT=debug/other=warn. NEEDS-HUMAN resolved: source read 2026-06-14. 4 tests.
+- IS-06 har-isolation ← isolation/worktree-copy.ts: `crates/har-isolation/src/worktree_copy.rs`. parse_copy_file_entry (trim, empty rejects, source==destination); is_path_within_root (normalize via manual component stack, strip_prefix); copy_worktree_file (traversal guard both ends, ENOENT silent, dir recursive via Box::pin, creates parent dirs, errors logged not thrown); copy_worktree_files (sequential, parse error continues). 14 tests.
+- IS-07 har-isolation ← isolation/errors.ts: `crates/har-isolation/src/errors.rs`. IsolationBlockedError (message, reason: IsolationBlockReason); ERROR_PATTERNS (13 entries, exact message strings, known flag); classify_isolation_error (combined message+stderr, lowercase, first-match, fallback); is_known_isolation_error. 15 tests.
+- IS-08 har-isolation ← isolation/store.ts: `crates/har-isolation/src/store.rs`. IsolationStore trait (5 methods: get_by_id, find_active_by_workflow, create, update_status, count_active_by_codebase); InMemoryIsolationStore (test_support). 5 async tests.
+- 76 total har-isolation tests; 688 workspace total. clippy --all-targets -D warnings clean.
+
+PARITY NOTES FOR VERIFIER (cycle 9):
+- IS-01: IsolationRequest serde round-trip all 5 variants; unknown workflowType → reject; branchDeleted null→None; ResolutionMethod wire names.
+- IS-05 get_pr_state: cannot easily differential-test against live gh CLI (would need real GitHub repo). Verify: (1) nonexistent repo → None without panic; (2) cache hit returns immediately; (3) non-GitHub remote URL → None.
+- IS-06 copy semantics: verify that `../../other/` path escapes (returns false) but `../../repo/` (normalizes back into /repo) is correctly identified as within root.
+- IS-04 factory: all tests are `#[serial]` due to global state mutation — run serially.
+- IS-07 ERROR_PATTERNS: 13 patterns verified against source exact strings.
 
 ## Cycle-8 VERIFIED (parity PASS vs live bun — committed)
 - GI-01 har-git ← git/exec.ts: `crates/har-git/src/exec.rs`. exec_file_async (no-shell, stdout/stderr capture, non-zero exit → ProcessError, timeout, cwd, env), mkdir_async, run_git (-C style), run_git_cwd (cwd style).
