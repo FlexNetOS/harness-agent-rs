@@ -210,6 +210,32 @@ pub fn resolve_claude_binary_path(
     Err(INSTALL_INSTRUCTIONS.to_owned())
 }
 
+// ─── shouldPassNoEnvFile ──────────────────────────────────────────────────────
+
+/// Bun-runnable JS file extensions that require `--no-env-file`.
+///
+/// Source: `packages/providers/src/claude/provider.ts:456`
+const BUN_JS_EXTENSIONS: &[&str] = &[".js", ".mjs", ".cjs"];
+
+/// Decide whether to pass `--no-env-file` to the Claude subprocess.
+///
+/// `--no-env-file` is a Bun flag that prevents auto-loading `.env` from the CWD into
+/// the spawned process. It only applies when the SDK spawns a Bun-runnable JS file (`.js`,
+/// `.mjs`, `.cjs`). For native Claude Code binaries the flag is meaningless and gets
+/// rejected as an unknown option.
+///
+/// - `None` (dev mode, SDK resolves from node_modules) → `false` (native binary, no flag).
+/// - `Some(path)` ending in `.js`/`.mjs`/`.cjs` → `true`.
+/// - `Some(path)` with any other extension → `false`.
+///
+/// Source: `packages/providers/src/claude/provider.ts:487-490`
+pub fn should_pass_no_env_file(cli_path: Option<&str>) -> bool {
+    match cli_path {
+        None => false,
+        Some(path) => BUN_JS_EXTENSIONS.iter().any(|ext| path.ends_with(ext)),
+    }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -440,5 +466,43 @@ mod tests {
         assert!(INSTALL_INSTRUCTIONS.contains("https://claude.ai/install.sh"));
         assert!(INSTALL_INSTRUCTIONS.contains("npm install -g @anthropic-ai/claude-code"));
         assert!(INSTALL_INSTRUCTIONS.contains("claudeBinaryPath"));
+    }
+
+    // ── should_pass_no_env_file ──────────────────────────────────────────────
+
+    #[test]
+    fn no_env_file_none_returns_false() {
+        assert!(!should_pass_no_env_file(None));
+    }
+
+    #[test]
+    fn no_env_file_js_extension_returns_true() {
+        assert!(should_pass_no_env_file(Some("/path/to/cli.js")));
+    }
+
+    #[test]
+    fn no_env_file_mjs_extension_returns_true() {
+        assert!(should_pass_no_env_file(Some("/path/to/cli.mjs")));
+    }
+
+    #[test]
+    fn no_env_file_cjs_extension_returns_true() {
+        assert!(should_pass_no_env_file(Some("/path/to/cli.cjs")));
+    }
+
+    #[test]
+    fn no_env_file_native_binary_returns_false() {
+        assert!(!should_pass_no_env_file(Some("/usr/local/bin/claude")));
+    }
+
+    #[test]
+    fn no_env_file_exe_returns_false() {
+        assert!(!should_pass_no_env_file(Some("C:\\path\\claude.exe")));
+    }
+
+    #[test]
+    fn no_env_file_ts_extension_returns_false() {
+        // .ts/.tsx/.jsx are not Bun-runnable in this context
+        assert!(!should_pass_no_env_file(Some("/path/cli.ts")));
     }
 }

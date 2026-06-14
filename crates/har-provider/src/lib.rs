@@ -19,7 +19,8 @@
 //! panics on `send_query` — this is correct: the CAPABILITIES (the consumer-facing contract)
 //! are the real source values, and will remain unchanged when PR-03+ land.
 
-// ─── Sub-modules (PR-04, PR-05, PR-06) ──────────────────────────────────────
+// ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06) ──────────────────────────────
+pub mod cli_stream;
 pub mod claude;
 
 use har_contract::{

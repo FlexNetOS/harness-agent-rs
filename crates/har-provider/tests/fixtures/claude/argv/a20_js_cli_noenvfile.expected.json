@@ -1,0 +1,34 @@
+{
+  "options": {
+    "cwd": "/work",
+    "pathToClaudeCodeExecutable": "/legacy/cli.js",
+    "executableArgs": [
+      "--no-env-file"
+    ],
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ]
+  },
+  "expectedArgv": [
+    "--no-env-file",
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user"
+  ],
+  "warnings": []
+}

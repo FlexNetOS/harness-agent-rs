@@ -1,0 +1,1 @@
+{ "requestOptions": { "systemPrompt": { "type": "preset", "preset": "claude_code", "append": "Extra rules." } }, "assistantDefaults": {} }

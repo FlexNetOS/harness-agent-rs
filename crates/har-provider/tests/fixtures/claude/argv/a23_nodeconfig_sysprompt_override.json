@@ -1,0 +1,2 @@
+{ "requestOptions": { "systemPrompt": "request-level" }, "assistantDefaults": {},
+  "nodeConfig": { "systemPrompt": "node-level-wins" } }

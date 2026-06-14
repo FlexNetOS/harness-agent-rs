@@ -1,0 +1,28 @@
+[
+  {
+    "type": "tool",
+    "toolName": "bash",
+    "toolInput": {
+      "command": "ls"
+    },
+    "toolCallId": "call-1"
+  },
+  {
+    "type": "tool_result",
+    "toolName": "unknown",
+    "toolOutput": "output-of-ls",
+    "toolCallId": "call-1"
+  },
+  {
+    "type": "assistant",
+    "content": "Done analyzing."
+  },
+  {
+    "type": "result",
+    "sessionId": "s-int",
+    "tokens": {
+      "input": 5,
+      "output": 3
+    }
+  }
+]

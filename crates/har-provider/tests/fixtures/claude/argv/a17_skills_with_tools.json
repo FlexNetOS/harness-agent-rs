@@ -1,0 +1,2 @@
+{ "requestOptions": { "model": "claude-opus-4" }, "assistantDefaults": {},
+  "nodeConfig": { "skills": ["skill-a"], "allowed_tools": ["Bash"] } }

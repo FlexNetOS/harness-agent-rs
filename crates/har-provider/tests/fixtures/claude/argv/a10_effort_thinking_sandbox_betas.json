@@ -1,0 +1,2 @@
+{ "requestOptions": {}, "assistantDefaults": {},
+  "nodeConfig": { "effort": "high", "thinking": { "type": "enabled", "budget_tokens": 1024 }, "sandbox": { "enabled": true }, "betas": ["beta-a", "beta-b"] } }

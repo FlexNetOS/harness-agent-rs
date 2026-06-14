@@ -1,0 +1,13 @@
+[
+  {
+    "type": "result",
+    "sessionId": "sess-err",
+    "isError": true,
+    "errorSubtype": "error_max_budget_usd",
+    "errors": [
+      "Budget exceeded",
+      "second error"
+    ],
+    "stopReason": "max_budget"
+  }
+]

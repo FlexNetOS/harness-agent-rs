@@ -1,0 +1,47 @@
+{
+  "classify": [
+    {"errorMessage": "rate limit exceeded", "stderrOutput": ""},
+    {"errorMessage": "request failed", "stderrOutput": "got 429 from server"},
+    {"errorMessage": "too many requests", "stderrOutput": ""},
+    {"errorMessage": "service overloaded", "stderrOutput": ""},
+    {"errorMessage": "credit balance too low", "stderrOutput": ""},
+    {"errorMessage": "unauthorized", "stderrOutput": ""},
+    {"errorMessage": "authentication failed", "stderrOutput": ""},
+    {"errorMessage": "invalid token provided", "stderrOutput": ""},
+    {"errorMessage": "error 401", "stderrOutput": ""},
+    {"errorMessage": "error 403", "stderrOutput": ""},
+    {"errorMessage": "process exited with code 1", "stderrOutput": ""},
+    {"errorMessage": "process killed", "stderrOutput": ""},
+    {"errorMessage": "got signal 9", "stderrOutput": ""},
+    {"errorMessage": "operation aborted", "stderrOutput": ""},
+    {"errorMessage": "something weird happened", "stderrOutput": ""},
+    {"errorMessage": "", "stderrOutput": "rate limit in stderr only"},
+    {"errorMessage": "RATE LIMIT uppercase", "stderrOutput": ""}
+  ],
+  "enrich": [
+    {"errorMessage": "Claude Code subprocess produced no output within 60000ms. See logs...", "stderrLines": [], "controllerAborted": true},
+    {"errorMessage": "connection reset", "stderrLines": [], "controllerAborted": true},
+    {"errorMessage": "unauthorized: bad creds", "stderrLines": [], "controllerAborted": false},
+    {"errorMessage": "authentication failed", "stderrLines": ["check your API key"], "controllerAborted": false},
+    {"errorMessage": "rate limit exceeded", "stderrLines": [], "controllerAborted": false},
+    {"errorMessage": "exited with code 1", "stderrLines": [], "controllerAborted": false},
+    {"errorMessage": "process exited with code 1", "stderrLines": ["ENOENT file not found"], "controllerAborted": false},
+    {"errorMessage": "something weird", "stderrLines": [], "controllerAborted": false},
+    {"errorMessage": "killed", "stderrLines": ["line1", "line2"], "controllerAborted": false},
+    {"errorMessage": "produced no output within 5000ms", "stderrLines": ["noise"], "controllerAborted": false}
+  ],
+  "stderr": [
+    "Spawning Claude Code",
+    "Note: --output-format stream-json",
+    "Using --permission-mode bypassPermissions",
+    "error: something went wrong",
+    "fatal: cannot read config",
+    "failed to connect",
+    "uncaught exception in worker",
+    "    at Object.main (/app/index.js:42)",
+    "Error: ENOENT",
+    "Spawning Claude Code: error in name but is a banner",
+    "Loading configuration...",
+    "Starting session"
+  ]
+}

@@ -1,0 +1,24 @@
+[
+  {
+    "type": "result",
+    "sessionId": "sess-001",
+    "tokens": {
+      "input": 100,
+      "output": 50,
+      "total": 150
+    },
+    "structuredOutput": {
+      "answer": 42
+    },
+    "cost": 0.0123,
+    "stopReason": "end_turn",
+    "numTurns": 3,
+    "modelUsage": {
+      "claude-opus-4": {
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "cache_read_input_tokens": 10
+      }
+    }
+  }
+]

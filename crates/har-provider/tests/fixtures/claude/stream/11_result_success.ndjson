@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"session_id":"sess-001","usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150},"structured_output":{"answer":42},"total_cost_usd":0.0123,"stop_reason":"end_turn","num_turns":3,"model_usage":{"claude-opus-4":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":10}}}

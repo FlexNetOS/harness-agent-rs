@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":true,"session_id":"sess-stop","stop_reason":"stop_sequence","usage":{"input_tokens":20,"output_tokens":5},"errors":["should-not-appear"]}

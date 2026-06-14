@@ -1,0 +1,2 @@
+{ "requestOptions": {}, "assistantDefaults": {},
+  "nodeConfig": { "agents": { "reviewer": { "description": "Reviews code", "prompt": "Be strict." } } } }

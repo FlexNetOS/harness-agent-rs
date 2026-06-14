@@ -1,0 +1,53 @@
+{
+  "options": {
+    "cwd": "/work",
+    "model": "claude-opus-4",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": {
+      "type": "preset",
+      "preset": "claude_code"
+    },
+    "settingSources": [
+      "project",
+      "user"
+    ],
+    "agents": {
+      "dag-node-skills": {
+        "description": "DAG node with skills",
+        "prompt": "You have preloaded skills: skill-a, skill-b. Use them when relevant.",
+        "skills": [
+          "skill-a",
+          "skill-b"
+        ],
+        "model": "claude-opus-4"
+      }
+    },
+    "agent": "dag-node-skills",
+    "allowedTools": [
+      "Skill"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--model",
+    "claude-opus-4",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--setting-sources",
+    "project,user",
+    "--agents",
+    "{\"dag-node-skills\":{\"description\":\"DAG node with skills\",\"prompt\":\"You have preloaded skills: skill-a, skill-b. Use them when relevant.\",\"skills\":[\"skill-a\",\"skill-b\"],\"model\":\"claude-opus-4\"}}",
+    "--agent",
+    "dag-node-skills",
+    "--allowed-tools",
+    "Skill"
+  ],
+  "warnings": []
+}

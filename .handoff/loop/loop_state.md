@@ -8,20 +8,83 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1
-cycles_total: 12
-ledger: parity 33/79 units verified — har-isolation COMPLETE; provider registry + Claude sub-units.
-        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08).
-last_item: cycle 12 — Claude provider sub-units PR-04 binary-resolver + PR-05 config + PR-06 native-tools
-           — PASS vs live bun (gate caught INSTALL_INSTRUCTIONS \-continuation indent-strip downgrade, fixed).
-status: ITERATE — cycle 12 committed. NEXT = PR-03 ClaudeProvider (the big one) per the ARCHITECT DECISION
-        in target-architecture.md §6: spawn `claude` CLI (--print --output-format stream-json) → parse NDJSON
-        → MessageChunk. Deterministic parts (build_claude_argv, parse_claude_stream_json, structured-output,
-        error/retry) ARE differential-testable (golden stream-json); live model call is env-gated SKIP. Shared
-        cli_stream/ helper for all CLI providers. R8 NEEDS-HUMAN: native-tools in-process MCP → SIDECAR (do NOT
-        set nativeTools=false without owner [≠]). Then PR-07 codex → PR-09/10/11 community → har-ledger
-        (CO db MAP→hf) → WF-09 dag-executor.
-last_update: 2026-06-14T07:30:00Z
+cycles_this_session: 2
+cycles_total: 13
+ledger: parity 33/79 units verified + PR-03 DETERMINISTIC CORE verified (cli_stream/ + argv + parser).
+        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08; PR-03 core).
+        PR-03 unit stays in-progress: send_query orchestration + hooks + R8 sidecar remain (cycle 14).
+last_item: cycle 13 — PR-03 deterministic core (cli_stream/ + claude/argv.rs + claude/parser.rs) — PASS vs
+           live bun (argv 23/23, parser 20/20; gate caught node.allowed_tools→--allowed-tools downgrade, fixed).
+status: ITERATE — cycle 13 committed. NEXT = cycle 14: wire ClaudeProvider::send_query over cli_stream
+        (hooks→--settings, env→child-env, register real provider replacing UnimplementedProvider) +
+        buildSDKHooksFromYAML. R8 native-tools sidecar still NEEDS-HUMAN (nativeTools cap stays true).
+        After PR-03: PR-07 codex (reuses cli_stream) → community → har-ledger (CO db MAP→hf) → WF-09.
+last_update: 2026-06-14T10:30:00Z
+
+## Cycle-13 (ported, parity UNPROVEN — awaiting verifier gate)
+- PR-03 deterministic core: `crates/har-provider/src/cli_stream/` + `crates/har-provider/src/claude/argv.rs` + `crates/har-provider/src/claude/parser.rs`.
+
+- **cli_stream/** (shared substrate for all CLI providers):
+  - `spawner.rs`: `Spawner` trait (real `RealSpawner` + `FakeSpawner` with scripted sequences).
+    `FakeSpawnScript::Success(lines)` / `Crash { exit_code, stderr }`. Used in retry tests.
+  - `stream.rs`: `NdjsonStream` — line-framed NDJSON reader; handles `\r\n`, empty lines,
+    non-UTF8 skipped, no-trailing-newline partial lines; yields `Result<Value, StreamError>`.
+  - `stderr.rs`: `classify_stderr_line` — `Error | InfoBanner | Info` classification.
+    Info banners: "Spawning Claude Code", "--output-format", "--permission-mode".
+  - `cancel.rs`: `CancelGuard` — spawns watcher task; kills child PID (SIGTERM/Unix,
+    best-effort on Windows) when `CancellationToken` is cancelled.
+  - `retry.rs`: `classify_subprocess_error` (rate_limit/auth/crash/unknown);
+    `classify_and_enrich_error` with abort-precedence (provider.ts:783-792);
+    `with_first_message_timeout` (provider.ts:160-197) — first-event timeout + cancel.
+    Constants: `MAX_SUBPROCESS_RETRIES=3`, `RETRY_BASE_DELAY_MS=2000`.
+
+- **claude/argv.rs**: `build_claude_argv` — full option→flag mapping table (§6.2):
+  - Always: `--print --output-format stream-json --verbose --input-format text`
+  - Always: `--permission-mode bypassPermissions --dangerously-skip-permissions`
+  - model, fallback-model, max-budget-usd, resume, fork-session, setting-sources,
+    system-prompt/append-system-prompt, effort, thinking, sandbox, betas,
+    output-format-schema, allowed-tools, disallowed-tools.
+  - MCP: `--mcp-config <path>` + `mcp__<server>__*` wildcards in allowed-tools.
+    Haiku+MCP warning, missing-vars warning (deduped). 
+  - Skills→agents: DAG-node-skills wrapper agent; inline agents override on id collision.
+  - JS-executable detection: `--no-env-file` prepended when cli path ends in `.js`/`.mjs`/`.cjs`.
+  - R8 sidecar seam: documented, NOT silently dropped; logs NEEDS-HUMAN warning if path provided.
+  - `should_pass_no_env_file` added to `binary_resolver.rs` (its natural home, provider.ts:487-490).
+  - 29 tests (option matrix coverage).
+
+- **claude/parser.rs**: `parse_claude_stream_json` + `parse_claude_stream_json_line`:
+  - `assistant`: text→`Assistant`, tool_use→`Tool` (all content blocks).
+  - `system`/init: failed MCP servers → `System`; all-connected → no chunk; non-init → debug log.
+  - `rate_limit_event` → `RateLimit { rate_limit_info }`.
+  - `result`: full mapping incl. session_id, tokens (via `normalize_claude_usage`),
+    structured_output, cost, stop_reason, num_turns, model_usage.
+  - **LOAD-BEARING reclassification** (provider.ts:716): `is_error==true && subtype=='success'`
+    → clean success (is_error/error_subtype/errors omitted). Golden test pinned.
+  - `user`-role tool-result lines: mapped to `ToolResult { tool_name, tool_output, tool_call_id }`.
+    10k truncation preserved. `tool_name` is "unknown" (not in CLI user event).
+  - Unknown event types: logged at debug, no chunk.
+  - `normalize_claude_usage`: input+output required; total optional (provider.ts:64-79).
+  - 40 tests (golden fixtures, reclassification, truncation, all event types).
+
+- Workspace: 988 tests total (149 new in har-provider). clippy --all-targets -D warnings CLEAN.
+
+DEFERRED this cycle (documented, not silently dropped):
+- **send_query orchestration** (cycle 14): wire `ClaudeProvider::send_query` over `cli_stream`;
+  replace `UnimplementedProvider` for "claude" in the registry.
+- **R8 native-tools MCP sidecar**: in-process MCP server bridge. NEEDS-HUMAN: owner must pick
+  option (a) sidecar / (b) mcp_hub substrate / (c) explicit capability downgrade [≠].
+  The `native_tools_mcp_config_path` parameter in `build_claude_argv` is the documented seam.
+  `ProviderCapabilities.native_tools` for claude remains `true` (set in PR-02).
+
+OPTIONS WITH NO CLI FLAG (flagged per task):
+- `persistSession` (provider.ts:527): no known `--persist-session` flag on claude CLI. This option
+  controls session transcript persistence. Filed as a NEEDS-HUMAN: either the flag exists and needs
+  verification, or this is an SDK-only behavior with no CLI equivalent.
+- `hooks` (declarative YAML): written to a `--settings` file block, not argv. The settings-file
+  write is part of `send_query` orchestration (cycle 14), not `build_claude_argv`.
+- `env` (per-request codebase env, provider.ts:867): passed as child-process env, not argv.
+  Part of `send_query` orchestration (cycle 14).
+- `systemPrompt.excludeDynamicSections` (provider.ts:535): no CLI flag documented → flagged as seam.
 
 ## Cycle-12 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-04 Binary Resolver: `crates/har-provider/src/claude/binary_resolver.rs`. Full implementation:

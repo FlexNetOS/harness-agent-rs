@@ -1,0 +1,28 @@
+{
+  "options": {
+    "cwd": "/work",
+    "permissionMode": "bypassPermissions",
+    "allowDangerouslySkipPermissions": true,
+    "systemPrompt": "You are a careful assistant.",
+    "settingSources": [
+      "project",
+      "user"
+    ]
+  },
+  "expectedArgv": [
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+    "--dangerously-skip-permissions",
+    "--system-prompt",
+    "You are a careful assistant.",
+    "--setting-sources",
+    "project,user"
+  ],
+  "warnings": []
+}
