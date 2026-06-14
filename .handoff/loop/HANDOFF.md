@@ -4,43 +4,52 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-14
-branch: main (commit b3bc217 + ledger reconcile)
-mode: ITERATE — at cycle budget (3/3 this session; cycles_total=6)
+branch: main (commit 482fb9d)
+mode: ITERATE — at cycle budget (3/3 this session; cycles_total=9)
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 13/79 units parity-verified — schema layer + executor pure-logic helpers COMPLETE
+## Where we are: 27/79 units parity-verified — schema + executor-helpers + 3 leaf crates DONE
 
-DISCOVER done; ITERATE cycles 1–6 committed. The **entire `har-workflow-schema` schema layer** AND the
-**pure-logic helpers of `har-dag-executor`** are ported + differentially parity-verified vs live TS (bun, zod v4.4.3):
+DISCOVER done; ITERATE cycles 1–9 committed. All differentially parity-verified vs live TS (bun, zod v4.4.3):
 
-| Unit | What | Status |
+| Crate / area | Units | Status |
 |------|------|--------|
-| PR-01 | har-contract ← providers/src/types.ts (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` |
-| WF-01/02 | dag-node 7-variant union + workflow envelope (superRefine, value-bounds, trim) | `- [x]` |
-| WF-03/04/05 | loop / retry / hooks | `- [x]` |
-| WF-06/07/08 | workflow-run / node-artifact / node-session | `- [x]` (WF-06 date `- [≠]` APPROVED) |
-| WF-11 | executor-shared utils (error-class, var-subst, completion-signal, command-load, send) | `- [x]` |
-| WF-12/13 | condition-evaluator + output-ref (the when:-expr engine + ref resolver) | `- [x]` |
-| WF-14 | model-validation (alias/tier resolution, layered merge, routePresetEffort) | `- [x]` (1 `- [≠]`) |
+| har-contract | PR-01 (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` |
+| har-workflow-schema | WF-01..08 (dag-node union, workflow, loop/retry/hooks, run/artifact/session) | `- [x]` |
+| har-dag-executor (pure helpers) | WF-11 executor-shared, WF-12 condition-eval, WF-13 output-ref, WF-14 model-validation | `- [x]` |
+| har-paths | PA-01 archon-paths, PA-06 env-loader, PA-07 strip-cwd-env | `- [x]` |
+| har-git | GI-01..05 (exec, branch, repo, worktree, types) | `- [x]` |
+| har-isolation (foundation) | IS-01 types, IS-04 factory, IS-05 pr-state, IS-06 worktree-copy, IS-07 errors, IS-08 store-trait | `- [x]` |
 
-Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (498 tests, 6 crates active).
-14-crate `har-*` skeleton; har-workflow-schema full; har-dag-executor has its pure helpers (state machine WF-09 still to do).
+Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (~690 tests, 8 crates active).
+Each cycle ships a durable differential/golden test as a regression gate. Source repo (Archon) kept pristine.
 
-## `- [≠]` divergences (recorded)
+## `- [≠]` divergences (recorded) — 9 total, all low-stakes / approved
 - **WF-06 date fields** `z.date()`→`chrono::DateTime<Utc>`: **OWNER-APPROVED 2026-06-13**. Closed.
-- **WF-14 UnknownAlias error** lists aliases SORTED vs source insertion-order: non-contractual (no caller
-  parses it; only logs), deterministic = an upgrade. Recorded `- [≠]`; low-stakes, FYI (no block).
+- **WF-14 UnknownAlias** + **GI-01 error-message Display prefix**: cosmetic, no consumer parses them (logs only).
+- **GI-02/04 date** `z.date()`→chrono (same class as WF-06). **PA-01 getDefault*Path** import.meta.dir→exe-path seam.
+- **IS-04 get_isolation_provider** PANICS until IS-02 lands (source returns WorktreeProvider) — **MUST reconcile
+  when IS-02 is ported next cycle** (replace the panic with real WorktreeProvider construction).
 
-## Resume — next units
-The schema + executor-helper foundation is done; the keystone **WF-09 dag-executor** (the core state
-machine: topological parallel layers, per-node exec, loop-until, approval gates, resume/skip, cost
-accounting) is next-biggest but depends on subsystems NOT yet ported. Recommended order:
-1. **Leaf-crate track to unblock WF-09:** PA paths (har-paths) → GI git (har-git) → IS isolation types
-   (har-isolation) — these + the provider registry are WF-09's deps.
-2. **Provider track:** PR-02 registry → PR-03.. claude/codex/community provider adapters (over provider CLIs).
-3. **Then WF-09 dag-executor** (the heart), then WF-15 event-emitter / WF-16 loader / remaining workflows.
-4. **MAP units** (CO db→hf, coord→weave/grit, memory→icm) per target-architecture.md substrate table.
-WF-09 depends on: schemas (done) + provider (PR-02..) + ledger (MAP→hf) + isolation (IS) + git (GI).
+## Resume — next units (dependency order)
+1. **IS-02 WorktreeProvider** (impl of IIsolationProvider over har-git — closes the IS-04 `- [≠]` panic) +
+   **IS-03 IsolationResolver** (the resolve cascade: existing→workflow-reuse→linked-issue→branch-adoption→create).
+2. **Provider track: PR-02 registry → PR-03.. claude/codex/community adapters** (the IAgentProvider impls over
+   provider CLIs — har-contract trait is done).
+3. **MAP units** the dag-executor needs: CO db→`hf` (har-ledger, WF-19 IWorkflowStore), coord→`weave`/`grit`.
+4. **Then WF-09 dag-executor** (the keystone state machine), then WF-10/15/16.. remaining workflows, server, cli.
+WF-09 depends on: schemas ✓ + provider (PR-02..) + ledger (MAP→hf) + isolation (IS-02/03) + git ✓.
+
+## Method that works (proven over 9 cycles — KEEP DOING)
+- One cohesive unit/cycle: porter (sonnet) → cargo clippy --all-targets + test → **differential**
+  parity-verifier (opus, runs the live TS via bun and diffs) → fix-rounds until PASS → flip ledger → commit.
+- **The gate is differential, not the port's own tests.** EVERY cycle the porter's green `cargo test`
+  hid a real downgrade that only the live source-diff caught. Always re-verify against running bun.
+- Env/global-singleton tests must be `#[serial_test::serial]` (a global-env race flaked the baseline in cycle 8).
+- Parity lessons (full list in loop_state.md + ICM decisions-harness-agent-rs): zod `z.number()` no `.int()`→f64;
+  `.trim()` is a transform; restore every value-bound; zod-v4 `.nullable()`≠optional & `.datetime()` Z-only;
+  `z.date()`→chrono; JS parseFloat lenient; serde_json preserve_order ON; UTF-16 string length; regex backref
+  backtracking; Node path.join APPENDS an absolute arg where Rust Path::join REPLACES it (use a node_join helper).
 
 ## Method that works (proven over 3 cycles — KEEP DOING)
 - One cohesive unit/cycle: porter (sonnet) → cargo clippy --all-targets + test → **differential**
