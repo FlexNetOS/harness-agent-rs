@@ -538,7 +538,9 @@ LEDGER CORRECTIONS:
 - [x] `structuredOutput` extraction from result chunk (parser.rs, cycle 13)
 - [~] `ClaudeProvider::send_query(...)` ORCHESTRATION — ties argv+cli_stream+parser; registers real provider replacing UnimplementedProvider; + hooks→--settings, env→child-env (CYCLE 14)
 - [ ] `buildSDKHooksFromYAML(hooks) -> SdkHooks` — node.hooks YAML → settings hook objects (CYCLE 14)
-- [!] Native tools via `createSdkMcpServer` → **R8 NEEDS-HUMAN**: in-process SDK MCP server has no CLI equiv; needs SIDECAR MCP server (architect rec). argv seam wired; nativeTools cap stays true
+- [~] Native tools via `createSdkMcpServer` → **R8 OWNER-DECIDED 2026-06-14**: interim BAND-AID = sidecar MCP
+  bridge (keeps full feature, nativeTools cap stays true, NO downgrade). The REAL fix = pure-Rust-native provider
+  (replaces claude-CLI + Agent SDK + MCP) is DEFERRED to post-port → docs/POST-PORT-UPGRADES.md UP-1. argv seam wired.
 - [≠] `classify_and_enrich_error` abort-label (timeout/aborted→Unknown): logging-only, msg+retry exact, never control flow
 - [!] cycle-14 follow-ups: `persistSession` + `systemPrompt.excludeDynamicSections` (no CLI flag — confirm SDK-only); allowedTools order when skills+MCP combine
 
