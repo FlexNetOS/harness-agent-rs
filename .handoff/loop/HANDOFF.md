@@ -1,41 +1,46 @@
 # HANDOFF — harness-agent-rs port (Archon → Rust)
 
 > Mid-loop checkpoint at cycle budget. A fresh session reads this + loop_state.md and resumes the
-> port at cycle 4. The committed state is the authoritative resume signal; weave is the heartbeat.
+> port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
-closed_utc: 2026-06-13
-branch: main (commit c1d82c5)
-mode: ITERATE — at cycle budget (3/3 this session)
+closed_utc: 2026-06-14
+branch: main (commit b3bc217 + ledger reconcile)
+mode: ITERATE — at cycle budget (3/3 this session; cycles_total=6)
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 9/79 units parity-verified, schema layer COMPLETE
+## Where we are: 13/79 units parity-verified — schema layer + executor pure-logic helpers COMPLETE
 
-DISCOVER is done and ITERATE cycles 1–3 are committed. The **entire `har-workflow-schema` schema
-layer** is ported and differentially parity-verified against the live TS source (bun, zod v4.4.3):
+DISCOVER done; ITERATE cycles 1–6 committed. The **entire `har-workflow-schema` schema layer** AND the
+**pure-logic helpers of `har-dag-executor`** are ported + differentially parity-verified vs live TS (bun, zod v4.4.3):
 
 | Unit | What | Status |
 |------|------|--------|
-| PR-01 | har-contract ← providers/src/types.ts (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` (wire-shape QUALIFIED) |
-| WF-01 | dag-node (7-variant union, superRefine, ThinkingConfig, value-bounds, trim) | `- [x]` |
-| WF-02 | workflow envelope (+ unions, node-composition validation) | `- [x]` |
+| PR-01 | har-contract ← providers/src/types.ts (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` |
+| WF-01/02 | dag-node 7-variant union + workflow envelope (superRefine, value-bounds, trim) | `- [x]` |
 | WF-03/04/05 | loop / retry / hooks | `- [x]` |
-| WF-06/07/08 | workflow-run / node-artifact / node-session | `- [x]` (+ 1 `- [≠]`) |
+| WF-06/07/08 | workflow-run / node-artifact / node-session | `- [x]` (WF-06 date `- [≠]` APPROVED) |
+| WF-11 | executor-shared utils (error-class, var-subst, completion-signal, command-load, send) | `- [x]` |
+| WF-12/13 | condition-evaluator + output-ref (the when:-expr engine + ref resolver) | `- [x]` |
+| WF-14 | model-validation (alias/tier resolution, layered merge, routePresetEffort) | `- [x]` (1 `- [≠]`) |
 
-Build is green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (226 tests).
-14-crate `har-*` workspace skeleton in place (10 crates still documented stubs awaiting their units).
+Build green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (498 tests, 6 crates active).
+14-crate `har-*` skeleton; har-workflow-schema full; har-dag-executor has its pure helpers (state machine WF-09 still to do).
 
-## ⚠️ OPEN — owner sign-off needed (`- [≠]`)
-- **WF-06 date fields**: source `z.date()` (JS Date) mapped to Rust `chrono::DateTime<Utc>`. JSON has no
-  Date type; the typed timestamp still rejects garbage and serializes ISO-8601 (no capability lost).
-  Recorded in parity-ledger.md but **not yet owner-approved** per ADR-0001's `- [≠]` protocol.
+## `- [≠]` divergences (recorded)
+- **WF-06 date fields** `z.date()`→`chrono::DateTime<Utc>`: **OWNER-APPROVED 2026-06-13**. Closed.
+- **WF-14 UnknownAlias error** lists aliases SORTED vs source insertion-order: non-contractual (no caller
+  parses it; only logs), deterministic = an upgrade. Recorded `- [≠]`; low-stakes, FYI (no block).
 
-## Resume — next cycle (cycle 4)
-Per the cartographer's dependency order. Two viable tracks (pick per the lead's judgment):
-1. **Stay in workflows toward the core:** WF-11 executor-shared utils → WF-12 condition-evaluator →
-   WF-13 output-ref (pure functions = strong differential parity targets) → WF-14 model-validation →
-   then **WF-09 dag-executor** (the core state machine — the heart of the port).
-2. **Unblock the leaf crates:** PA paths → GI git → IS isolation types (feeds har-dag-executor's deps).
-The dag-executor (WF-09) depends on schemas (done) + provider (PR) + ledger (MAP→hf) + isolation + git.
+## Resume — next units
+The schema + executor-helper foundation is done; the keystone **WF-09 dag-executor** (the core state
+machine: topological parallel layers, per-node exec, loop-until, approval gates, resume/skip, cost
+accounting) is next-biggest but depends on subsystems NOT yet ported. Recommended order:
+1. **Leaf-crate track to unblock WF-09:** PA paths (har-paths) → GI git (har-git) → IS isolation types
+   (har-isolation) — these + the provider registry are WF-09's deps.
+2. **Provider track:** PR-02 registry → PR-03.. claude/codex/community provider adapters (over provider CLIs).
+3. **Then WF-09 dag-executor** (the heart), then WF-15 event-emitter / WF-16 loader / remaining workflows.
+4. **MAP units** (CO db→hf, coord→weave/grit, memory→icm) per target-architecture.md substrate table.
+WF-09 depends on: schemas (done) + provider (PR-02..) + ledger (MAP→hf) + isolation (IS) + git (GI).
 
 ## Method that works (proven over 3 cycles — KEEP DOING)
 - One cohesive unit/cycle: porter (sonnet) → cargo clippy --all-targets + test → **differential**
