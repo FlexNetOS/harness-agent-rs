@@ -1,72 +1,63 @@
-# HANDOFF — harness-agent-rs port KICKOFF
+# HANDOFF — harness-agent-rs port (Archon → Rust)
 
-> Bootstrap kickoff, not a mid-loop checkpoint. A fresh session reads this and starts the Rust port
-> of meta/Archon's runtime design into this repo via `/rust-port`. Superseded once the first real
-> DISCOVER checkpoint is committed.
+> Mid-loop checkpoint at cycle budget. A fresh session reads this + loop_state.md and resumes the
+> port at cycle 4. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-13
-branch: main
-mode: INITIAL (DISCOVER) — no parity ledger yet
-resume_command: /rust-port
+branch: main (commit c1d82c5)
+mode: ITERATE — at cycle budget (3/3 this session)
+resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Mission (per harness_hub ADR-0001)
+## Where we are: 9/79 units parity-verified, schema layer COMPLETE
 
-Build **harness-agent-rs** — the Rust harness/agent-manager *runtime* — by porting meta/Archon's
-**current** runtime design and **mapping** its overlapping subsystems onto the FlexNetOS substrates.
-Full-feature, no-downgrade for the parts in scope.
+DISCOVER is done and ITERATE cycles 1–3 are committed. The **entire `har-workflow-schema` schema
+layer** is ported and differentially parity-verified against the live TS source (bun, zod v4.4.3):
 
-- **source_root:** `~/Desktop/meta/Archon`  (TypeScript/Bun monorepo)
-- **source_toolchain:** `bun` (the parity-verifier must be able to RUN the source)
-- **rust_target:** this repo (`~/Desktop/meta/harness-agent-rs`); workspace skeleton present
-  (`crates/har-core` placeholder, `cargo build` green).
+| Unit | What | Status |
+|------|------|--------|
+| PR-01 | har-contract ← providers/src/types.ts (IAgentProvider trait, MessageChunk, capabilities) | `- [x]` (wire-shape QUALIFIED) |
+| WF-01 | dag-node (7-variant union, superRefine, ThinkingConfig, value-bounds, trim) | `- [x]` |
+| WF-02 | workflow envelope (+ unions, node-composition validation) | `- [x]` |
+| WF-03/04/05 | loop / retry / hooks | `- [x]` |
+| WF-06/07/08 | workflow-run / node-artifact / node-session | `- [x]` (+ 1 `- [≠]`) |
 
-## ⚠️ Port scope — CURRENT ARCHITECTURE ONLY (owner directive)
+Build is green: `cargo build` + `cargo clippy --all-targets -- -D warnings` + `cargo test` (226 tests).
+14-crate `har-*` workspace skeleton in place (10 crates still documented stubs awaiting their units).
 
-Archon's tree carries **three old, uncleaned-up versions**; agents struggle through the mess.
-**DISCOVER step 1 is disambiguation:** the `rust-port-cartographer` must first identify the
-**current intended architecture (the v0.4.x DAG-workflow-manager)** and scope the parity ledger to
-it — the legacy versions are **out of scope** (record them as excluded, not as `- [ ]` work). Do not
-port the cruft. When current-vs-legacy is ambiguous, prefer the code reachable from the live entry
-points (the Hono server + `archon` CLI + `dag-executor`) and the v0.4.x README, and flag anything
-genuinely unclear as `NEEDS-HUMAN` rather than guessing.
+## ⚠️ OPEN — owner sign-off needed (`- [≠]`)
+- **WF-06 date fields**: source `z.date()` (JS Date) mapped to Rust `chrono::DateTime<Utc>`. JSON has no
+  Date type; the typed timestamp still rejects garbage and serializes ISO-8601 (no capability lost).
+  Recorded in parity-ledger.md but **not yet owner-approved** per ADR-0001's `- [≠]` protocol.
 
-## What to port (ADR-0001) vs what to MAP onto substrates
+## Resume — next cycle (cycle 4)
+Per the cartographer's dependency order. Two viable tracks (pick per the lead's judgment):
+1. **Stay in workflows toward the core:** WF-11 executor-shared utils → WF-12 condition-evaluator →
+   WF-13 output-ref (pure functions = strong differential parity targets) → WF-14 model-validation →
+   then **WF-09 dag-executor** (the core state machine — the heart of the port).
+2. **Unblock the leaf crates:** PA paths → GI git → IS isolation types (feeds har-dag-executor's deps).
+The dag-executor (WF-09) depends on schemas (done) + provider (PR) + ledger (MAP→hf) + isolation + git.
 
-PORT (the parts FlexNetOS lacks): workflow/DAG schema (`packages/workflows/src/schemas/workflow.ts`);
-DAG-executor state machine (`packages/workflows/src/dag-executor.ts` — topological parallel layers,
-loop-until, human-approval gates, fresh/shared context); `IAgentProvider` + `ProviderCapabilities`
-(`packages/providers/src/types.ts:349-440`); per-run git-worktree isolation (`packages/isolation/`);
-the multi-surface control plane (server + Web + Slack/Telegram/GitHub adapters + real-time push).
+## Method that works (proven over 3 cycles — KEEP DOING)
+- One cohesive unit/cycle: porter (sonnet) → cargo clippy --all-targets + test → **differential**
+  parity-verifier (opus, runs the live TS via bun and diffs) → fix-rounds until PASS → flip ledger → commit.
+- **The gate is differential, not the port's own tests.** Every cycle the porter's green `cargo test`
+  hid a real downgrade that only the live source-diff caught. Always re-verify against running bun.
+- Parity lessons (in loop_state.md + ICM decisions-harness-agent-rs): zod `z.number()` no `.int()`→f64;
+  `.trim()` is a transform (store trimmed); restore every value-bound, collect all issues; zod-v4
+  `.nullable()`≠optional (absent rejects) and `.datetime()` is Z-only; `z.date()`→chrono (`- [≠]`).
 
-MAP, do NOT reimplement: run-ledger/durable state → `hf`; coordination → `weave` + `grit`; memory →
-`icm`; the LLM agent-loop → delegate to provider CLIs (claude/codex), Archon's own model. The
-`rust-port-architect` records these mappings in `target-architecture.md` (dependency-equivalent table).
-
-## DISCOVER (run /rust-port in a fresh worktree off main)
-
-1. `rust-port-cartographer` → disambiguate current-vs-legacy, then exhaustive
-   `.handoff/loop/parity-ledger.md` over the **current** Archon runtime (modules, behaviors, error
-   paths, config, CLI, routes, the DAG node types + loop/gate semantics, provider abstraction).
-2. `rust-port-architect` → `target-architecture.md`: Rust crate layout + idiom map + the
-   substrate-mapping table above (express→axum, etc.; ledger→hf; coord→weave/grit; memory→icm).
-3. `build-health-auditor` → confirm the skeleton builds → `.handoff/loop/baseline.md`.
-Then ITERATE one unit/cycle (full port → build/clippy → differential parity-verify vs source → commit).
-
-## Verify-on-resume baseline (kickoff)
+## Verify-on-resume baseline
 ```bash
-test -d ~/Desktop/meta/Archon && echo "Archon source present"
-command -v bun  >/dev/null && echo "bun on PATH"     # parity needs to run the TS source
-command -v cargo >/dev/null && echo "cargo on PATH"  # this repo's toolchain
-cargo build --quiet && echo "skeleton builds"
+test -d ~/Desktop/meta/Archon && command -v bun && command -v cargo   # all required
+cd ~/Desktop/meta/harness-agent-rs && cargo clippy --all-targets -- -D warnings && cargo test
 ```
-`bun` absent ⇒ no differential parity ⇒ `NEEDS-HUMAN` before porting.
+`bun` absent ⇒ no differential parity ⇒ NEEDS-HUMAN before porting more.
 
-## Open fork (from ADR-0001)
-Analyze `oh-my-pi` (a Rust/Bun coding-agent runtime) via `/harness:code-research` before locking the
-agent-loop strategy — it may already supply the loop/IDE piece Archon delegates. Until then, follow
-ADR-0001's "delegate to provider CLIs" decision.
-
-## ICM / continuity pointers
-- Recall first: `icm recall-context "harness-agent-rs Archon port" --limit 5`;
-  `icm recall "Archon verdict" -t decisions-harness_hub` (the code-research verdict + ADR-0001).
-- harness_hub ADR-0001 is the authoritative decision record; `entries/rust-port.md` is the harness contract.
+## Pointers
+- State: `.handoff/loop/loop_state.md` (cycle counters, next units, lessons, open `- [≠]`).
+- Ledger: `.handoff/loop/parity-ledger.md` (79 units; 86 items `- [x]`). Symbol rollup: `symbol-map.md`.
+- Target arch: `.handoff/loop/target-architecture.md` (14-crate layout + idiom map + substrate table).
+- Findings: `.handoff/loop/findings/parity-cycle{1,2,3}.md`. Differential harnesses:
+  `crates/har-workflow-schema/{examples/parity_diff.rs, tests/parity_cycle3_differential.rs}`.
+- ICM: `icm recall "harness-agent-rs Archon port"`; `icm recall "parity lessons" -t decisions-harness-agent-rs`.
+- Source repo (Archon) must stay pristine — delete any transient TS oracle after parity runs.
