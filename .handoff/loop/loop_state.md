@@ -1,5 +1,5 @@
 # Loop state — rust-port (Archon → harness-agent-rs)
-session_started: 2026-06-13T16:00:00Z
+session_started: 2026-06-14T00:00:00Z
 loop: rust-port
 branch: main
 worktree: /home/drdave/Desktop/meta/harness-agent-rs
@@ -8,15 +8,42 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 3
-cycles_total: 9
-ledger: parity 27/79 units verified (PR-01; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05;
-        IS-01,04,05,06,07,08). IS-02 WorktreeProvider + IS-03 Resolver remain (next).
-last_item: cycle 9 — har-isolation foundation IS-01/04/05/06/07/08 — PASS vs live bun (gate caught a
-           Node-join vs Rust-Path::join absolute-path divergence in copyFiles, fixed via node_join()).
-status: AT CYCLE BUDGET (3/3 this session) — HAND OFF. Next: IS-02 WorktreeProvider (closes the IS-04
-        [≠] panic) + IS-03 Resolver → then PR-02.. provider registry/adapters → WF-09 dag-executor (core).
-last_update: 2026-06-14T04:30:00Z
+cycles_this_session: 1
+cycles_total: 10
+ledger: parity 29/79 units verified — har-isolation COMPLETE (IS-01..08). IS-04 [≠] panic CLOSED.
+        (PR-01; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08).
+last_item: cycle 10 — IS-02 WorktreeProvider + IS-03 Resolver — PASS vs live bun (gate caught 7 real
+           divergences over 2 fix rounds incl. a fix-induced regression). branch-naming byte-exact.
+status: ITERATE — cycle 10 committed. har-isolation done. Next: PR-02 provider registry → PR-03..
+        claude/codex/community adapters (IAgentProvider over provider CLIs) → har-ledger (CO db MAP→hf)
+        → WF-09 dag-executor (the keystone state machine).
+last_update: 2026-06-14T06:00:00Z
+
+## Cycle-10 (ported, parity UNPROVEN — awaiting verifier gate)
+- IS-02 WorktreeProvider: `crates/har-isolation/src/providers/worktree.rs` (new `providers/` module). Full
+  IsolationProvider impl: create/destroy/get/list/adopt/health_check. All helpers: branch naming (5 variants),
+  shortHash (sha256 first 8 hex), slugify (lower/replace/strip/max-50), resolve_repo_local_override
+  (absolute/dotdot/escape guards), sync_workspace_before_create (managed-clone detection), create_from_pr
+  (same-repo vs fork), create_from_fork_pr (sha vs no-sha), create_new_branch (fromBranch override + stale
+  retry), copy_configured_files (default+user dedup), init_submodules (ENOENT skip), apply_git_identity,
+  delete_branch_tracked/delete_remote_branch_tracked (best-effort warnings). 36 unit tests.
+- IS-03 IsolationResolver: `crates/har-isolation/src/resolver.rs`. 6-stage cascade: (1)existing
+  (2)no-codebase (3)workflow-reuse (4)linked-issue (5)branch-adoption (6)create-new. All internal helpers:
+  collect_base_branch_warnings (is_ancestor_of), mark_destroyed_best_effort, build_isolation_request (all 5
+  workflow types incl. PR hints validation), cleanup fn injection. 21 unit tests.
+- IS-04 CLOSED: `get_isolation_provider()` panic placeholder replaced with `WorktreeProvider::new(state.loader.clone())`. factory.rs tests updated — `set_then_get_provider_returns_same` now calls through without panic. IS-04 `- [≠]` SCOPE resolved → `- [x]`.
+- Deps added: workspace sha2 + hex; har-isolation deps sha2/hex/har-paths.
+- 121 total har-isolation tests PASS. Workspace 688→808 tests total. clippy --all-targets -D warnings CLEAN.
+
+KEY LESSON (cycle 10):
+- `get_worktree_base()` returns `Result<(PathBuf, WorktreeLayout), ArchonPathError>` — a tuple, NOT a struct
+  with `.base` field. Access via `.0`. Always check actual return type; don't guess from usage patterns.
+- `copy_worktree_files()` takes `&[String]` not `&[&str]`. Check the actual signature before calling.
+- `classify_isolation_error()` returns `String` (always produces a message); use `is_known_isolation_error()`
+  to gate the Blocked path. They are always used together in the source.
+- Rust borrow checker: when you move `row: IsolationEnvironmentRow` into `env: row` in a struct literal,
+  you cannot have any `&row.working_path` live at the same call site. Clone the string first.
+- `None | Some(v) if guard` → compiler error: `v` not bound in the None arm. Must split into two arms.
 
 ## Cycle-9 VERIFIED (parity PASS vs live bun — committed)
 - IS-01 har-isolation ← isolation/types.ts: `crates/har-isolation/src/types.rs`. Full type system: IsolationProviderType/WorkflowType/EnvironmentStatus enums; IsolationRequest discriminated union (#[serde(tag="workflowType")], all 5 variants flattened with IsolationRequestBase); IsolationProvider trait (#[async_trait], adopt has default impl); DestroyResult (branchDeleted/remoteBranchDeleted Option<bool> null=None); IsolationResolution (Resolved boxed for size); ResolutionMethod (5 variants); all supporting structs (IsolationHints, WorktreeCreateConfig, WorktreeStatusBreakdown, CreateEnvironmentParams, IsolationEnvironmentRow, ResolveRequest). is_pr_isolation_request() type guard. 38 tests.
