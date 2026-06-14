@@ -1,0 +1,6 @@
+[
+  {"id":"dfs-order-abc","fn":"declaredFieldsFromSchema","outputFormat":{"properties":{"zebra":{},"alpha":{},"mid":{}}}},
+  {"id":"wf12-expected-quoted-garbage","fn":"evaluateCondition","expr":"$n.output > '20abc'","nodeOutputs":{"n":{"state":"completed","output":"90"}}},
+  {"id":"wf12-actual-whitespace-tab","fn":"evaluateCondition","expr":"$n.output > 10","nodeOutputs":{"n":{"state":"completed","output":"\t20"}}},
+  {"id":"wf12-both-sides-prefix","fn":"evaluateCondition","expr":"$n.output >= 5","nodeOutputs":{"n":{"state":"completed","output":"5px"}}}
+]

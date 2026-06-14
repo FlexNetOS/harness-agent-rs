@@ -174,13 +174,18 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-12 — condition-evaluator.ts
 
-- [ ] unit:WF-12 `condition-evaluator.ts::evaluateCondition` → `workflows::condition_evaluator::evaluate_condition()`
+- [x] unit:WF-12 `condition-evaluator.ts::evaluateCondition` → `har_dag_executor::condition_evaluator::evaluate_condition()` — ported cycle 4; all syntax variants, AND/OR precedence, short-circuit, parse-fail→skip, unresolvable-ref→error asymmetry; 80 tests passing — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-12 `condition-evaluator.ts::splitOutsideQuotes` → `har_dag_executor::condition_evaluator::split_outside_quotes()` — ported cycle 4; tested with quoted-separator cases — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-12 `condition-evaluator.ts::atomPattern` (regex) → `har_dag_executor::condition_evaluator::ATOM_PATTERN` static — exact regex replicated via `regex` crate — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-12 `condition-evaluator.ts::evaluateAtom` (internal) → `har_dag_executor::condition_evaluator::evaluate_atom()` (private fn) — ported cycle 4 — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-12 `condition-evaluator.ts::resolveOutputRef` (internal) → `har_dag_executor::condition_evaluator::resolve_output_ref()` (private fn) — ported cycle 4; unknown-node→''+'warn'; bare-output→output text; field→resolve_node_output_field; null→"null" — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
 
 ### WF-13 — output-ref.ts
 
-- [ ] unit:WF-13 `output-ref.ts::declaredFieldsFromSchema` → `workflows::output_ref::declared_fields_from_schema()`
-- [ ] unit:WF-13 `output-ref.ts::resolveNodeOutputField` → `workflows::output_ref::resolve_node_output_field()`
-- [ ] unit:WF-13 `output-ref.ts::OutputRefError` → `workflows::output_ref::OutputRefError`
+- [x] unit:WF-13 `output-ref.ts::declaredFieldsFromSchema` → `har_dag_executor::output_ref::declared_fields_from_schema()` — ported cycle 4; all 5 input cases tested — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-13 `output-ref.ts::resolveNodeOutputField` → `har_dag_executor::output_ref::resolve_node_output_field()` — ported cycle 4; full 3-path resolution table; code-fence stripping; all branches tested — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-13 `output-ref.ts::OutputRefError` → `har_dag_executor::output_ref::OutputRefError` — ported cycle 4; all 4 reason variants; exact error message strings match TS source — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
+- [x] unit:WF-13 `output-ref.ts::FieldResolution` type → `har_dag_executor::output_ref::FieldResolution` enum — ported cycle 4 — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
 
 ### WF-14 — model-validation.ts
 

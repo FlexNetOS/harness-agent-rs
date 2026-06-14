@@ -1,0 +1,68 @@
+[
+ {
+  "id": "wf12-adv-neg-exp-trail",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-dot5-trail",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-plus-dot5",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-two-dots",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-e5",
+  "ok": true,
+  "result": false,
+  "parsed": false
+ },
+ {
+  "id": "wf12-adv-spaces",
+  "ok": true,
+  "result": false,
+  "parsed": false
+ },
+ {
+  "id": "wf12-adv-traildot-exp",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-neg3",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-hex-again",
+  "ok": true,
+  "result": false,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-exp-nodigits",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ },
+ {
+  "id": "wf12-adv-exp-signonly",
+  "ok": true,
+  "result": true,
+  "parsed": true
+ }
+]
