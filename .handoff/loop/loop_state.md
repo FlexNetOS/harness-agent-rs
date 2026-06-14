@@ -8,28 +8,33 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1
-cycles_total: 15
-ledger: parity 33/79 units + PR-03 ~97% (cli_stream/argv/parser/send_query/hooks/registry VERIFIED;
-        native-tools MCP server CORE VERIFIED cycle-15). Native-tools row stays `- [~]` (core proven,
-        not yet CLI-reachable) until cycle-16 transport+wiring lands; PR-03 then flips to full verified.
-        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.)
-last_item: cycle 15 — native-tools loopback MCP sidecar, the SERVER CORE (transport-agnostic JSON-RPC:
-           initialize/tools/list/tools/call/ping/unknown + wire inputSchema serializer). PASS vs live SDK
-           (@anthropic-ai/claude-agent-sdk 0.2.141, 7/7 differential). Gate REFUTED the porter's
-           `initialize.capabilities={tools:{}}` "correction" — live SDK emits {tools:{listChanged:true}};
-           fixed. tools/list inputSchema byte-exact ($schema first, required-only descriptions, enum key
-           order, execution+_meta). bad-args is `- [≈]` shape-match. New module:
-           crates/har-provider/src/cli_stream/mcp_sidecar.rs (+ wire_input_schema/wire_tool_list_item in
-           native_tools.rs). Harness: tests/parity_cycle15_mcp_sidecar.rs (7/7 vs live fixtures).
-status: cycle 15 DONE (1/3 this session). NEXT = cycle 16: native-tools transport+wiring — axum loopback
-        HTTP MCP server (bind 127.0.0.1:0) + temp mcp-config write/MERGE with nodeConfig.mcp + send_query
-        lifecycle (start-once-before-retry, teardown on end/error/cancel via CancelGuard) + activate the
-        native_tools_mcp_config_path argv seam + DELETE the inert provider.rs:463-475 "deferred" warning.
-        Live-CLI smoke = env-gated SKIP. That lands the full native-tools feature → PR-03 flips to verified
-        (→34/79). Then PR-07 codex (reuses cli_stream) → PR-09/10/11 community → har-ledger (CO db MAP→hf)
-        → WF-09 dag-executor (keystone). Design: target-architecture.md §6.8 Decisions 1,5,6.
-last_update: 2026-06-14T18:00:00Z
+cycles_this_session: 2
+cycles_total: 16
+ledger: parity **34/79 units** — PR-03 Claude Provider is now a FULL VERIFIED UNIT (native-tools
+        loopback-MCP band-aid landed cycles 15-16, R8). (PR-01/02/03/04/05/06; WF-01..08, WF-11..14;
+        PA-01/06/07; GI-01..05; IS-01..08.) native_tools cap stays true end-to-end — no downgrade.
+last_item: cycle 16 — native-tools loopback HTTP transport + mcp-config write/MERGE + send_query wiring.
+           PASS (verifier's own 10/10 adversarial harness: transport byte-identical to the verified core;
+           merge = SDK `{...existing, archon}` spread with ALL nodeConfig servers preserved, none dropped;
+           single --mcp-config; RAII teardown no-leak; native_tools=true preserved). Live-CLI smoke
+           SKIPPED — env-gated (claude 2.1.177 present, no auth). Deleted inert DEFERRED warnings
+           (argv.rs + provider.rs:463-475). New: start_loopback/McpHttpServer/write_mcp_config_merged in
+           cli_stream/mcp_sidecar.rs; provider.rs step-6b. Harness: tests/parity_cycle16_loopback_transport.rs.
+status: cycle 16 DONE (2/3 this session). NEXT = cycle 17: **PR-07 CodexProvider** — reuses the cli_stream/
+        substrate (Spawner/NdjsonStream/retry/cancel) + the deterministic argv+parser differential strategy
+        (codex is already a CLI in source: packages/providers/src/codex/). Then PR-09/10/11 community
+        (copilot/opencode/pi) → har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09 dag-executor (keystone).
+last_update: 2026-06-14T20:00:00Z
+
+## Open follow-ups (tracked — not downgrades, owed by not-yet-ported sibling units)
+- **loadMcpConfig full wiring into send_query** (owes two items surfaced cycles 15-16):
+  (1) `normalizeMcpConfig`'s "cannot mix top-level mcpServers with other keys" THROW — `write_mcp_config_merged`
+      is currently more lenient (`- [≈]`, ignores siblings); the throw belongs to the ported loadMcpConfig.
+  (2) the `&[]` mcp_server_names gap: `send_query` passes empty mcp_server_names to build_claude_argv, so a
+      nodeConfig.mcp server's `mcp__<name>__*` wildcards aren't yet resolved into --allowed-tools (PRE-EXISTING,
+      predates cycle 16; native-tools archon wildcard IS added). Resolve when loadMcpConfig is ported & the
+      async file-load + server-name extraction is wired into send_query. Source: packages/providers/src/mcp/config.ts
+      (already partially read cycle 15). NOT a native-tools downgrade — archon path is complete.
 
 ## Cycle-13 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-03 deterministic core: `crates/har-provider/src/cli_stream/` + `crates/har-provider/src/claude/argv.rs` + `crates/har-provider/src/claude/parser.rs`.

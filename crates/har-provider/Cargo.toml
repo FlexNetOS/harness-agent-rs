@@ -22,6 +22,8 @@ bytes.workspace = true
 tempfile = "3"
 
 directories.workspace = true
+axum.workspace = true
+tower.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
@@ -35,3 +37,4 @@ test-util = []
 serial_test = "3"
 # Self dev-dep with test-util so integration tests can use new_for_test* constructors.
 har-provider = { path = ".", features = ["test-util"] }
+reqwest.workspace = true
