@@ -8,17 +8,60 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2
-cycles_total: 11
-ledger: parity 30/79 units verified — har-isolation COMPLETE (IS-01..08) + PR-01/PR-02 provider registry.
-        (PR-01/02; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08).
-last_item: cycle 11 — PR-02 Provider Registry — PASS vs live bun on FIRST verify (no fix rounds): 70/70
-           capability cells re-derived from source match; UnknownProviderError format exact; idempotent-vs-throw.
-status: AT/NEAR CYCLE BUDGET. Next: PR-03 ClaudeProvider (IAgentProvider over claude CLI subprocess) →
-        PR-07 CodexProvider → PR-09/10/11 community → har-ledger (CO db MAP→hf) → WF-09 dag-executor.
-        NOTE: provider adapters (PR-03+) spawn external CLIs — harder to differential-test; the registry's
-        UnimplementedProvider factory seam is wired and each real impl just replaces its factory closure.
-last_update: 2026-06-14T07:00:00Z
+cycles_this_session: 1
+cycles_total: 12
+ledger: parity 33/79 units verified — har-isolation COMPLETE; provider registry + Claude sub-units.
+        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08).
+last_item: cycle 12 — Claude provider sub-units PR-04 binary-resolver + PR-05 config + PR-06 native-tools
+           — PASS vs live bun (gate caught INSTALL_INSTRUCTIONS \-continuation indent-strip downgrade, fixed).
+status: ITERATE — cycle 12 committed. NEXT = PR-03 ClaudeProvider (the big one) per the ARCHITECT DECISION
+        in target-architecture.md §6: spawn `claude` CLI (--print --output-format stream-json) → parse NDJSON
+        → MessageChunk. Deterministic parts (build_claude_argv, parse_claude_stream_json, structured-output,
+        error/retry) ARE differential-testable (golden stream-json); live model call is env-gated SKIP. Shared
+        cli_stream/ helper for all CLI providers. R8 NEEDS-HUMAN: native-tools in-process MCP → SIDECAR (do NOT
+        set nativeTools=false without owner [≠]). Then PR-07 codex → PR-09/10/11 community → har-ledger
+        (CO db MAP→hf) → WF-09 dag-executor.
+last_update: 2026-06-14T07:30:00Z
+
+## Cycle-12 (ported, parity UNPROVEN — awaiting verifier gate)
+- PR-04 Binary Resolver: `crates/har-provider/src/claude/binary_resolver.rs`. Full implementation:
+  - `CLAUDE_BINARY_NAME`: `claude.exe` (Windows) or `claude` (other) — platform-constant.
+  - `PathKind` enum: `File | Directory | Missing`.
+  - `path_kind(path)`: `std::fs::metadata` (follows symlinks like `statSync`); non-ENOENT logged+collapsed.
+  - `validate_and_expand()`: file pass-through; dir→expand to contained binary or error; missing→error.
+    Exact error messages match TS source (tested with substring assertions).
+  - `resolve_claude_binary_path(config?, is_binary_mode)`:
+    1. `CLAUDE_BIN_PATH` env var (empty="", treated as unset per JS falsy semantics) — both modes.
+    2. Config path (binary mode only).
+    3. Autodetect `~/.local/bin/claude` via `directories::BaseDirs` (binary mode only).
+    4. `Err(INSTALL_INSTRUCTIONS)` (binary mode only). Exact text pinned in test.
+    Dev mode + no env: returns `Ok(None)`.
+  - 21 tests, all `#[serial]` (env mutation).
+  - LEDGER CORRECTIONS: function name typo fixed (resolveClaude not resolveCaude); signature takes
+    `is_binary_mode: bool` param (from `BUNDLED_IS_BINARY` in TS); Rust target path corrected.
+
+- PR-05 Config: `crates/har-provider/src/claude/config.rs`. `parse_claude_config(raw)`:
+  - Defensive parse: invalid fields silently dropped, matches TS `if (typeof x === 'string')` pattern.
+  - `model: String` — pass-through if string.
+  - `settingSources: Vec<SettingSource>` — filter to `project|user`; omit if empty after filter.
+  - `claudeBinaryPath: String` — pass-through if string.
+  - Unknown fields NOT included (strict key picker — no open-bag forwarding here).
+  - `CLAUDE_CAPABILITIES` NOT redefined here (already in PR-02; reuse).
+  - 14 tests.
+
+- PR-06 Native Tools: `crates/har-provider/src/claude/native_tools.rs`. Full conversion logic:
+  - `ARCHON_TOOL_SERVER = "archon"` constant.
+  - `validate_and_convert_schema()`: ports `jsonSchemaToZodShape` exactly. Fail-fast on:
+    non-object schema, missing properties, unsupported types (only string/string-enum/boolean),
+    empty enum. Forwards `description`. Builds `Vec<ToolField>` with `required` flag per field.
+  - `build_archon_mcp_server()`: wraps tools as `McpServerDescriptor` (`name="archon"`,
+    `version="1.0.0"`, `always_load=true`). Returns serializable descriptor instead of SDK object.
+  - [≠] `McpServerDescriptor` vs SDK's `McpSdkServerConfigWithInstance`: the SDK call
+    `createSdkMcpServer()` is not portable to Rust CLI-delegation model. PR-03 must spawn an
+    MCP subprocess from this descriptor. NEEDS-HUMAN for PR-03.
+  - 18 tests.
+
+- Workspace: 839 tests total (53 new). clippy --all-targets -D warnings CLEAN.
 
 ## Cycle-11 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-02 Provider Registry: `crates/har-provider/src/lib.rs`. Full registry implementation:
@@ -137,6 +180,10 @@ VERIFIER NEEDS-HUMAN notes for PA-01/06/07:
   (don't consume the boundary char). All four bit the porter in cycle 5 — verify regex/encoding edges vs bun.
 - The LEDGER can be WRONG (cycle 5: loadCommandPrompt precedence was mis-stated). The porter+verifier must
   read the ACTUAL source, not trust the ledger's prose; fix the ledger when it lies.
+- **RECURRING (cycles 7 & 12): Rust `\`-line-continuation in a multi-line string literal SWALLOWS the next
+  line's leading whitespace** — any ported multi-line message with indentation (warnings, install/help text,
+  error banners) loses its indent and goes flush-left. Use explicit `\n   ` sequences or a raw string, and
+  byte-diff the message vs source. Also: don't double-escape `\` in Windows paths inside Rust string literals.
 - Self-reported "green" is NOT the gate: the port's own tests can encode wrong behavior. The live
   differential diff vs `bun` is the authority. Always cargo clippy --all-targets + differential parity.
 
