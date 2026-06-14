@@ -416,6 +416,7 @@ mod tests {
     // ── is_docker ────────────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn is_docker_workspace_path_slash_workspace() {
         with_env(
             &[
@@ -428,6 +429,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn is_docker_home_root_with_workspace_path() {
         with_env(
             &[
@@ -440,6 +442,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn is_docker_home_root_without_workspace_path() {
         // HOME=/root but no WORKSPACE_PATH → NOT docker
         with_env(
@@ -453,6 +456,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn is_docker_archon_docker_true() {
         with_env(
             &[
@@ -465,6 +469,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn is_docker_archon_docker_not_true() {
         with_env(
             &[
@@ -477,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn is_docker_false_when_nothing_matches() {
         with_env(
             &[
@@ -491,11 +497,13 @@ mod tests {
     // ── expand_tilde ─────────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn expand_tilde_plain_path() {
         assert_eq!(expand_tilde("/absolute/path"), PathBuf::from("/absolute/path"));
     }
 
     #[test]
+    #[serial_test::serial]
     fn expand_tilde_bare_tilde() {
         let result = expand_tilde("~");
         assert!(result.as_os_str().len() > 1, "bare ~ should expand to home dir");
@@ -503,6 +511,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn expand_tilde_with_subpath() {
         let result = expand_tilde("~/.archon");
         let home = home_dir();
@@ -510,6 +519,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn expand_tilde_no_separator() {
         // "~foo" — tilde present but NOT followed by separator: the source does
         // path.slice(1).replace(/^[/\\]/, '') which strips a leading slash/backslash
@@ -523,6 +533,7 @@ mod tests {
     // ── get_archon_home ───────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn archon_home_docker() {
         with_env(
             &[
@@ -538,6 +549,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn archon_home_env_var() {
         with_env(
             &[
@@ -552,6 +564,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn archon_home_env_var_with_tilde() {
         with_env(
             &[
@@ -572,6 +585,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn archon_home_undefined_guard() {
         with_env(
             &[
@@ -594,6 +608,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn archon_home_default() {
         with_env(
             &[
@@ -613,6 +628,7 @@ mod tests {
     // ── get_command_folder_search_paths ───────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn command_paths_no_configured() {
         assert_eq!(
             get_command_folder_search_paths(None),
@@ -621,6 +637,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn command_paths_dedup_archon_commands() {
         // archon-paths.ts:188-189: already in list → not appended
         assert_eq!(
@@ -630,6 +647,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn command_paths_dedup_archon_commands_defaults() {
         assert_eq!(
             get_command_folder_search_paths(Some(".archon/commands/defaults")),
@@ -638,6 +656,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn command_paths_empty_string_not_appended() {
         assert_eq!(
             get_command_folder_search_paths(Some("")),
@@ -646,6 +665,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn command_paths_custom_folder_appended_last() {
         assert_eq!(
             get_command_folder_search_paths(Some("custom-cmds")),
@@ -656,6 +676,7 @@ mod tests {
     // ── get_workflow_folder_search_paths ──────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn workflow_folder_paths() {
         assert_eq!(
             get_workflow_folder_search_paths(),
@@ -666,6 +687,7 @@ mod tests {
     // ── parse_owner_repo ──────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_valid() {
         assert_eq!(
             parse_owner_repo("owner/repo"),
@@ -674,43 +696,51 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_no_slash() {
         assert_eq!(parse_owner_repo("noslash"), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_nested_slashes() {
         // Three segments → None
         assert_eq!(parse_owner_repo("a/b/c"), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_empty_owner() {
         assert_eq!(parse_owner_repo("/repo"), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_empty_repo() {
         assert_eq!(parse_owner_repo("owner/"), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_dotdot_owner() {
         assert_eq!(parse_owner_repo("../repo"), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_dotdot_repo() {
         assert_eq!(parse_owner_repo("owner/.."), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_invalid_chars() {
         // Space is not a valid GitHub name character
         assert_eq!(parse_owner_repo("own er/repo"), None);
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_owner_repo_valid_with_dashes_dots() {
         assert_eq!(
             parse_owner_repo("my-org/my.repo_1"),
@@ -721,6 +751,7 @@ mod tests {
     // ── path construction ────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn run_artifacts_path_structure() {
         with_env(
             &[
@@ -739,6 +770,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn project_logs_path_structure() {
         with_env(
             &[
@@ -757,12 +789,14 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn get_repo_archon_env_path_structure() {
         let path = get_repo_archon_env_path(Path::new("/projects/myapp"));
         assert_eq!(path, PathBuf::from("/projects/myapp/.archon/.env"));
     }
 
     #[test]
+    #[serial_test::serial]
     fn get_archon_env_path_structure() {
         with_env(
             &[
@@ -778,6 +812,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn home_commands_path_structure() {
         with_env(
             &[
@@ -793,6 +828,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn home_workflows_path_structure() {
         with_env(
             &[
@@ -810,6 +846,7 @@ mod tests {
     // ── resolve_project_root_from_cwd ─────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn resolve_project_root_from_cwd_valid() {
         with_env(
             &[
@@ -833,6 +870,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn resolve_project_root_from_cwd_not_under_workspaces() {
         with_env(
             &[

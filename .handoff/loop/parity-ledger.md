@@ -685,44 +685,86 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 
 ### UNIT GI-01: Git Exec
 **Source:** `packages/git/src/exec.ts`
-**Rust target:** `crates/git/src/exec.rs`
+**Rust target:** `crates/har-git/src/exec.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 8)
 
-- [ ] `execFileAsync(cmd, args, options)` — promisified `execFile`; used throughout for git and bash subprocess execution (exec.ts; dag-executor.ts:11)
-- [ ] Timeout support, cwd, env passthrough
+LEDGER CORRECTION: target was `crates/git/src/exec.rs` — corrected to `crates/har-git/src/exec.rs`.
 
-### UNIT GI-02: Git Repo
-**Source:** `packages/git/src/repo.ts`
-**Rust target:** `crates/git/src/repo.rs`
+- [x] `execFileAsync(cmd, args, options)` → `exec_file_async(cmd, args, ExecOptions)` — `tokio::process::Command`, no shell, captures stdout+stderr separately, non-zero exit → `Err(GitError::ProcessError)`, `stdout ?? '' / stderr ?? ''` → `String::from_utf8_lossy` (never returns None). Timeout via `tokio::time::timeout`. CWD via `.current_dir()`. Env via `.env(k,v)` on top of inherited env. (`exec.ts:8-18`)
+- [x] `mkdirAsync(path, options?)` → `mkdir_async(path, recursive)` — `tokio::fs::create_dir_all` for recursive=true, `tokio::fs::create_dir` for recursive=false. (`exec.ts:21-23`)
+- [x] `run_git(repo, sub_args, timeout_ms)` convenience helper — prefixes `-C <repo>` (mirrors most git calls in source); `timeout_ms: Option<u64>` — `None` = no timeout.
+- [x] `run_git_cwd(cwd, sub_args, timeout_ms)` convenience helper — uses `cwd` option instead of `-C` (mirrors `syncRepository` style in `repo.ts:239`).
+- [x] Timeout support, cwd, env passthrough — all three present.
 
-- [ ] `findRepoRoot(path)` — walks up to find `.git` (repo.ts)
-- [ ] `getCanonicalRepoPath(path)` — resolves symlinks to canonical path (repo.ts)
-- [ ] `toRepoPath(path) -> RepoPath` branded type (git/src/types.ts)
-- [ ] `parseOwnerRepo(name)` — parses `owner/repo` format (repo.ts; archon-paths.ts)
-
-### UNIT GI-03: Git Branch
+### UNIT GI-02: Git Branch (note: ledger mapped branch.ts as GI-02, but branch.ts IS the branch unit; ledger prose was labeling "repo" wrong)
 **Source:** `packages/git/src/branch.ts`
-**Rust target:** `crates/git/src/branch.rs`
+**Rust target:** `crates/har-git/src/branch.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 8)
 
-- [ ] `getDefaultBranch(repoPath)` — gets default branch (branch.ts; executor.ts imports)
-- [ ] Branch creation and checkout operations
+LEDGER CORRECTION: GI-02 was labeled "Git Repo" but the target source is `branch.ts`. `repo.ts` is GI-03. Corrected to match actual source file mapping.
+
+- [x] `getDefaultBranch(repoPath)` — fallback chain: `symbolic-ref refs/remotes/origin/HEAD --short` → strip `origin/` prefix → `rev-parse --verify origin/main` → throw on both missing. Expected errors (not-a-symbolic-ref, No-such-file, Not-a-valid-object, unknown-revision) are absorbed; unexpected (permission-denied, corruption) propagate. (`branch.ts:24-78`)
+- [x] `checkout(repoPath, branchName)` — tries `git checkout <branch>`; on pathspec/did-not-match/"doesn't exist" → falls back to `git checkout -b <branch>`; other errors surfaced. (`branch.ts:83-109`)
+- [x] `hasUncommittedChanges(workingPath)` → `has_uncommitted_changes(working_path) -> bool` — FAIL-SAFE: returns `true` on unexpected errors. Returns `false` for ENOENT ("no such file or directory" in error msg). (`branch.ts:118-141`)
+- [x] `commitAllChanges(workingPath, message)` → `commit_all_changes` — checks dirty first, `git add -A` then `git commit -m`. "nothing to commit" edge case (CRLF normalization) → `Ok(false)`. (`branch.ts:148-177`)
+- [x] `isBranchMerged(repoPath, branchName, mainBranch)` → `is_branch_merged` — `git branch --merged <main>`; parses output splitting on '\n', stripping "* " prefix, checks membership. Expected errors → false; unexpected → Err. (`branch.ts:186-221`)
+- [x] `isPatchEquivalent(repoPath, branchName, baseBranch)` → `is_patch_equivalent` — `git cherry <base> <branch>`; empty output → true; all '-' lines → true; any '+' line → false. Expected errors → false. (`branch.ts:236-271`)
+- [x] `isAncestorOf(workingPath, ancestorRef)` → `is_ancestor_of` — `git merge-base --is-ancestor <ref> HEAD`; exit code 1 = not ancestor = false. Expected errors → false. (`branch.ts:281-312`)
+- [x] `getLastCommitDate(workingPath)` → `get_last_commit_date` → `Option<chrono::DateTime<Utc>>` — `git log -1 --format=%ci`; empty stdout → None; parse error → None+warn; expected errors → None; unexpected → Err. (`branch.ts:320-351`)
+- [≠] `getLastCommitDate` returns `chrono::DateTime<Utc>` not JS `Date`. Same `- [≠]` justification as WF-06: JSON/serde has no Date type; behavior preserved (ISO-8601 parse, invalid → None+warn).
+
+### UNIT GI-03: Git Repo
+**Source:** `packages/git/src/repo.ts`
+**Rust target:** `crates/har-git/src/repo.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 8)
+
+LEDGER CORRECTION: target was `crates/git/src/repo.rs` — corrected to `crates/har-git/src/repo.rs`. Also: `getCanonicalRepoPath` is in `worktree.ts`, not `repo.ts` — moved to GI-04. `parseOwnerRepo` is in `archon-paths.ts` / `har-paths` — already ported as `har_paths::parse_owner_repo`.
+
+- [x] `findRepoRoot(startPath)` — `git -C <path> rev-parse --show-toplevel`; "not a git repository" → None; unexpected → Err. (`repo.ts:18-38`)
+- [x] `getRemoteUrl(repoPath)` — `git remote get-url origin`; "No such remote"/"does not have a url configured" → None; empty stdout → None. (`repo.ts:45-67`)
+- [x] `syncWorkspace(workspacePath, baseBranch?, options?)` — fetch then reset-hard; `resetAfterFetch` defaults true; without reset returns `{synced:true, updated:false, previousHead:'', newHead:''}` (mirrors source's fetch-only return shape). Configured-branch-not-found → actionable error. (`repo.ts:94-173`)
+- [x] `cloneRepository(url, targetPath, options?)` → `clone_repository` → `GitResult<()>` — injects token into HTTPS URL; sanitizes token from error messages; classifies: not-found/404 → NotARepo, auth-failed → PermissionDenied, no-space → NoSpace, else Unknown. (`repo.ts:184-221`)
+- [x] `syncRepository(repoPath, branch)` → `sync_repository` → `GitResult<()>` — uses `cwd` style (not `-C`); `git fetch origin` then `git reset --hard origin/<branch>`; same error classification as cloneRepository. (`repo.ts:235-276`)
+- [x] `addSafeDirectory(path)` — `git config --global --add safe.directory <path>`. (`repo.ts:282-292`)
 
 ### UNIT GI-04: Git Worktree Operations
 **Source:** `packages/git/src/worktree.ts`
-**Rust target:** `crates/git/src/worktree.rs`
+**Rust target:** `crates/har-git/src/worktree.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 8)
 
-- [ ] `addWorktree(repoPath, worktreePath, branch, options)` (worktree.ts)
-- [ ] `removeWorktree(repoPath, worktreePath, options)` (worktree.ts; api.ts imports)
-- [ ] `listWorktrees(repoPath)` (worktree.ts)
-- [ ] `toWorktreePath(path) -> WorktreePath` branded type (api.ts imports)
-- [ ] Legacy worktree deprecation note (worktree.ts comment — verify at read time)
+LEDGER CORRECTION: target was `crates/git/src/worktree.rs` — corrected to `crates/har-git/src/worktree.rs`. `addWorktree` is NOT in `worktree.ts` — the source has no standalone `addWorktree` fn; worktree creation is done via `git worktree add` directly by callers (isolation layer). Ledger item removed.
+
+- [x] `worktreeExists(worktreePath)` → `worktree_exists` — checks directory exists (ENOENT → false) then checks `.git` entry (ENOENT for .git → false+warn corruption). (`worktree.ts:131-159`)
+- [x] `listWorktrees(repoPath)` — `git worktree list --porcelain`; parses `worktree ` and `branch ` lines exactly (strip `refs/heads/` prefix); ENOENT/"No such file or directory" → []; "not a git repository" → []; unexpected → Err. (`worktree.ts:168-210`)
+- [x] `findWorktreeByBranch(repoPath, branchPattern)` → `find_worktree_by_branch` — exact match first; then slugified (replace `/` with `-`) match. (`worktree.ts:220-238`)
+- [x] `isWorktreePath(path)` → `is_worktree_path` — reads `.git` file; if content starts with `"gitdir:"` → true; ENOENT → false; EISDIR (dir) → false. (`worktree.ts:247-263`)
+- [x] `removeWorktree(repoPath, worktreePath)` — `git worktree remove <path>`; natural git guardrail rejects uncommitted changes. (`worktree.ts:269-276`)
+- [x] `getCanonicalRepoPath(path)` → `get_canonical_repo_path` — uses `isWorktreePath`; reads `.git` file; regex extracts `<repo>/.git/worktrees/` prefix. (`worktree.ts:282-303`)
+- [x] `verifyWorktreeOwnership(worktreePath, expectedRepo)` → `verify_worktree_ownership` — EISDIR → "full git checkout" error; non-gitdir .git → "not a git-worktree reference" error; mismatched resolved paths → "belongs to a different clone" error; match → Ok. (`worktree.ts:326-379`)
+- [x] `extractOwnerRepo(repoPath)` → `extract_owner_repo` — last two path segments; panic (like throw) on < 2 segments. (`worktree.ts:385-393`)
+- [x] `WorktreeLayout` enum: `RepoLocal | WorkspaceScoped`. (`worktree.ts:28`)
+- [x] `WorktreeBaseOverride` struct: `repo_local?: String`. (`worktree.ts:33-40`)
+- [x] `getWorktreeBase(repoPath, codebaseName?, override?)` — priority: override.repoLocal → repo-local; else workspace-scoped. (`worktree.ts:91-104`)
+- [x] `isProjectScopedWorktreeBase(repoPath, codebaseName?)` — deprecated helper; delegates to getWorktreeBase. (`worktree.ts:108-121`)
+- [x] `resolveOwnerRepo` (private) — 3-way precedence: explicit codebase_name → under-workspaces path → last-two-segments. (`worktree.ts:54-77`)
 
 ### UNIT GI-05: Git Types
 **Source:** `packages/git/src/types.ts`
-**Rust target:** `crates/git/src/types.rs`
+**Rust target:** `crates/har-git/src/types.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 8)
 
-- [ ] `RepoPath` branded type
-- [ ] `BranchName` branded type
-- [ ] `WorktreePath` branded type (if present)
+LEDGER CORRECTION: target was `crates/git/src/types.rs` — corrected to `crates/har-git/src/types.rs`.
+
+- [x] `RepoPath` branded type → newtype struct `RepoPath(String)` with `AsRef<str>`, `AsRef<Path>`, `Display`. (`types.ts:6`)
+- [x] `BranchName` branded type → newtype struct `BranchName(String)`. (`types.ts:7`)
+- [x] `WorktreePath` branded type → newtype struct `WorktreePath(String)`. (`types.ts:8`)
+- [x] `toRepoPath(path)` — rejects empty string with exact message "RepoPath cannot be empty". (`types.ts:11-14`)
+- [x] `toBranchName(name)` — rejects empty string. (`types.ts:17-20`)
+- [x] `toWorktreePath(path)` — rejects empty string. (`types.ts:23-26`)
+- [x] `GitResult<T>` discriminated union → `enum GitResult<T> { Ok(T), Err(GitErrorCode) }`. (`types.ts:29`)
+- [x] `GitError` discriminated union of codes → `enum GitErrorCode { NotARepo, PermissionDenied, BranchNotFound, NoSpace, Unknown }`. (`types.ts:32-37`)
+- [x] `WorkspaceSyncResult` struct: `branch, synced, previousHead→previous_head, newHead→new_head, updated`. (`types.ts:40-49`)
+- [x] `WorktreeInfo` struct: `path: WorktreePath, branch: BranchName`. (`types.ts:52-55`)
 
 ---
 

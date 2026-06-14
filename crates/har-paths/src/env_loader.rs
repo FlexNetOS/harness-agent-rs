@@ -203,6 +203,7 @@ mod tests {
     // ── is_verbose_boot ───────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn verbose_boot_via_env_var() {
         let _guard = EnvGuard::set("ARCHON_VERBOSE_BOOT", "1");
         let _guard2 = EnvGuard::remove("LOG_LEVEL");
@@ -210,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn verbose_boot_via_log_level_debug() {
         let _guard = EnvGuard::remove("ARCHON_VERBOSE_BOOT");
         let _guard2 = EnvGuard::set("LOG_LEVEL", "debug");
@@ -217,6 +219,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn verbose_boot_via_log_level_trace() {
         let _guard = EnvGuard::remove("ARCHON_VERBOSE_BOOT");
         let _guard2 = EnvGuard::set("LOG_LEVEL", "trace");
@@ -224,6 +227,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn verbose_boot_not_verbose_by_default() {
         let _guard = EnvGuard::remove("ARCHON_VERBOSE_BOOT");
         let _guard2 = EnvGuard::set("LOG_LEVEL", "info");
@@ -233,6 +237,7 @@ mod tests {
     // ── load_env_file_override (unit test with temp file) ─────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn load_env_file_override_parses_keys() {
         let dir = tempfile::tempdir().expect("tempdir");
         let env_path = dir.path().join(".env");
@@ -257,6 +262,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn load_env_file_override_overrides_existing() {
         let dir = tempfile::tempdir().expect("tempdir");
         let env_path = dir.path().join(".env");
@@ -273,6 +279,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn load_env_file_not_found() {
         let result = load_env_file_override(Path::new("/nonexistent/path/.env.xyz123"));
         matches!(result, EnvLoadResult::NotFound);
@@ -281,6 +288,7 @@ mod tests {
     // ── display_path ──────────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn display_path_under_home() {
         let home = home_dir_string();
         let p = PathBuf::from(format!("{}/foo/bar", home));
@@ -288,6 +296,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn display_path_not_under_home() {
         let p = PathBuf::from("/etc/hosts");
         assert_eq!(display_path(&p), "/etc/hosts");

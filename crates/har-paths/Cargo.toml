@@ -15,3 +15,5 @@ dotenvy = "0.15"
 
 [dev-dependencies]
 tempfile = "3"
+# Serializes env-mutating tests (process-global env like ARCHON_HOME) so they do not race under cargo parallel runner.
+serial_test = "3"
