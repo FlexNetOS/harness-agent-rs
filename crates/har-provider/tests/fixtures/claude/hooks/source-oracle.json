@@ -1,0 +1,93 @@
+{
+  "basic_matcher_timeout": {
+    "isEmpty": false,
+    "serialized": {
+      "PostToolUse": [
+        {
+          "response": {
+            "type": "continue"
+          },
+          "matcher": "Bash",
+          "timeout": 5000
+        }
+      ]
+    }
+  },
+  "matcher_optional": {
+    "isEmpty": false,
+    "serialized": {
+      "PreToolUse": [
+        {
+          "response": {
+            "action": "block"
+          }
+        }
+      ]
+    }
+  },
+  "response_object": {
+    "isEmpty": false,
+    "serialized": {
+      "PostToolUse": [
+        {
+          "response": {
+            "continue": true
+          }
+        }
+      ]
+    }
+  },
+  "empty_map": {
+    "isEmpty": true,
+    "serialized": {}
+  },
+  "multi_event_multi_matcher": {
+    "isEmpty": false,
+    "serialized": {
+      "PreToolUse": [
+        {
+          "response": {
+            "decision": "approve"
+          },
+          "matcher": "Edit",
+          "timeout": 1000
+        }
+      ],
+      "PostToolUse": [
+        {
+          "response": "string-response",
+          "matcher": "Bash"
+        },
+        {
+          "response": {
+            "nested": {
+              "a": [
+                1,
+                2,
+                3
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "empty_matchers_array": {
+    "isEmpty": false,
+    "serialized": {
+      "PostToolUse": []
+    }
+  },
+  "response_with_quote": {
+    "isEmpty": false,
+    "serialized": {
+      "PreToolUse": [
+        {
+          "response": {
+            "msg": "it's a test"
+          }
+        }
+      ]
+    }
+  }
+}

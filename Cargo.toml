@@ -37,7 +37,7 @@ anyhow = "1"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["rt", "codec"] }
+tokio-util = { version = "0.7", features = ["rt", "codec", "io"] }
 async-trait = "0.1"
 
 # Byte utilities

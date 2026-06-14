@@ -5,12 +5,14 @@
 //! - `native_tools`    — PR-06: JSON Schema → tool definition conversion; MCP server descriptor
 //! - `argv`            — PR-03a: deterministic option→CLI-flag mapping (build_claude_argv)
 //! - `parser`          — PR-03b: NDJSON→MessageChunk parser (parse_claude_stream_json)
+//! - `provider`        — PR-03c: ClaudeProvider struct + AgentProvider impl (send_query orchestration)
 
 pub mod argv;
 pub mod binary_resolver;
 pub mod config;
 pub mod native_tools;
 pub mod parser;
+pub mod provider;
 
 // Re-export the primary public surface for convenience.
 pub use argv::{build_claude_argv, ProviderWarning, TRANSPORT_FLAGS};
@@ -26,3 +28,4 @@ pub use parser::{
     normalize_claude_usage, parse_claude_stream_json, parse_claude_stream_json_line, RawUsage,
     ToolResultEntry,
 };
+pub use provider::{build_hooks_settings_json, ClaudeProvider, HookCommand, HookSettingsEntry};

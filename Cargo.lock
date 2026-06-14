@@ -788,6 +788,7 @@ dependencies = [
  "futures",
  "futures-core",
  "har-contract",
+ "har-provider",
  "indexmap",
  "libc",
  "serde",
