@@ -12,63 +12,63 @@
 
 ### WF-01 — dag-node.ts
 
-- [ ] unit:WF-01 `schemas/dag-node.ts::triggerRuleSchema` → `workflows::schemas::dag_node::TriggerRule`
-- [ ] unit:WF-01 `schemas/dag-node.ts::TriggerRule` → `workflows::schemas::dag_node::TriggerRule`
-- [ ] unit:WF-01 `schemas/dag-node.ts::effortLevelSchema` → `workflows::schemas::dag_node::EffortLevel`
-- [ ] unit:WF-01 `schemas/dag-node.ts::EffortLevel` → `workflows::schemas::dag_node::EffortLevel`
-- [ ] unit:WF-01 `schemas/dag-node.ts::thinkingConfigSchema` → `workflows::schemas::dag_node::ThinkingConfig`
-- [ ] unit:WF-01 `schemas/dag-node.ts::ThinkingConfig` → `workflows::schemas::dag_node::ThinkingConfig`
-- [ ] unit:WF-01 `schemas/dag-node.ts::sandboxSettingsSchema` → `workflows::schemas::dag_node::SandboxSettings`
-- [ ] unit:WF-01 `schemas/dag-node.ts::SandboxSettings` → `workflows::schemas::dag_node::SandboxSettings`
-- [ ] unit:WF-01 `schemas/dag-node.ts::agentDefinitionSchema` → `workflows::schemas::dag_node::AgentDefinition`
-- [ ] unit:WF-01 `schemas/dag-node.ts::AgentDefinition` → `workflows::schemas::dag_node::AgentDefinition`
-- [ ] unit:WF-01 `schemas/dag-node.ts::AGENT_ID_REGEX` → `workflows::schemas::dag_node::AGENT_ID_REGEX`
-- [ ] unit:WF-01 `schemas/dag-node.ts::dagNodeBaseSchema` → `workflows::schemas::dag_node::DagNodeBase`
-- [ ] unit:WF-01 `schemas/dag-node.ts::DagNodeBase` → `workflows::schemas::dag_node::DagNodeBase`
-- [ ] unit:WF-01 `schemas/dag-node.ts::commandNodeSchema` → `workflows::schemas::dag_node::CommandNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::CommandNode` → `workflows::schemas::dag_node::CommandNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::promptNodeSchema` → `workflows::schemas::dag_node::PromptNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::PromptNode` → `workflows::schemas::dag_node::PromptNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::bashNodeSchema` → `workflows::schemas::dag_node::BashNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::BashNode` → `workflows::schemas::dag_node::BashNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::scriptNodeSchema` → `workflows::schemas::dag_node::ScriptNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::ScriptNode` → `workflows::schemas::dag_node::ScriptNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::loopNodeSchema` → `workflows::schemas::dag_node::LoopNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::LoopNode` → `workflows::schemas::dag_node::LoopNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::approvalNodeSchema` → `workflows::schemas::dag_node::ApprovalNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::ApprovalNode` → `workflows::schemas::dag_node::ApprovalNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::ApprovalOnReject` → `workflows::schemas::dag_node::ApprovalOnReject`
-- [ ] unit:WF-01 `schemas/dag-node.ts::cancelNodeSchema` → `workflows::schemas::dag_node::CancelNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::CancelNode` → `workflows::schemas::dag_node::CancelNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::dagNodeSchema` → `workflows::schemas::dag_node::parse_dag_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::DagNode` → `workflows::schemas::dag_node::DagNode`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isBashNode` → `workflows::schemas::dag_node::is_bash_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isLoopNode` → `workflows::schemas::dag_node::is_loop_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isApprovalNode` → `workflows::schemas::dag_node::is_approval_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isCancelNode` → `workflows::schemas::dag_node::is_cancel_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isScriptNode` → `workflows::schemas::dag_node::is_script_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isTriggerRule` → `workflows::schemas::dag_node::is_trigger_rule()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::isPersistableNode` → `workflows::schemas::dag_node::is_persistable_node()`
-- [ ] unit:WF-01 `schemas/dag-node.ts::BASH_NODE_AI_FIELDS` → `workflows::schemas::dag_node::BASH_NODE_AI_FIELDS`
-- [ ] unit:WF-01 `schemas/dag-node.ts::SCRIPT_NODE_AI_FIELDS` → `workflows::schemas::dag_node::SCRIPT_NODE_AI_FIELDS`
-- [ ] unit:WF-01 `schemas/dag-node.ts::LOOP_NODE_AI_FIELDS` → `workflows::schemas::dag_node::LOOP_NODE_AI_FIELDS`
+- [x] unit:WF-01 `schemas/dag-node.ts::triggerRuleSchema` → `workflows::schemas::dag_node::TriggerRule` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::TriggerRule` → `workflows::schemas::dag_node::TriggerRule` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::effortLevelSchema` → `workflows::schemas::dag_node::EffortLevel` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::EffortLevel` → `workflows::schemas::dag_node::EffortLevel` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::thinkingConfigSchema` → `workflows::schemas::dag_node::ThinkingConfig` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::ThinkingConfig` → `workflows::schemas::dag_node::ThinkingConfig` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::sandboxSettingsSchema` → `workflows::schemas::dag_node::SandboxSettings` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::SandboxSettings` → `workflows::schemas::dag_node::SandboxSettings` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::agentDefinitionSchema` → `workflows::schemas::dag_node::AgentDefinition` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::AgentDefinition` → `workflows::schemas::dag_node::AgentDefinition` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::AGENT_ID_REGEX` → `workflows::schemas::dag_node::AGENT_ID_REGEX` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::dagNodeBaseSchema` → `workflows::schemas::dag_node::DagNodeBase` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::DagNodeBase` → `workflows::schemas::dag_node::DagNodeBase` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::commandNodeSchema` → `workflows::schemas::dag_node::CommandNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::CommandNode` → `workflows::schemas::dag_node::CommandNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::promptNodeSchema` → `workflows::schemas::dag_node::PromptNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::PromptNode` → `workflows::schemas::dag_node::PromptNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::bashNodeSchema` → `workflows::schemas::dag_node::BashNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::BashNode` → `workflows::schemas::dag_node::BashNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::scriptNodeSchema` → `workflows::schemas::dag_node::ScriptNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::ScriptNode` → `workflows::schemas::dag_node::ScriptNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::loopNodeSchema` → `workflows::schemas::dag_node::LoopNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::LoopNode` → `workflows::schemas::dag_node::LoopNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::approvalNodeSchema` → `workflows::schemas::dag_node::ApprovalNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::ApprovalNode` → `workflows::schemas::dag_node::ApprovalNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::ApprovalOnReject` → `workflows::schemas::dag_node::ApprovalOnReject` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::cancelNodeSchema` → `workflows::schemas::dag_node::CancelNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::CancelNode` → `workflows::schemas::dag_node::CancelNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::dagNodeSchema` → `workflows::schemas::dag_node::parse_dag_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::DagNode` → `workflows::schemas::dag_node::DagNode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isBashNode` → `workflows::schemas::dag_node::is_bash_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isLoopNode` → `workflows::schemas::dag_node::is_loop_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isApprovalNode` → `workflows::schemas::dag_node::is_approval_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isCancelNode` → `workflows::schemas::dag_node::is_cancel_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isScriptNode` → `workflows::schemas::dag_node::is_script_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isTriggerRule` → `workflows::schemas::dag_node::is_trigger_rule()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::isPersistableNode` → `workflows::schemas::dag_node::is_persistable_node()` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::BASH_NODE_AI_FIELDS` → `workflows::schemas::dag_node::BASH_NODE_AI_FIELDS` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::SCRIPT_NODE_AI_FIELDS` → `workflows::schemas::dag_node::SCRIPT_NODE_AI_FIELDS` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-01 `schemas/dag-node.ts::LOOP_NODE_AI_FIELDS` → `workflows::schemas::dag_node::LOOP_NODE_AI_FIELDS` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
 
 ### WF-02 — schemas/workflow.ts
 
-- [ ] unit:WF-02 `schemas/workflow.ts::ModelReasoningEffort` → `workflows::schemas::workflow::ModelReasoningEffort`
-- [ ] unit:WF-02 `schemas/workflow.ts::WebSearchMode` → `workflows::schemas::workflow::WebSearchMode`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowRequirement` → `workflows::schemas::workflow::WorkflowRequirement`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowWorktreePolicy` → `workflows::schemas::workflow::WorkflowWorktreePolicy`
-- [ ] unit:WF-02 `schemas/workflow.ts::workflowBaseSchema` → `workflows::schemas::workflow::WorkflowBase`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowBase` → `workflows::schemas::workflow::WorkflowBase`
-- [ ] unit:WF-02 `schemas/workflow.ts::workflowDefinitionSchema` → `workflows::schemas::workflow::WorkflowDefinition`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowDefinition` → `workflows::schemas::workflow::WorkflowDefinition`
-- [ ] unit:WF-02 `schemas/workflow.ts::LoadCommandResult` → `workflows::schemas::workflow::LoadCommandResult`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowExecutionResult` → `workflows::schemas::workflow::WorkflowExecutionResult`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowSource` → `workflows::schemas::workflow::WorkflowSource`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowWithSource` → `workflows::schemas::workflow::WorkflowWithSource`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowLoadError` → `workflows::schemas::workflow::WorkflowLoadError`
-- [ ] unit:WF-02 `schemas/workflow.ts::WorkflowLoadResult` → `workflows::schemas::workflow::WorkflowLoadResult`
+- [x] unit:WF-02 `schemas/workflow.ts::ModelReasoningEffort` → `workflows::schemas::workflow::ModelReasoningEffort` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WebSearchMode` → `workflows::schemas::workflow::WebSearchMode` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowRequirement` → `workflows::schemas::workflow::WorkflowRequirement` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowWorktreePolicy` → `workflows::schemas::workflow::WorkflowWorktreePolicy` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::workflowBaseSchema` → `workflows::schemas::workflow::WorkflowBase` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowBase` → `workflows::schemas::workflow::WorkflowBase` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::workflowDefinitionSchema` → `workflows::schemas::workflow::WorkflowDefinition` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowDefinition` → `workflows::schemas::workflow::WorkflowDefinition` — parity-verified 2026-06-13 c2 (107 fixtures: 0 accept-mismatch, 0 value-mismatch; .trim()-transform output parity on provider/mcp/skills confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::LoadCommandResult` → `workflows::schemas::workflow::LoadCommandResult` — wire-shape QUALIFIED 2026-06-13 c2 (plain TS type, no runtime safeParse oracle by design; verified by serde round-trip + untagged-enum resolution analysis — WorkflowExecutionResult Paused-before-Completed disambiguation confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowExecutionResult` → `workflows::schemas::workflow::WorkflowExecutionResult` — wire-shape QUALIFIED 2026-06-13 c2 (plain TS type, no runtime safeParse oracle by design; verified by serde round-trip + untagged-enum resolution analysis — WorkflowExecutionResult Paused-before-Completed disambiguation confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowSource` → `workflows::schemas::workflow::WorkflowSource` — wire-shape QUALIFIED 2026-06-13 c2 (plain TS type, no runtime safeParse oracle by design; verified by serde round-trip + untagged-enum resolution analysis — WorkflowExecutionResult Paused-before-Completed disambiguation confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowWithSource` → `workflows::schemas::workflow::WorkflowWithSource` — wire-shape QUALIFIED 2026-06-13 c2 (plain TS type, no runtime safeParse oracle by design; verified by serde round-trip + untagged-enum resolution analysis — WorkflowExecutionResult Paused-before-Completed disambiguation confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowLoadError` → `workflows::schemas::workflow::WorkflowLoadError` — wire-shape QUALIFIED 2026-06-13 c2 (plain TS type, no runtime safeParse oracle by design; verified by serde round-trip + untagged-enum resolution analysis — WorkflowExecutionResult Paused-before-Completed disambiguation confirmed)
+- [x] unit:WF-02 `schemas/workflow.ts::WorkflowLoadResult` → `workflows::schemas::workflow::WorkflowLoadResult` — wire-shape QUALIFIED 2026-06-13 c2 (plain TS type, no runtime safeParse oracle by design; verified by serde round-trip + untagged-enum resolution analysis — WorkflowExecutionResult Paused-before-Completed disambiguation confirmed)
 
 ### WF-03 — schemas/loop.ts
 

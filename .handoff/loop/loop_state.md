@@ -8,21 +8,29 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1
-cycles_total: 1
-ledger: parity 4/79 units verified (PR-01 har-contract, WF-03 Loop, WF-04 Retry, WF-05 Hooks)
-last_item: cycle 1 — bootstrap (14-crate skeleton) + har-contract + WF-03/04/05 schemas — PASS gate
-status: ITERATE — cycle 1 committed; next cycle 2 = WF-01 dag-node + WF-02 workflow schemas
-last_update: 2026-06-13T17:00:00Z
+cycles_this_session: 2
+cycles_total: 2
+ledger: parity 6/79 units verified (PR-01; WF-01 dag-node, WF-02 workflow, WF-03/04/05)
+last_item: cycle 2 — WF-01 dag-node + WF-02 workflow schemas — PASS gate (107/107 fixtures)
+status: ITERATE — cycle 2 committed; next cycle 3 = WF-06/07/08 run+artifact+session schemas
+last_update: 2026-06-13T18:30:00Z
 
 ## Verified units (parity gate PASS)
 - PR-01 har-contract ← providers/src/types.ts (QUALIFIED: pure types, wire-shape verified)
-- WF-03 Loop, WF-04 Retry (delay_ms f64 fix), WF-05 Hooks ← workflows/src/schemas/*
-  Differential harness: crates/har-workflow-schema/examples/parity_diff.rs; findings/parity-cycle1.md
+- WF-01 dag-node (7-variant union, superRefine, ThinkingConfig preprocess, value-bounds, trim-transform)
+- WF-02 workflow (envelope + discriminated unions, node-composition validation)
+- WF-03 Loop, WF-04 Retry (delay_ms f64), WF-05 Hooks ← workflows/src/schemas/*
+  Differential harness: crates/har-workflow-schema/examples/parity_diff.rs; findings/parity-cycle{1,2}.md
+
+## Key parity lessons (apply to every schema unit)
+- zod `z.number()` WITHOUT `.int()` → Rust f64, NOT integer (fractional values are source-valid).
+- zod `.trim()` is a TRANSFORM: store the trimmed value, not just validate on trimmed.
+- Restore EVERY value-bound (.positive/.min/.max/.nonempty/.trim().min(1)); collect ALL issues (no fail-fast).
+- Self-reported "green" is not the gate: always run cargo clippy --all-targets + differential parity vs live bun.
 
 ## Next units (dependency order, from cartographer)
-cycle 2: WF-01 dag-node schemas + WF-02 workflow schema (the big discriminated unions)
-then: WF-06/07/08 run schemas → PA paths → GI git → IS isolation → CO db → WF-09 dag-executor
+cycle 3: WF-06 workflow-run + WF-07 node-artifact + WF-08 node-session schemas (resolve the 2 NEEDS-HUMAN shapes)
+then: PA paths → GI git → IS isolation → CO db (MAP→hf) → WF-09..14 executor → WF-09 dag-executor (the core)
 
 ## Scope (owner directive)
 - Archon v0.4.1 CURRENT architecture only. Legacy versions excluded (record as excluded, not as work).
