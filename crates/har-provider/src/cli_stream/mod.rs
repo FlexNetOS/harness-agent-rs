@@ -18,7 +18,7 @@ pub mod stderr;
 pub mod stream;
 
 // Re-export the key public surface.
-pub use cancel::CancelGuard;
+pub use cancel::{CancelGuard, TokioCancelToken};
 pub use retry::{
     classify_and_enrich_error, classify_subprocess_error, with_first_message_timeout, EnrichedError,
     ErrorClass, FirstEventError, RetryConfig, RetryError,

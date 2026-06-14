@@ -8,18 +8,20 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2
-cycles_total: 13
-ledger: parity 33/79 units verified + PR-03 DETERMINISTIC CORE verified (cli_stream/ + argv + parser).
-        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08; PR-03 core).
-        PR-03 unit stays in-progress: send_query orchestration + hooks + R8 sidecar remain (cycle 14).
-last_item: cycle 13 — PR-03 deterministic core (cli_stream/ + claude/argv.rs + claude/parser.rs) — PASS vs
-           live bun (argv 23/23, parser 20/20; gate caught node.allowed_tools→--allowed-tools downgrade, fixed).
-status: ITERATE — cycle 13 committed. NEXT = cycle 14: wire ClaudeProvider::send_query over cli_stream
-        (hooks→--settings, env→child-env, register real provider replacing UnimplementedProvider) +
-        buildSDKHooksFromYAML. R8 native-tools sidecar still NEEDS-HUMAN (nativeTools cap stays true).
-        After PR-03: PR-07 codex (reuses cli_stream) → community → har-ledger (CO db MAP→hf) → WF-09.
-last_update: 2026-06-14T10:30:00Z
+cycles_this_session: 3
+cycles_total: 14
+ledger: parity 33/79 units + PR-03 ~95% (cli_stream/argv/parser/send_query/hooks/registry all VERIFIED).
+        (PR-01/02/04/05/06; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08; PR-03 all-but-native-tools).
+        PR-03 flips to a full verified unit when cycle-15 native-tools sidecar lands (only `- [~]` row left).
+last_item: cycle 14 — ClaudeProvider::send_query orchestration + buildSDKHooksFromYAML + registry wiring —
+           PASS vs live bun (7/7; gate caught persistSession/excludeDynamicSections SILENT-DROP — the porter
+           wrongly claimed "SDK-only" but `claude --help` has --no-session-persistence + --exclude-dynamic-
+           system-prompt-sections; fixed by emitting both flags).
+status: AT CYCLE BUDGET (3/3 this session) — HAND OFF. NEXT = cycle 15: R8 native-tools SIDECAR band-aid
+        (keeps full feature per owner; the REAL fix = pure-Rust-native is post-port UP-1 in docs/POST-PORT-
+        UPGRADES.md). Then PR-07 codex (reuses cli_stream) → PR-09/10/11 community → har-ledger (CO db
+        MAP→hf) → WF-09 dag-executor (keystone).
+last_update: 2026-06-14T12:00:00Z
 
 ## Cycle-13 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-03 deterministic core: `crates/har-provider/src/cli_stream/` + `crates/har-provider/src/claude/argv.rs` + `crates/har-provider/src/claude/parser.rs`.

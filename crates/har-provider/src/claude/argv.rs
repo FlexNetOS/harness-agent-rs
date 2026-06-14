@@ -14,9 +14,11 @@
 //! | fallbackModel (524)                     | `--fallback-model <id>`                             |
 //! | resume=resumeSessionId (936)            | `--resume <session_id>`                             |
 //! | forkSession (530)                       | `--fork-session`                                    |
+//! | persistSession: false (527)             | `--no-session-persistence` (only when explicitly false)|
 //! | permissionMode:'bypassPermissions'      | `--permission-mode bypassPermissions`               |
 //! | allowDangerouslySkipPermissions (534)   | `--dangerously-skip-permissions`                    |
 //! | systemPrompt preset/append (535)        | `--system-prompt` / `--append-system-prompt`        |
+//! | excludeDynamicSections: true (types.ts:233)| `--exclude-dynamic-system-prompt-sections` (only when true)|
 //! | settingSources (536)                    | `--setting-sources project,user`                    |
 //! | allowed_tools/tools (282-284)           | → `options.tools` (agent roster, no direct CLI flag)|
 //! | denied_tools/disallowedTools (287-289)  | `--disallowed-tools a,b,c`                          |
@@ -178,7 +180,13 @@ pub fn build_claude_argv(
                 argv.push("--append-system-prompt".to_owned());
                 argv.push(append.clone());
             }
-            // excludeDynamicSections: no CLI flag equivalent documented → noted as a seam
+            // excludeDynamicSections: true → --exclude-dynamic-system-prompt-sections
+            // Source: types.ts:233 (SystemPromptPreset.excludeDynamicSections).
+            // CLI flag confirmed: claude --help 2.1.177.
+            // Only emit on true; false/absent is the CLI default (sections included).
+            if preset.exclude_dynamic_sections == Some(true) {
+                argv.push("--exclude-dynamic-system-prompt-sections".to_owned());
+            }
         }
         None => {
             // Default: { type: 'preset', preset: 'claude_code' } — no argv flag needed,
@@ -201,6 +209,17 @@ pub fn build_claude_argv(
     let fork = request_options.and_then(|o| o.fork_session);
     if fork == Some(true) {
         argv.push("--fork-session".to_owned());
+    }
+
+    // ── Persist session ───────────────────────────────────────────────────────
+    // provider.ts:527-529: `persistSession` is passed to the SDK when !== undefined.
+    // The SDK maps persistSession:false → --no-session-persistence.
+    // CLI flag confirmed: claude --help 2.1.177 ("only works with --print"; we pass --print).
+    // Only emit on explicit false; true/absent is the CLI default (sessions persisted).
+    // Source: types.ts:253 (AgentRequestOptions.persistSession).
+    let persist = request_options.and_then(|o| o.persist_session);
+    if persist == Some(false) {
+        argv.push("--no-session-persistence".to_owned());
     }
 
     // ── Resume session ────────────────────────────────────────────────────────
@@ -283,65 +302,17 @@ pub fn build_claude_argv(
     // provider.ts:324 / 367 / 927: assembled ONLY from MCP wildcards + Skill + sidecar
     // wildcard. nodeConfig.allowed_tools does NOT flow here — it is options.tools, not
     // options.allowedTools.
+    //
+    // ORDER FIX (cycle-14 `- [!]`): source runs MCP block BEFORE skills block.
+    //   provider.ts:324  → MCP wildcards appended first.
+    //   provider.ts:367  → 'Skill' appended after.
+    // Result: [...mcpWildcards, 'Skill']  (MCP first).
+    // Rust now matches this order by handling MCP config before the skills block.
     let mut permission_allowlist: Vec<String> = Vec::new();
 
-    // ── Skills → agents ───────────────────────────────────────────────────────
-    // applyNodeConfig:345-368
-    let mut agents_map: serde_json::Map<String, Value> = serde_json::Map::new();
-    let mut agent_id_for_query: Option<String> = None;
-
-    if let Some(skills) = node_config.and_then(|n| n.skills.as_ref()) {
-        if !skills.is_empty() {
-            let skill_agent_id = "dag-node-skills";
-            let mut agent_def = serde_json::json!({
-                "description": "DAG node with skills",
-                "prompt": format!("You have preloaded skills: {}. Use them when relevant.", skills.join(", ")),
-                "skills": skills,
-            });
-            // provider.ts:360-361: if options.tools is set (= agent_roster_tools), add Skill to
-            // the agent's tools list. options.tools == agent_roster_tools here.
-            if !agent_roster_tools.is_empty() {
-                let mut tools_with_skill = agent_roster_tools.clone();
-                tools_with_skill.push("Skill".to_owned());
-                agent_def["tools"] = Value::Array(
-                    tools_with_skill.into_iter().map(Value::String).collect()
-                );
-            }
-            if let Some(m) = model {
-                agent_def["model"] = Value::String(m.to_owned());
-            }
-            agents_map.insert(skill_agent_id.to_owned(), agent_def);
-            agent_id_for_query = Some(skill_agent_id.to_owned());
-
-            // provider.ts:366-368: add 'Skill' to options.allowedTools (= permission_allowlist)
-            if !permission_allowlist.contains(&"Skill".to_owned()) {
-                permission_allowlist.push("Skill".to_owned());
-            }
-        }
-    }
-
-    // ── Inline agents (after skills — user agents win on id collision) ────────
-    // applyNodeConfig:372-396
-    if let Some(agents) = node_config.and_then(|n| n.agents.as_ref()) {
-        for (id, def) in agents {
-            let v = serde_json::to_value(def).unwrap_or(Value::Null);
-            agents_map.insert(id.clone(), v);
-        }
-    }
-
-    // Output agents / agent flags
-    if !agents_map.is_empty() {
-        let agents_json = Value::Object(agents_map);
-        argv.push("--agents".to_owned());
-        argv.push(serde_json::to_string(&agents_json).unwrap_or_default());
-    }
-    if let Some(aid) = agent_id_for_query {
-        argv.push("--agent".to_owned());
-        argv.push(aid);
-    }
-
     // ── MCP config ────────────────────────────────────────────────────────────
-    // applyNodeConfig:319-333; mcp wildcards added to options.allowedTools (permission_allowlist)
+    // applyNodeConfig:319-333; MCP block runs BEFORE skills — wildcards appended first.
+    // (provider.ts:319-343, then skills at provider.ts:345-368)
     if let Some(node_cfg) = node_config {
         if let Some(mcp_path) = &node_cfg.mcp {
             argv.push("--mcp-config".to_owned());
@@ -375,6 +346,62 @@ pub fn build_claude_argv(
                 });
             }
         }
+    }
+
+    // ── Skills → agents ───────────────────────────────────────────────────────
+    // applyNodeConfig:345-368 — runs AFTER MCP block; 'Skill' appended to permission_allowlist
+    // AFTER MCP wildcards (see ORDER FIX above).
+    let mut agents_map: serde_json::Map<String, Value> = serde_json::Map::new();
+    let mut agent_id_for_query: Option<String> = None;
+
+    if let Some(skills) = node_config.and_then(|n| n.skills.as_ref()) {
+        if !skills.is_empty() {
+            let skill_agent_id = "dag-node-skills";
+            let mut agent_def = serde_json::json!({
+                "description": "DAG node with skills",
+                "prompt": format!("You have preloaded skills: {}. Use them when relevant.", skills.join(", ")),
+                "skills": skills,
+            });
+            // provider.ts:360-361: if options.tools is set (= agent_roster_tools), add Skill to
+            // the agent's tools list. options.tools == agent_roster_tools here.
+            if !agent_roster_tools.is_empty() {
+                let mut tools_with_skill = agent_roster_tools.clone();
+                tools_with_skill.push("Skill".to_owned());
+                agent_def["tools"] = Value::Array(
+                    tools_with_skill.into_iter().map(Value::String).collect()
+                );
+            }
+            if let Some(m) = model {
+                agent_def["model"] = Value::String(m.to_owned());
+            }
+            agents_map.insert(skill_agent_id.to_owned(), agent_def);
+            agent_id_for_query = Some(skill_agent_id.to_owned());
+
+            // provider.ts:366-368: add 'Skill' to options.allowedTools AFTER MCP wildcards.
+            if !permission_allowlist.contains(&"Skill".to_owned()) {
+                permission_allowlist.push("Skill".to_owned());
+            }
+        }
+    }
+
+    // ── Inline agents (after skills — user agents win on id collision) ────────
+    // applyNodeConfig:372-396
+    if let Some(agents) = node_config.and_then(|n| n.agents.as_ref()) {
+        for (id, def) in agents {
+            let v = serde_json::to_value(def).unwrap_or(Value::Null);
+            agents_map.insert(id.clone(), v);
+        }
+    }
+
+    // Output agents / agent flags
+    if !agents_map.is_empty() {
+        let agents_json = Value::Object(agents_map);
+        argv.push("--agents".to_owned());
+        argv.push(serde_json::to_string(&agents_json).unwrap_or_default());
+    }
+    if let Some(aid) = agent_id_for_query {
+        argv.push("--agent".to_owned());
+        argv.push(aid);
     }
 
     // ── R8 Native tools sidecar seam ──────────────────────────────────────────
@@ -853,6 +880,140 @@ mod tests {
             None,
         );
         assert_argv_not_contains(&argv, "--no-env-file");
+    }
+
+    // ── allowedTools order: MCP wildcards before Skill (cycle-14 fix) ───────────
+    //
+    // Source: applyNodeConfig MCP block (provider.ts:324) runs BEFORE skills block
+    // (provider.ts:367). Resulting order: [...mcpWildcards, 'Skill'].
+
+    #[test]
+    fn mcp_wildcards_before_skill_in_allowed_tools() {
+        let nc = NodeConfig {
+            mcp: Some("/mcp.json".to_owned()),
+            skills: Some(vec!["skill-a".to_owned()]),
+            ..Default::default()
+        };
+        let server_names = vec!["my-server".to_owned()];
+        let (argv, _) =
+            build_claude_argv(None, Some(&nc), &defaults(), None, None, &server_names, &[], None);
+        let tools_pos = argv.iter().position(|a| a == "--allowed-tools").unwrap();
+        let tools_val = &argv[tools_pos + 1];
+        // Both must be present
+        assert!(tools_val.contains("mcp__my-server__*"), "missing mcp wildcard: {}", tools_val);
+        assert!(tools_val.contains("Skill"), "missing Skill: {}", tools_val);
+        // MCP wildcard must appear BEFORE Skill (source order)
+        let mcp_pos = tools_val.find("mcp__my-server__*").unwrap();
+        let skill_pos = tools_val.find("Skill").unwrap();
+        assert!(
+            mcp_pos < skill_pos,
+            "MCP wildcard must appear before Skill in --allowed-tools, got: {}",
+            tools_val
+        );
+    }
+
+    // ── persistSession → --no-session-persistence ─────────────────────────────
+    //
+    // Source: provider.ts:527-529; types.ts:253.
+    // SDK: persistSession:false → --no-session-persistence.
+    // CLI confirmed: claude --help 2.1.177.
+    // Only the non-default value (false) emits the flag.
+
+    #[test]
+    fn persist_session_false_emits_no_session_persistence() {
+        let opts = SendQueryOptions { persist_session: Some(false), ..Default::default() };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_contains(&argv, "--no-session-persistence");
+    }
+
+    #[test]
+    fn persist_session_true_does_not_emit_flag() {
+        let opts = SendQueryOptions { persist_session: Some(true), ..Default::default() };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_not_contains(&argv, "--no-session-persistence");
+    }
+
+    #[test]
+    fn persist_session_absent_does_not_emit_flag() {
+        // None means caller didn't set it — use CLI default (sessions persisted).
+        let opts = SendQueryOptions { persist_session: None, ..Default::default() };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_not_contains(&argv, "--no-session-persistence");
+    }
+
+    // ── excludeDynamicSections → --exclude-dynamic-system-prompt-sections ─────
+    //
+    // Source: types.ts:233 (SystemPromptPreset.excludeDynamicSections).
+    // CLI confirmed: claude --help 2.1.177.
+    // Only when the system prompt is a Preset AND excludeDynamicSections is explicitly true.
+
+    #[test]
+    fn exclude_dynamic_sections_true_emits_flag() {
+        use har_contract::{SystemPromptInput, SystemPromptPreset, SystemPromptPresetName,
+            SystemPromptPresetType};
+        let opts = SendQueryOptions {
+            system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
+                kind: SystemPromptPresetType::Preset,
+                preset: SystemPromptPresetName::ClaudeCode,
+                append: None,
+                exclude_dynamic_sections: Some(true),
+            })),
+            ..Default::default()
+        };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_contains(&argv, "--exclude-dynamic-system-prompt-sections");
+    }
+
+    #[test]
+    fn exclude_dynamic_sections_false_does_not_emit_flag() {
+        use har_contract::{SystemPromptInput, SystemPromptPreset, SystemPromptPresetName,
+            SystemPromptPresetType};
+        let opts = SendQueryOptions {
+            system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
+                kind: SystemPromptPresetType::Preset,
+                preset: SystemPromptPresetName::ClaudeCode,
+                append: None,
+                exclude_dynamic_sections: Some(false),
+            })),
+            ..Default::default()
+        };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_not_contains(&argv, "--exclude-dynamic-system-prompt-sections");
+    }
+
+    #[test]
+    fn exclude_dynamic_sections_absent_does_not_emit_flag() {
+        use har_contract::{SystemPromptInput, SystemPromptPreset, SystemPromptPresetName,
+            SystemPromptPresetType};
+        let opts = SendQueryOptions {
+            system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
+                kind: SystemPromptPresetType::Preset,
+                preset: SystemPromptPresetName::ClaudeCode,
+                append: None,
+                exclude_dynamic_sections: None,
+            })),
+            ..Default::default()
+        };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_not_contains(&argv, "--exclude-dynamic-system-prompt-sections");
+    }
+
+    #[test]
+    fn exclude_dynamic_sections_on_string_prompt_does_not_emit_flag() {
+        // excludeDynamicSections only applies to Preset variants; string prompts are unaffected.
+        let opts = SendQueryOptions {
+            system_prompt: Some(SystemPromptInput::Single("custom system".to_owned())),
+            ..Default::default()
+        };
+        let (argv, _) =
+            build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
+        assert_argv_not_contains(&argv, "--exclude-dynamic-system-prompt-sections");
     }
 
     // ── R8 sidecar seam documented ────────────────────────────────────────────

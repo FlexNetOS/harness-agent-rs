@@ -84,6 +84,53 @@ fn kill_pid(pid: u32) {
     }
 }
 
+// ─── CancelToken bridge newtype ───────────────────────────────────────────────
+//
+// `CancelToken` (har-contract) is the contract-level cancellation trait. `CancellationToken`
+// (tokio-util) is the concrete primitive used in spawners, guards, and timeout helpers.
+//
+// Rust's orphan rules prevent `impl CancelToken for CancellationToken` in this crate (neither
+// type is local). We bridge via a `TokioCancelToken` newtype — local to this crate, wraps the
+// tokio primitive, implements the contract trait.
+//
+// Usage in tests and production: `Arc::new(TokioCancelToken::new())` instead of
+// `Arc::new(CancellationToken::new())` when calling `AgentProvider::send_query`.
+
+/// Newtype wrapper around `CancellationToken` that implements `har_contract::CancelToken`.
+///
+/// This bridges the har-contract trait (no tokio dep) to the tokio primitive without
+/// violating the orphan rule.
+pub struct TokioCancelToken(CancellationToken);
+
+impl TokioCancelToken {
+    /// Create a new uncancelled token.
+    pub fn new() -> Self {
+        Self(CancellationToken::new())
+    }
+
+    /// Cancel this token.
+    pub fn cancel(&self) {
+        self.0.cancel();
+    }
+
+    /// Access the inner `CancellationToken` (for use with `CancelGuard`/`with_first_message_timeout`).
+    pub fn inner(&self) -> &CancellationToken {
+        &self.0
+    }
+}
+
+impl Default for TokioCancelToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl har_contract::CancelToken for TokioCancelToken {
+    fn is_cancelled(&self) -> bool {
+        self.0.is_cancelled()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

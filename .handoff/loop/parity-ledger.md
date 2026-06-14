@@ -529,20 +529,33 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-03: Claude Provider
 **Source:** `packages/providers/src/claude/provider.ts`
-**Rust target:** `crates/har-provider/src/claude/{argv.rs, parser.rs}` + `crates/har-provider/src/cli_stream/`
-**Strategy:** SDK→CLI delegation (target-architecture.md §6). Cycle 13 verified the DETERMINISTIC CORE.
+**Rust target:** `crates/har-provider/src/claude/{argv.rs, parser.rs, provider.rs}` + `crates/har-provider/src/cli_stream/`
+**Strategy:** SDK→CLI delegation (target-architecture.md §6). Cycle 13 verified the DETERMINISTIC CORE. Cycle 14 wired full orchestration.
 
 - [x] **cli_stream/** shared CLI substrate (cycle 13, PARITY-VERIFIED): Spawner (Real+Fake), NdjsonStream framing, classify_stderr_line, classify_subprocess_error + abort-precedence, with_first_message_timeout, CancelGuard
 - [x] **build_claude_argv** (cycle 13, VERIFIED 23/23 vs live bun): full option→flag map; node.allowed_tools→options.tools roster (NOT --allowed-tools); --allowed-tools = MCP wildcards + Skill + sidecar
 - [x] **parse_claude_stream_json** (cycle 13, VERIFIED 20/20): all event types→MessageChunk; load-bearing `is_error==true && subtype=='success'`→clean-success; normalize_claude_usage
 - [x] `structuredOutput` extraction from result chunk (parser.rs, cycle 13)
-- [~] `ClaudeProvider::send_query(...)` ORCHESTRATION — ties argv+cli_stream+parser; registers real provider replacing UnimplementedProvider; + hooks→--settings, env→child-env (CYCLE 14)
-- [ ] `buildSDKHooksFromYAML(hooks) -> SdkHooks` — node.hooks YAML → settings hook objects (CYCLE 14)
+- [x] `ClaudeProvider::send_query(...)` ORCHESTRATION (cycle 14, build+clippy+test GREEN):
+  - retry loop: MAX_SUBPROCESS_RETRIES=3, abort-check before each attempt, backoff (retry_base_delay_ms * 2^attempt)
+  - env build: process env + request overlay (buildSubprocessEnv)
+  - first-event timeout: ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS env var, default 60_000ms
+  - argv built per attempt; hooks settings file written to NamedTempFile → --settings arg, kept alive per attempt
+  - run_single_attempt: Real path (stdin write, stderr collector, child-wait, CancelGuard) + Fake path (FakeSpawner)
+  - classify_and_enrich_error: abort-precedence, should_retry, error_class — gates retry vs fatal
+  - UID-0 root guard (libc::getuid() on Unix; IS_SANDBOX bypass)
+  - TokioCancelToken newtype bridge (CancelGuard+with_first_message_timeout use CancellationToken internally; external cancel: &dyn CancelToken polled at event loop)
+  - tests: happy_path, retry_on_crash, timeout (empty stream), cancel_before_attempt, hooks, persist_session_false_emits_no_session_persistence_in_provider_context, get_type, get_capabilities, env_overlay
+- [x] `build_hooks_settings_json` (cycle 14): declarative YAML hooks → settings JSON (PostToolUse/PreToolUse/etc); each matcher → echo command; NamedTempFile lifecycle; matcher optional; empty-map returns None
+- [x] **allowedTools order fix** (cycle 14): `applyNodeConfig` MCP block (line 324) runs BEFORE skills block (line 367) → order `[...mcpWildcards, 'Skill']` now correct in argv.rs; test `mcp_wildcards_before_skill_in_allowed_tools` pins it
+- [x] `persistSession` (provider.ts:527): `--no-session-persistence` emitted by `build_claude_argv` when `persist_session==Some(false)` — **FIXED c14-fix** (was `[≠]`; premise "no CLI flag" refuted by verifier via `claude --help` 2.1.177). true/absent = CLI default → no flag. Tests: `persist_session_false_emits_no_session_persistence`, `persist_session_true_does_not_emit_flag`, `persist_session_absent_does_not_emit_flag`.
+- [x] `systemPrompt.excludeDynamicSections` (types.ts:233, provider.ts:535): `--exclude-dynamic-system-prompt-sections` emitted by `build_claude_argv` when Preset and `exclude_dynamic_sections==Some(true)` — **FIXED c14-fix** (was `[≠]`; premise "no CLI flag" refuted by verifier). false/absent = CLI default → no flag. Tests: `exclude_dynamic_sections_true_emits_flag`, `exclude_dynamic_sections_false_does_not_emit_flag`, `exclude_dynamic_sections_absent_does_not_emit_flag`, `exclude_dynamic_sections_on_string_prompt_does_not_emit_flag`.
+- [≠] `classify_and_enrich_error` abort-label (timeout/aborted→Unknown): logging-only, msg+retry exact, never control flow
 - [~] Native tools via `createSdkMcpServer` → **R8 OWNER-DECIDED 2026-06-14**: interim BAND-AID = sidecar MCP
   bridge (keeps full feature, nativeTools cap stays true, NO downgrade). The REAL fix = pure-Rust-native provider
-  (replaces claude-CLI + Agent SDK + MCP) is DEFERRED to post-port → docs/POST-PORT-UPGRADES.md UP-1. argv seam wired.
-- [≠] `classify_and_enrich_error` abort-label (timeout/aborted→Unknown): logging-only, msg+retry exact, never control flow
-- [!] cycle-14 follow-ups: `persistSession` + `systemPrompt.excludeDynamicSections` (no CLI flag — confirm SDK-only); allowedTools order when skills+MCP combine
+  (replaces claude-CLI + Agent SDK + MCP) is DEFERRED to post-port → docs/POST-PORT-UPGRADES.md UP-1. argv seam wired. nativeTools presence logged as warning.
+- [x] **Registry wiring** (cycle 14): `register_builtin_providers()` now constructs `ClaudeProvider::new()` (real provider). UID-0 guard failure falls back to `UnimplementedProvider` (logs error). Claude factory is live.
+- AWAITING VERIFIER: differential parity test for send_query orchestration (happy path + retry + timeout + cancel + hooks) before unit `- [x]`
 
 ### UNIT PR-04: Claude Binary Resolver
 **Source:** `packages/providers/src/claude/binary-resolver.ts`

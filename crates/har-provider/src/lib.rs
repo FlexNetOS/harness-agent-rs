@@ -323,13 +323,12 @@ pub fn is_registered_provider(id: &str) -> bool {
 /// Source: `packages/providers/src/registry.ts:110-134`.
 /// Must be called at process entrypoints before any provider lookups.
 ///
-/// Factory seam: factories construct `UnimplementedProvider` stubs until PR-03/PR-07 land.
-/// The registered CAPABILITIES are the exact source values and will NOT change when the real
-/// impls are wired in — they are the consumer-facing contract.
+/// PR-03 cycle-14: `ClaudeProvider` now wired — replaces `UnimplementedProvider` for "claude".
+/// PR-07 (codex) still uses `UnimplementedProvider` until its cycle lands.
 pub fn register_builtin_providers() {
     let mut guard = registry().lock().unwrap();
 
-    // Claude (Anthropic) — PR-03 (not yet ported)
+    // Claude (Anthropic) — PR-03 WIRED (cycle 14)
     if !guard.contains_key("claude") {
         guard.insert(
             "claude".to_owned(),
@@ -337,10 +336,18 @@ pub fn register_builtin_providers() {
                 id: "claude".to_owned(),
                 display_name: "Claude (Anthropic)".to_owned(),
                 factory: Box::new(|| {
-                    Arc::new(UnimplementedProvider {
-                        provider_type: "claude",
-                        capabilities: &CLAUDE_CAPABILITIES,
-                    })
+                    match claude::provider::ClaudeProvider::new() {
+                        Ok(p) => Arc::new(p) as Arc<dyn AgentProvider>,
+                        Err(e) => {
+                            // UID-0 guard failure at factory call time — log and return stub.
+                            // This is rare (root + no IS_SANDBOX) but must not panic here.
+                            tracing::error!(err = %e, "claude_provider.factory_failed_uid0_guard");
+                            Arc::new(UnimplementedProvider {
+                                provider_type: "claude",
+                                capabilities: &CLAUDE_CAPABILITIES,
+                            })
+                        }
+                    }
                 }),
                 capabilities: CLAUDE_CAPABILITIES,
                 built_in: true,
