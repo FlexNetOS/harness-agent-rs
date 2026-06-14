@@ -188,20 +188,24 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 - [x] unit:WF-13 `output-ref.ts::FieldResolution` type → `har_dag_executor::output_ref::FieldResolution` enum — ported cycle 4 — **cycle-4 re-verify (2026-06-13): differential vs live TS oracle (bun 1.3.14), PASS**
 
 ### WF-14 — model-validation.ts
+**Landed:** `crates/har-dag-executor/src/model_validation.rs` (ledger had wrong path — `crates/workflows/` crate doesn't exist; corrected here and in ledger)
 
-- [ ] unit:WF-14 `model-validation.ts::TIER_NAMES` → `workflows::model_validation::TIER_NAMES`
-- [ ] unit:WF-14 `model-validation.ts::ModelAliasPreset` → `workflows::model_validation::ModelAliasPreset`
-- [ ] unit:WF-14 `model-validation.ts::RawAliasEntry` → `workflows::model_validation::RawAliasEntry`
-- [ ] unit:WF-14 `model-validation.ts::RawAliasesConfig` → `workflows::model_validation::RawAliasesConfig`
-- [ ] unit:WF-14 `model-validation.ts::RawTiersConfig` → `workflows::model_validation::RawTiersConfig`
-- [ ] unit:WF-14 `model-validation.ts::ResolvedAiProfile` → `workflows::model_validation::ResolvedAiProfile`
-- [ ] unit:WF-14 `model-validation.ts::ResolvedModelSpec` → `workflows::model_validation::ResolvedModelSpec`
-- [ ] unit:WF-14 `model-validation.ts::TIER_FALLBACK` → `workflows::model_validation::TIER_FALLBACK`
-- [ ] unit:WF-14 `model-validation.ts::isLiteralSpec` → `workflows::model_validation::is_literal_spec()`
-- [ ] unit:WF-14 `model-validation.ts::resolveModelSpec` → `workflows::model_validation::resolve_model_spec()`
-- [ ] unit:WF-14 `model-validation.ts::buildAiProfile` → `workflows::model_validation::build_ai_profile()`
-- [ ] unit:WF-14 `model-validation.ts::routePresetEffort` → `workflows::model_validation::route_preset_effort()`
-- [ ] unit:WF-14 `model-validation.ts::assertNotReserved` → `workflows::model_validation::assert_not_reserved()`
+- [x] unit:WF-14 `model-validation.ts::TIER_NAMES` → `har_dag_executor::model_validation::TIER_NAMES` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::ModelAliasPreset` → `har_dag_executor::model_validation::ModelAliasPreset` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::RawAliasEntry` → `har_dag_executor::model_validation::RawAliasEntry` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::RawAliasesConfig` → `har_dag_executor::model_validation::RawAliasesConfig` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::RawTiersConfig` → `har_dag_executor::model_validation::RawTiersConfig` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::ResolvedAiProfile` → `har_dag_executor::model_validation::ResolvedAiProfile` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::ResolvedModelSpec` → `har_dag_executor::model_validation::ResolvedModelSpec` enum (Preset/Literal variants) — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::TIER_FALLBACK` → `har_dag_executor::model_validation::tier_fallback_chain(TierName) -> &'static [TierName]` — exact 3-chain order tested — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::isLiteralSpec` → `har_dag_executor::model_validation::is_literal_spec()` — ported cycle 6
+- [≠] unit:WF-14 `model-validation.ts::resolveModelSpec` → `har_dag_executor::model_validation::resolve_model_spec()` — ported cycle 6; PARITY-VERIFIED 2026-06-13 (66/67 differential cases byte-exact vs bun 1.3.14). INTENTIONAL `- [≠]`: the UnknownAlias error lists defined alias keys SORTED (Rust) vs TS object-insertion order — determinism over unordered HashMap iteration; display-only, NOT parsed by any consumer (callers propagate `err.message` verbatim; source's own test asserts only the `/Unknown alias '<ref>'/` prefix, which Rust satisfies). PORTER BUG FIXED during verify: stray trailing `.` after the alias list removed to match source byte-for-byte.
+- [x] unit:WF-14 `model-validation.ts::buildAiProfile` → `har_dag_executor::model_validation::build_ai_profile()` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::routePresetEffort` → `har_dag_executor::model_validation::route_preset_effort()` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::assertNotReserved` → `har_dag_executor::model_validation::assert_not_reserved_pub()` — ported cycle 6
+- [x] unit:WF-14 `tier-defaults.json` embedded data → `har_dag_executor::model_validation::TIER_DEFAULTS_JSON` const — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::CLAUDE_EFFORTS` → `har_dag_executor::model_validation::CLAUDE_EFFORTS` — ported cycle 6
+- [x] unit:WF-14 `model-validation.ts::CODEX_REASONING_EFFORTS` → `har_dag_executor::model_validation::CODEX_REASONING_EFFORTS` — ported cycle 6
 
 ### WF-15 — event-emitter.ts
 
