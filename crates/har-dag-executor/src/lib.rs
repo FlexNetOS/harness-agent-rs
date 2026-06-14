@@ -31,6 +31,9 @@
 //!     atom pattern (regex), AND/OR precedence, short-circuit, parse-fail→skip vs
 //!     unresolvable-ref→error asymmetry
 
+// Cycle 5: WF-11 executor shared utilities
+pub mod executor_shared;
+
 // Cycle 4: WF-13 and WF-12
 pub mod output_ref;
 pub mod condition_evaluator;
@@ -41,3 +44,24 @@ pub use output_ref::{
     OutputRefErrorReason,
 };
 pub use condition_evaluator::{evaluate_condition, split_outside_quotes, EvaluationResult};
+pub use executor_shared::{
+    // Error classification
+    ErrorType, FATAL_PATTERNS, TRANSIENT_PATTERNS,
+    matches_pattern, classify_error,
+    // Subprocess failure formatting
+    RawSubprocessError, SubprocessFailure, SubprocessLogFields, format_subprocess_failure,
+    // Credit exhaustion detection
+    detect_credit_exhaustion,
+    // Variable substitution
+    CONTEXT_VAR_PATTERN_STR, SubstitutionResult, BaseBranchEmptyError,
+    substitute_workflow_variables, build_prompt_with_context,
+    // Completion signal
+    detect_completion_signal, strip_completion_tags,
+    // Script detection
+    is_inline_script,
+    // Command name validation
+    is_valid_command_name,
+    // Dep-touching traits and types
+    MessagePlatform, SendMessageContext, UnknownErrorTracker, SafeSendError, safe_send_message,
+    CommandPromptDeps, MarkdownEntry, LoadedConfig, CommandLoadIoError, load_command_prompt,
+};

@@ -1,0 +1,53 @@
+{
+ "detect": {
+  "decoy-then-match": true,
+  "interleaved": true,
+  "mismatch-only": false,
+  "attr-slash": true,
+  "close-with-space": false,
+  "meta-signal": true,
+  "meta-signal2": true,
+  "case-diff-names": false,
+  "prefix-names": false,
+  "prefix-names2": true,
+  "second-pairs": true,
+  "newline-inside": true
+ },
+ "strip": {
+  "decoy-then-match": "<x>SIG</y>",
+  "prefix-names": "<a>SIG</ab> ok",
+  "close-with-space": "<a>SIG</a > ok",
+  "promise-attrs": "a <promise foo=\"x\">z</promise> b",
+  "nested-promise": "c</promise>"
+ },
+ "context": {
+  "dollar-end": {
+   "prompt": "xC",
+   "has": true
+  },
+  "double": {
+   "prompt": "CC",
+   "has": true
+  },
+  "ctx-then-ctxextra": {
+   "prompt": "C $CONTEXT_EXTRA",
+   "has": true
+  },
+  "adjacent-context-words": {
+   "prompt": "$CONTEXTUAL",
+   "has": false
+  },
+  "issue-context-extra": {
+   "prompt": "$ISSUE_CONTEXTUAL",
+   "has": false
+  },
+  "external-then-word": {
+   "prompt": "$EXTERNAL_CONTEXT_X",
+   "has": false
+  },
+  "trailing-cr": {
+   "prompt": "C\r",
+   "has": true
+  }
+ }
+}

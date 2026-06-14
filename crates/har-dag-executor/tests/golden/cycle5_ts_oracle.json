@@ -1,0 +1,149 @@
+{
+ "classify": {
+  "401": "FATAL",
+  "403": "FATAL",
+  "429": "TRANSIENT",
+  "502": "TRANSIENT",
+  "503": "TRANSIENT",
+  "529": "TRANSIENT",
+  "unauthorized": "FATAL",
+  "forbidden": "FATAL",
+  "invalid token": "FATAL",
+  "authentication failed": "FATAL",
+  "permission denied": "FATAL",
+  "credit balance": "FATAL",
+  "auth error": "FATAL",
+  "timeout": "TRANSIENT",
+  "econnrefused": "TRANSIENT",
+  "econnreset": "TRANSIENT",
+  "etimedout": "TRANSIENT",
+  "rate limit": "TRANSIENT",
+  "too many requests": "TRANSIENT",
+  "overloaded": "TRANSIENT",
+  "network error": "TRANSIENT",
+  "socket hang up": "TRANSIENT",
+  "exited with code": "TRANSIENT",
+  "claude code crash": "TRANSIENT",
+  "MIXED unauthorized+timeout": "FATAL",
+  "credit balance timeout": "FATAL",
+  "UPPER UNAUTHORIZED": "FATAL",
+  "UPPER TIMEOUT": "TRANSIENT",
+  "unknown": "UNKNOWN",
+  "429 wins as transient alone": "TRANSIENT",
+  "403 fatal": "FATAL"
+ },
+ "context": {
+  "end-of-string": {
+   "prompt": "ISSUE",
+   "has": true
+  },
+  "followed-space": {
+   "prompt": "ISSUE here",
+   "has": true
+  },
+  "followed-punct": {
+   "prompt": "ISSUE.",
+   "has": true
+  },
+  "followed-punct-comma": {
+   "prompt": "ISSUE,next",
+   "has": true
+  },
+  "followed-alnum": {
+   "prompt": "$CONTEXT5",
+   "has": false
+  },
+  "followed-underscore-EXTRA": {
+   "prompt": "$CONTEXT_EXTRA stays",
+   "has": false
+  },
+  "EXTERNAL end": {
+   "prompt": "ISSUE",
+   "has": true
+  },
+  "ISSUE end": {
+   "prompt": "ISSUE",
+   "has": true
+  },
+  "EXTERNAL followed alnum": {
+   "prompt": "$EXTERNAL_CONTEXTX",
+   "has": false
+  },
+  "multi": {
+   "prompt": "a X b X c X",
+   "has": true
+  },
+  "cleared no ctx": {
+   "prompt": " here",
+   "has": true
+  },
+  "followed-newline": {
+   "prompt": "ISSUE\nrest",
+   "has": true
+  },
+  "followed-tab": {
+   "prompt": "ISSUE\trest",
+   "has": true
+  },
+  "followed-dash": {
+   "prompt": "ISSUE-x",
+   "has": true
+  }
+ },
+ "detect": {
+  "matching-same-case": true,
+  "matching-tag-diff-case": true,
+  "matching-tag-diff-case2": true,
+  "nonmatching-tags": false,
+  "plain-end": true,
+  "plain-end-punct": true,
+  "plain-own-line": true,
+  "false-positive-not-yet": false,
+  "signal-with-attrs": true,
+  "signal-with-attrs-mismatch-case": true,
+  "whitespace-inside": true,
+  "regex-special-signal": true,
+  "nested-different": false,
+  "middle-no-match": false,
+  "mixed-open-close-hyphen": true
+ },
+ "strip": {
+  "promise-strip": "before  after",
+  "promise-strip-multiline": "x  y",
+  "promise-case-insensitive": "x  y",
+  "until-matching": "keep  keep",
+  "until-mismatch": "keep <note>ALL_CLEAN</warning> keep",
+  "until-case-diff": "keep  keep",
+  "trim-result": "",
+  "until-multiple": "mid"
+ },
+ "inline": {
+  "char_59": true,
+  "char_40": true,
+  "char_41": true,
+  "char_123": true,
+  "char_125": true,
+  "char_38": true,
+  "char_124": true,
+  "char_60": true,
+  "char_62": true,
+  "char_36": true,
+  "char_96": true,
+  "char_34": true,
+  "char_39": true,
+  "char_32": true,
+  "plain": false,
+  "plain-dot": false,
+  "newline": true,
+  "tab": false,
+  "empty": false
+ },
+ "reset": {
+  "resets 3am (America/Mexico_City)": "3am (America/Mexico_City)",
+  "Session resets 5pm. then more": "5pm",
+  "resets midnight·extra": "midnight",
+  "resets noon!bang": "noon",
+  "no match here": null,
+  "RESETS 9AM upper": "9AM upper"
+ }
+}
