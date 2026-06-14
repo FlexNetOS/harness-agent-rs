@@ -1,10 +1,63 @@
 # harness-agent-rs — Rust harness/agent-manager runtime (see docs/ADR via harness_hub ADR-0001).
 # Port-in-progress from meta/Archon's runtime DESIGN, mapping subsystems onto hf/weave/grit/icm.
-# This is a placeholder workspace skeleton; the rust-port harness's architect defines the real layout.
 [workspace]
 resolver = "2"
-members = ["crates/har-core"]
+members = [
+    "crates/har-core",
+    "crates/har-contract",
+    "crates/har-paths",
+    "crates/har-git",
+    "crates/har-isolation",
+    "crates/har-provider",
+    "crates/har-workflow-schema",
+    "crates/har-ledger",
+    "crates/har-coord",
+    "crates/har-memory",
+    "crates/har-dag-executor",
+    "crates/har-orchestrator",
+    "crates/har-adapters",
+    "crates/har-server",
+    "crates/har-cli",
+]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
+
+# ─── Shared dependency versions ─────────────────────────────────────────────
+# Pin versions here; member crates inherit via `workspace = true`.
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+async-trait = "0.1"
+
+# Streaming
+futures = "0.3"
+async-stream = "0.3"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# HTTP / adapters
+reqwest = { version = "0.12", features = ["json", "stream"] }
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Path utilities
+directories = "5"
+
+# Ordered maps (when insertion order matters)
+indexmap = { version = "2", features = ["serde"] }

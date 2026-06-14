@@ -1,0 +1,17 @@
+[package]
+name = "har-adapters"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Multi-surface platform adapters: Slack, Telegram, Discord, GitHub, Gitea, GitLab."
+
+[dependencies]
+har-contract = { path = "../har-contract" }
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+futures.workspace = true
+tracing.workspace = true

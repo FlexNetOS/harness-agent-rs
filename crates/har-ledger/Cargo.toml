@@ -1,0 +1,14 @@
+[package]
+name = "har-ledger"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Durable run/workflow/event state over hf (replaces Archon's Postgres IWorkflowStore)."
+
+[dependencies]
+har-workflow-schema = { path = "../har-workflow-schema" }
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -3,4 +3,8 @@ name = "har-core"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
-description = "Placeholder core crate for harness-agent-rs (replaced as the port's architecture is established)."
+description = "Thin re-export facade for downstream convenience (ADR-0001 R1). Re-exports har-contract + har-workflow-schema."
+
+[dependencies]
+har-contract = { path = "../har-contract" }
+har-workflow-schema = { path = "../har-workflow-schema" }

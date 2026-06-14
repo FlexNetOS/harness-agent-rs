@@ -1,0 +1,23 @@
+[package]
+name = "har-server"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Axum control plane: REST API (OpenAPI), SSE real-time push, auth, web bridge."
+
+[dependencies]
+har-contract = { path = "../har-contract" }
+har-orchestrator = { path = "../har-orchestrator" }
+har-dag-executor = { path = "../har-dag-executor" }
+har-adapters = { path = "../har-adapters" }
+har-ledger = { path = "../har-ledger" }
+thiserror.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+axum.workspace = true
+tower.workspace = true
+futures.workspace = true
+tracing.workspace = true

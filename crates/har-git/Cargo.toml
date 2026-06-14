@@ -1,0 +1,11 @@
+[package]
+name = "har-git"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Git plumbing: branch ops, repo ops, worktree add/remove/list, subprocess exec helper."
+
+[dependencies]
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "har-workflow-schema"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Workflow schema types: zod→serde structs + validation for loop, retry, hooks, dag-node, workflow."
+
+[dependencies]
+har-contract = { path = "../har-contract" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
