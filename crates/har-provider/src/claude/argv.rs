@@ -313,10 +313,18 @@ pub fn build_claude_argv(
     // ── MCP config ────────────────────────────────────────────────────────────
     // applyNodeConfig:319-333; MCP block runs BEFORE skills — wildcards appended first.
     // (provider.ts:319-343, then skills at provider.ts:345-368)
+    //
+    // When `native_tools_mcp_config_path` is Some, the caller has already merged
+    // nodeConfig.mcp into the sidecar config — skip the separate --mcp-config for
+    // nodeConfig.mcp so the CLI receives only ONE --mcp-config (the merged file).
+    // Decision 5: prefer a single merged config file over two --mcp-config flags.
+    let node_mcp_subsumed = native_tools_mcp_config_path.is_some();
     if let Some(node_cfg) = node_config {
         if let Some(mcp_path) = &node_cfg.mcp {
-            argv.push("--mcp-config".to_owned());
-            argv.push(mcp_path.clone());
+            if !node_mcp_subsumed {
+                argv.push("--mcp-config".to_owned());
+                argv.push(mcp_path.clone());
+            }
             // provider.ts:323-324: add mcp__<server>__* wildcards to permission_allowlist
             for name in mcp_server_names {
                 let wildcard = format!("mcp__{}__*", name);
@@ -405,21 +413,15 @@ pub fn build_claude_argv(
     }
 
     // ── R8 Native tools sidecar seam ──────────────────────────────────────────
-    // provider.ts:922-932; DEFERRED — sidecar design is NEEDS-HUMAN.
-    // When owner approves option (a), this seam adds:
-    //   --mcp-config <native_tools_mcp_config_path>
+    // provider.ts:922-932; cycle-16: fully wired.
+    // The caller (ClaudeProvider::send_query) has already:
+    //   1. Started the loopback HTTP MCP server.
+    //   2. Written (and optionally merged) the mcp-config temp file.
+    //   3. Passed its path here as `native_tools_mcp_config_path`.
+    // This seam appends:
+    //   --mcp-config <merged_mcp_config_path>
     //   mcp__archon__* to allowed-tools
-    // For now: if a path is provided, we document the intent but do NOT silently drop it.
     if let Some(sidecar_path) = native_tools_mcp_config_path {
-        // DEFERRED: R8 sidecar not yet implemented. The path is noted here as a seam.
-        // When implemented, this block will add --mcp-config and mcp__archon__*.
-        // For now we log that it was requested.
-        tracing::warn!(
-            sidecar_config = sidecar_path,
-            "build_claude_argv: native_tools_mcp_config_path provided but R8 sidecar is DEFERRED (NEEDS-HUMAN). \
-             nativeTools NOT silently dropped — awaiting owner decision on option (a)/(b)/(c)."
-        );
-        // DO NOT set nativeTools=false. The seam is here; the sidecar impl is the follow-up.
         let wildcard = format!("mcp__{}__*", ARCHON_TOOL_SERVER);
         if !permission_allowlist.contains(&wildcard) {
             permission_allowlist.push(wildcard);
@@ -1034,5 +1036,75 @@ mod tests {
         let tools_pos = argv.iter().position(|a| a == "--allowed-tools").unwrap();
         let tools_val = &argv[tools_pos + 1];
         assert!(tools_val.contains("mcp__archon__*"), "tools: {}", tools_val);
+    }
+
+    /// Decision 5: when `native_tools_mcp_config_path` is set (merged config), the
+    /// nodeConfig.mcp `--mcp-config` must be suppressed — only ONE `--mcp-config` emitted.
+    #[test]
+    fn native_tools_merged_config_suppresses_node_mcp_config_flag() {
+        let nc = NodeConfig {
+            mcp: Some("/existing/node-mcp.json".to_owned()),
+            ..Default::default()
+        };
+        let (argv, _) = build_claude_argv(
+            None,
+            Some(&nc),
+            &defaults(),
+            None,
+            None,
+            &["srv".to_owned()],
+            &[],
+            Some("/tmp/merged-archon.json"), // this is the merged file
+        );
+
+        // Must have exactly ONE --mcp-config flag: the merged file.
+        let mcp_positions: Vec<_> = argv
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.as_str() == "--mcp-config")
+            .collect();
+        assert_eq!(
+            mcp_positions.len(),
+            1,
+            "must have exactly 1 --mcp-config, got argv: {:?}",
+            argv
+        );
+
+        // The single --mcp-config must point to the merged file, not the original nodeConfig.mcp.
+        let (pos, _) = mcp_positions[0];
+        assert_eq!(
+            argv[pos + 1],
+            "/tmp/merged-archon.json",
+            "merged file must be used, got: {:?}",
+            &argv[pos + 1]
+        );
+
+        // mcp__archon__* wildcard must be in --allowed-tools.
+        let tools_pos = argv.iter().position(|a| a == "--allowed-tools").unwrap();
+        let tools_val = &argv[tools_pos + 1];
+        assert!(tools_val.contains("mcp__archon__*"), "tools: {}", tools_val);
+
+        // nodeConfig MCP wildcards (for srv) must still be in --allowed-tools.
+        assert!(tools_val.contains("mcp__srv__*"), "node MCP wildcard must still be present: {}", tools_val);
+    }
+
+    /// Decision 5: without native tools, nodeConfig.mcp still emits its own --mcp-config normally.
+    #[test]
+    fn node_mcp_config_still_emits_when_no_native_tools() {
+        let nc = NodeConfig {
+            mcp: Some("/existing/node-mcp.json".to_owned()),
+            ..Default::default()
+        };
+        let (argv, _) = build_claude_argv(
+            None,
+            Some(&nc),
+            &defaults(),
+            None,
+            None,
+            &["srv".to_owned()],
+            &[],
+            None, // no native tools
+        );
+        assert_argv_has_pair(&argv, "--mcp-config", "/existing/node-mcp.json");
     }
 }

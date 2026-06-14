@@ -38,11 +38,14 @@
 //! This is FIXED in `argv.rs` in this cycle: the `permission_allowlist` is now built
 //! MCP-wildcards first, Skill second.
 //!
-//! # Native tools (R8, DEFERRED per UP-1)
+//! # Native tools (R8, cycle-16)
 //!
-//! The `nativeTools` parameter is captured and passed to `build_claude_argv` via the
-//! `native_tools_mcp_config_path` seam. The sidecar MCP bridge is DEFERRED to UP-1.
-//! `ProviderCapabilities.nativeTools` stays `true` — no capability downgrade.
+//! When `requestOptions.native_tools` is non-empty, `send_query` binds a loopback HTTP
+//! MCP server (`McpHttpServer` via `cli_stream::mcp_sidecar`), writes (and optionally
+//! merges with `nodeConfig.mcp`) a temp `--mcp-config` file, and passes its path to
+//! `build_claude_argv` via `native_tools_mcp_config_path`. The server + temp file are
+//! torn down when the query stream ends (RAII: `McpHttpServer` drop aborts the task;
+//! `NamedTempFile` drop deletes the file). `ProviderCapabilities.nativeTools` stays `true`.
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -62,6 +65,7 @@ use crate::claude::argv::build_claude_argv;
 use crate::claude::binary_resolver::resolve_claude_binary_path;
 use crate::claude::config::parse_claude_config;
 use crate::claude::parser::parse_claude_stream_json;
+use crate::cli_stream::mcp_sidecar::{start_loopback, write_mcp_config_merged, McpSidecar};
 use crate::cli_stream::retry::{
     accumulate_stderr_lines, classify_and_enrich_error, with_first_message_timeout,
     FirstEventError, RETRY_BASE_DELAY_MS,
@@ -387,6 +391,8 @@ impl AgentProvider for ClaudeProvider {
             // 4. Compute node-config warnings once (provider.ts:873-882)
             //    In the Rust model, all argv building is deterministic (no async).
             //    We call build_claude_argv once here to extract warnings, then again per attempt.
+            //    Pass None for native_tools_mcp_config_path — the server isn't started yet;
+            //    this call is only for collecting nodeConfig warnings (model, env-var, etc.).
             let (_, node_config_warnings) = {
                 let node_cfg = options.as_ref().and_then(|o| o.node_config.as_ref());
                 build_claude_argv(
@@ -397,7 +403,7 @@ impl AgentProvider for ClaudeProvider {
                     cli_path_str.as_deref(),
                     &[],   // mcp_server_names — empty for warning collection only
                     &[],   // mcp_missing_vars — empty for warning collection only
-                    None,  // native_tools_mcp_config_path
+                    None,  // native_tools_mcp_config_path — server not started yet
                 )
             };
 
@@ -408,6 +414,80 @@ impl AgentProvider for ClaudeProvider {
 
             // 6. First-event timeout value (env-configurable)
             let timeout_ms = ClaudeProvider::first_event_timeout_ms();
+
+            // 6b. Native tools — start loopback HTTP MCP server ONCE before retries.
+            //
+            // Mirror: provider.ts:924-932 ("merge so a nodeConfig mcp config and native tools
+            // can coexist"). The Arc handlers + ephemeral port are stable across retries.
+            //
+            // Lifecycle: `_native_tools_server` and `_native_tools_config` are kept alive
+            // until the stream ends (RAII — the `stream!` block ends when we `return`).
+            // Dropping `McpHttpServer` aborts the axum serve task.
+            // Dropping `NamedTempFile` deletes the temp config file.
+            let node_cfg_for_nt = options.as_ref().and_then(|o| o.node_config.as_ref());
+            let native_tools_list = options.as_ref().and_then(|o| o.native_tools.as_ref());
+            let (native_mcp_config_path_str,
+                 _native_tools_server,
+                 _native_tools_config) = if let Some(tools) = native_tools_list {
+                if !tools.is_empty() {
+                    // Build the McpSidecar from the live NativeTool handlers.
+                    match McpSidecar::new(tools) {
+                        Err(e) => {
+                            tracing::warn!(
+                                err = %e,
+                                "claude.native_tools_sidecar_build_failed: tools will not be available"
+                            );
+                            (None, None, None)
+                        }
+                        Ok(sidecar) => {
+                            let sidecar = std::sync::Arc::new(sidecar);
+                            // Start the HTTP server.
+                            match start_loopback(std::sync::Arc::clone(&sidecar)).await {
+                                Err(e) => {
+                                    tracing::warn!(
+                                        err = %e,
+                                        "claude.native_tools_http_server_failed: tools will not be available"
+                                    );
+                                    (None, None, None)
+                                }
+                                Ok(server) => {
+                                    let port = server.port();
+                                    // Write (and optionally merge) the mcp-config temp file.
+                                    let existing_mcp = node_cfg_for_nt
+                                        .and_then(|n| n.mcp.as_deref());
+                                    match write_mcp_config_merged(port, existing_mcp) {
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                err = %e,
+                                                "claude.native_tools_config_write_failed: tools will not be available"
+                                            );
+                                            (None, None, None)
+                                        }
+                                        Ok(tf) => {
+                                            let path = tf
+                                                .path()
+                                                .to_string_lossy()
+                                                .into_owned();
+                                            tracing::info!(
+                                                port,
+                                                path = %path,
+                                                count = tools.len(),
+                                                merged_with_node = existing_mcp.is_some(),
+                                                "claude.native_tools_registered"
+                                            );
+                                            (Some(path), Some(server), Some(tf))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    (None, None, None)
+                }
+            } else {
+                (None, None, None)
+            };
 
             // 7. Retry loop (provider.ts:894-988)
             // `_last_error` tracks the most recent error for future diagnostics.
@@ -429,9 +509,9 @@ impl AgentProvider for ClaudeProvider {
                     &assistant_defaults,
                     resume_session_id.as_deref(),
                     cli_path_str.as_deref(),
-                    &[],   // MCP server names — caller-loaded; empty until real MCP wiring
+                    &[],   // MCP server names — caller-loaded (nodeConfig.mcp servers)
                     &[],   // MCP missing vars — same
-                    None,  // R8 native tools sidecar — DEFERRED (UP-1)
+                    native_mcp_config_path_str.as_deref(), // R8 native tools: merged mcp-config
                 );
 
                 // Build hooks settings file if needed (provider.ts:292-315)
@@ -459,20 +539,6 @@ impl AgentProvider for ClaudeProvider {
                         None
                     }
                 };
-
-                // Native tools (R8 seam — DEFERRED per UP-1, nativeTools cap stays true)
-                // provider.ts:924-932: would register sidecar MCP server here.
-                // For now: log if nativeTools present so it's visible in logs.
-                if let Some(tools) = options.as_ref().and_then(|o| o.native_tools.as_ref()) {
-                    if !tools.is_empty() {
-                        tracing::warn!(
-                            count = tools.len(),
-                            "claude.native_tools_deferred_to_up1: \
-                             nativeTools present but R8 sidecar is DEFERRED (UP-1 post-port). \
-                             Tools will NOT be available to Claude this turn."
-                        );
-                    }
-                }
 
                 // Determine the program path
                 let program = cli_path_str.as_deref().unwrap_or("claude");

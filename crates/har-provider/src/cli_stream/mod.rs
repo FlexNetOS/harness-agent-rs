@@ -20,7 +20,10 @@ pub mod stream;
 
 // Re-export the key public surface.
 pub use cancel::{CancelGuard, TokioCancelToken};
-pub use mcp_sidecar::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpSidecar};
+pub use mcp_sidecar::{
+    start_loopback, write_mcp_config_merged, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
+    McpHttpServer, McpSidecar,
+};
 pub use retry::{
     classify_and_enrich_error, classify_subprocess_error, with_first_message_timeout, EnrichedError,
     ErrorClass, FirstEventError, RetryConfig, RetryError,
