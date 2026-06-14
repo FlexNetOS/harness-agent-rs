@@ -232,6 +232,8 @@ This is the central porting target. Extremely behavior-rich.
 **Rust target:** `crates/har-dag-executor/src/executor_shared.rs`
 **Status:** `- [x]` parity-VERIFIED cycle 5 (re-verify 2026-06-13: 3 regex/encoding divergences + 1 precedence divergence found, FIXED, and DIFFERENTIALLY re-verified vs live bun; 204 crate tests pass; `cargo clippy --all-targets` clean; all 16 symbols `- [x]`)
 
+**Cycle-7 reconciliation:** `command_folder_search_paths` (local private fn) was the duplicate of `getCommandFolderSearchPaths` from `archon-paths.ts`. Moved to `har-paths::archon_paths::get_command_folder_search_paths` (single source of truth). `har-dag-executor/executor_shared.rs` now imports `har_paths::get_command_folder_search_paths` instead. The existing WF-11 differential parity (including `configured_folder_dedup_matches_source` test) continues to pass — behavior byte-identical.
+
 - [x] `ErrorType` enum: `TRANSIENT | FATAL | UNKNOWN` (executor-shared.ts:27) — ported; `Transient`/`Fatal`/`Unknown` variants
 - [x] `FATAL_PATTERNS` list: exact 9-item membership tested (executor-shared.ts:30-40)
 - [x] `TRANSIENT_PATTERNS` list: exact 15-item membership tested (executor-shared.ts:43-59)
@@ -728,19 +730,28 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 
 ### UNIT PA-01: Archon Paths
 **Source:** `packages/paths/src/archon-paths.ts`
-**Rust target:** `crates/paths/src/lib.rs`
+**Rust target:** `crates/har-paths/src/archon_paths.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 7)
 
-- [ ] `getArchonHome()` — Docker: `/.archon`; env `ARCHON_HOME` (with "undefined" string guard); else `~/.archon` (archon-paths.ts:56-74)
-- [ ] `isDocker()` — checks `WORKSPACE_PATH`, `HOME`, `ARCHON_DOCKER` env vars (archon-paths.ts:43-49)
-- [ ] `expandTilde(path)` (archon-paths.ts:32-38)
-- [ ] `getArchonWorkspacesPath()` (archon-paths.ts:79+)
-- [ ] `getRunArtifactsPath(owner, repo, runId)` (archon-paths.ts)
-- [ ] `getProjectLogsPath(owner, repo)` (archon-paths.ts)
-- [ ] `getWorkflowFolderSearchPaths(cwd)` (api.ts imports)
-- [ ] `getCommandFolderSearchPaths(cwd)` (api.ts imports)
-- [ ] `getDefaultCommandsPath()`, `getDefaultWorkflowsPath()` (api.ts imports)
-- [ ] `getHomeCommandsPath()`, `getHomeWorkflowsPath()` (api.ts imports)
-- [ ] `parseOwnerRepo(name)` (api.ts imports)
+LEDGER CORRECTION: target was `crates/paths/src/lib.rs` — corrected to `crates/har-paths/src/archon_paths.rs`.
+
+DUPLICATE RECONCILIATION (cycle 7): `getCommandFolderSearchPaths` was duplicated in `har-dag-executor/executor_shared.rs` (landed there in cycle 5 as a local private fn). Moved to `har-paths::archon_paths::get_command_folder_search_paths` (single source of truth). `har-dag-executor` now imports from `har-paths`; the duplicate was deleted. Verified: no two copies remain. The behavior is byte-identical (the test `configured_folder_dedup_matches_source` in `executor_shared.rs` continues to pass, now calling the `har-paths` function).
+
+- [x] `getArchonHome()` — Docker: `/.archon`; env `ARCHON_HOME` (with "undefined" string guard: `ARCHON_HOME == "undefined"` → `Err(ArchonHomeSetToUndefined)` with exact source error message); else `~/.archon` (archon-paths.ts:56-74) — `get_archon_home() -> Result<PathBuf>` — all 5 branches tested
+- [x] `isDocker()` — exact predicate: `WORKSPACE_PATH=='/workspace' || (HOME=='/root' && Boolean(WORKSPACE_PATH)) || ARCHON_DOCKER=='true'` (archon-paths.ts:43-49) — 6 cases tested including edge cases
+- [x] `expandTilde(path)` — `strip_prefix('~')` then strip leading `/` or `\`, join to homedir (archon-paths.ts:32-38) — 4 cases tested
+- [x] `getArchonWorkspacesPath()` — `get_archon_home()? + "workspaces"` (archon-paths.ts:79) — tested
+- [x] `getRunArtifactsPath(owner, repo, runId)` — `workspaces/owner/repo/artifacts/runs/{id}` (archon-paths.ts:434-436) — tested
+- [x] `getProjectLogsPath(owner, repo)` — `workspaces/owner/repo/logs` (archon-paths.ts:426-428) — tested
+- [x] `getWorkflowFolderSearchPaths()` — returns `[".archon/workflows"]` (archon-paths.ts:202-204) — tested
+- [x] `getCommandFolderSearchPaths(configuredFolder?)` — 5 cases: None, dedup `.archon/commands`, dedup `.archon/commands/defaults`, empty string, custom (archon-paths.ts:183-196) — tested; DUPLICATE from executor_shared.rs removed
+- [≠] `getDefaultCommandsPath()`, `getDefaultWorkflowsPath()` — `app_archon_base_path() + "commands/defaults"` etc.; `ARCHON_APP_BASE` env seam for tests (archon-paths.ts:349-358) — ported  [≠ import.meta.dir has no differential analog; ARCHON_APP_BASE/exe-path seam; path composition verified identical]
+- [x] `getHomeCommandsPath()`, `getHomeWorkflowsPath()` — `archon_home + "commands"/"workflows"` (archon-paths.ts:128,118) — tested
+- [x] `parseOwnerRepo(name)` — exactly-2-segments after split('/'), non-empty, not `.`/`..`, `SAFE_NAME` regex `^[a-zA-Z0-9._-]+$` (archon-paths.ts:380-388) — 9 cases tested
+
+Also ported (needed by the above or downstream): `get_archon_env_path()`, `get_repo_archon_env_path()`, `get_archon_worktrees_path()`, `get_archon_config_path()`, `get_home_scripts_path()`, `get_legacy_home_workflows_path()`, `get_project_root()`, `get_project_source_path()`, `get_project_worktrees_path()`, `get_project_artifacts_path()`, `get_run_log_path()`, `get_web_dist_dir()`, `resolve_project_root_from_cwd()`.
+
+NEEDS-HUMAN (env-dependent): functions like `get_archon_home()` are fully env-injectable via the env-var seam (ARCHON_HOME, ARCHON_DOCKER, WORKSPACE_PATH, HOME). Parity verifier should set `ARCHON_HOME=/tmp/test-archon` to drive them deterministically.
 
 ### UNIT PA-02: Logger
 **Source:** `packages/paths/src/logger.ts`
@@ -776,18 +787,36 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 
 ### UNIT PA-06: Env Loader
 **Source:** `packages/paths/src/env-loader.ts`
-**Rust target:** `crates/paths/src/env_loader.rs`
+**Rust target:** `crates/har-paths/src/env_loader.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 7)
 
-- [ ] `loadArchonEnv(cwd: &Path)` — loads `~/.archon/.env` then `<cwd>/.archon/.env` with project winning (env-loader.ts; cli.ts)
-- [ ] Three-path model: user scope, repo scope, system env takes precedence (env-loader.ts)
+LEDGER CORRECTION: target was `crates/paths/src/env_loader.rs` — corrected to `crates/har-paths/src/env_loader.rs`.
+
+IMPLEMENTATION NOTE: TS uses `dotenv` `config({ override: true })` which sets EVERY key in the file into `process.env`, overriding existing values. Rust uses `dotenvy::from_path_iter` with `std::env::set_var` for the same override semantics. Both files are silently skipped when absent; malformed files are fatal (stderr + exit 1).
+
+- [x] `loadArchonEnv(cwd: &Path)` — loads `~/.archon/.env` first (via `get_archon_env_path()`), then `<cwd>/.archon/.env` (via `get_repo_archon_env_path(cwd)`); both with `override: true` semantics (env-loader.ts:63-93) — ported as `load_archon_env(cwd: &Path) -> void` (fatal on parse error = same as TS `process.exit(1)`)
+- [x] `isVerboseBoot()` — `ARCHON_VERBOSE_BOOT=='1'` OR `LOG_LEVEL in [debug,trace]` (env-loader.ts:46-49) — ported; 4 cases tested
+- [x] Three-path model: user scope (`~/.archon/.env`), repo scope (`<cwd>/.archon/.env`), repo wins over user because loaded second with override=true (env-loader.ts header) — replicated exactly
+- [x] Override semantics: `load_env_file_override` uses `std::env::set_var` (always writes, even if key exists) — tested with pre-existing key
+- [x] Verbose boot logging: stderr only when `is_verbose_boot()` AND count > 0; repo path suffix message differs from home path (env-loader.ts:73-74, 87-90) — ported
 
 ### UNIT PA-07: Strip CWD Env
 **Source:** `packages/paths/src/strip-cwd-env.ts`, `strip-cwd-env-boot.ts`
-**Rust target:** `crates/paths/src/strip_cwd_env.rs`
+**Rust target:** `crates/har-paths/src/strip_cwd_env.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 7)
 
-- [ ] `stripCwdEnv()` — removes Bun-auto-loaded CWD `.env` keys from process.env before any module initializes (strip-cwd-env.ts)
-- [ ] Boot variant: runs at import time (strip-cwd-env-boot.ts)
-- [ ] `CLAUDECODE=1` warning emission (strip-cwd-env.ts)
+LEDGER CORRECTION: target was `crates/paths/src/strip_cwd_env.rs` — corrected to `crates/har-paths/src/strip_cwd_env.rs`.
+
+NOTE ON BOOT VARIANT: `strip-cwd-env-boot.ts` calls `stripCwdEnv()` at import time. In Rust, the equivalent is calling `strip_cwd_env_boot()` as the VERY FIRST statement in `main()` before any env-reading code — documented in the module, noted here for the verifier.
+
+- [x] `BUN_AUTO_LOADED_ENV_FILES` constant: exactly `[".env", ".env.local", ".env.development", ".env.production"]` (strip-cwd-env.ts:27) — membership tested
+- [x] `CLAUDE_CODE_AUTH_VARS` constant: exactly `["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]` (strip-cwd-env.ts:30-34) — membership tested
+- [x] `stripCwdEnv(cwd)` Pass 1: parse each BUN_AUTO_LOADED_ENV_FILES without setting to env, collect keys, delete them from env, emit stripped-keys summary to stderr (strip-cwd-env.ts:41-82) — parse-without-set uses `dotenvy::from_path_iter` into a local collection (mirrors `processEnv: {}` trick)
+- [x] Parse warning for non-ENOENT file errors: emits warning to stderr but does NOT abort (strip-cwd-env.ts:53-61) — ported
+- [x] `stripCwdEnv(cwd)` Pass 2: CLAUDECODE=1 warning emitted BEFORE deletion (with exact Unicode chars `⚠` `—`, exact URLs, exact wording); then CLAUDECODE deleted; then all non-auth CLAUDE_CODE_* deleted by prefix scan (strip-cwd-env.ts:84-104) — ported; ARCHON_SUPPRESS_NESTED_CLAUDE_WARNING gate respected
+- [x] Debugger var stripping: `NODE_OPTIONS` and `VSCODE_INSPECTOR_OPTIONS` always deleted (strip-cwd-env.ts:106-109) — tested
+- [x] `strip_cwd_env_boot()` — calls `strip_cwd_env(&current_dir)` (boot variant) — ported; entry point call-order semantics documented
+- [x] Safe when no .env files present — tested (empty temp dir)
 
 ---
 
