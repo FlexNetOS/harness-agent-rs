@@ -92,31 +92,39 @@
 
 ### WF-06 — schemas/workflow-run.ts
 
-- [ ] unit:WF-06 `schemas/workflow-run.ts::workflowRunStatusSchema` → `workflows::schemas::workflow_run::WorkflowRunStatus`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::WorkflowRunStatus` → `workflows::schemas::workflow_run::WorkflowRunStatus`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::TERMINAL_WORKFLOW_STATUSES` → `workflows::schemas::workflow_run::TERMINAL_WORKFLOW_STATUSES`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::RESUMABLE_WORKFLOW_STATUSES` → `workflows::schemas::workflow_run::RESUMABLE_WORKFLOW_STATUSES`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::workflowStepStatusSchema` → `workflows::schemas::workflow_run::WorkflowStepStatus`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::WorkflowStepStatus` → `workflows::schemas::workflow_run::WorkflowStepStatus`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::nodeStateSchema` → `workflows::schemas::workflow_run::NodeState`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::NodeState` → `workflows::schemas::workflow_run::NodeState`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::nodeOutputSchema` → `workflows::schemas::workflow_run::NodeOutput`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::NodeOutput` → `workflows::schemas::workflow_run::NodeOutput`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::workflowRunSchema` → `workflows::schemas::workflow_run::WorkflowRun`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::WorkflowRun` → `workflows::schemas::workflow_run::WorkflowRun`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::ApprovalContext` → `workflows::schemas::workflow_run::ApprovalContext`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::isApprovalContext` → `workflows::schemas::workflow_run::is_approval_context()`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::artifactTypeSchema` → `workflows::schemas::workflow_run::ArtifactType`
-- [ ] unit:WF-06 `schemas/workflow-run.ts::ArtifactType` → `workflows::schemas::workflow_run::ArtifactType`
+- [x] unit:WF-06 `schemas/workflow-run.ts::workflowRunStatusSchema` → `har_workflow_schema::workflow_run::WorkflowRunStatus` (zod schema → Rust enum; wire names tested) — cycle3 differential PASS
+- [x] unit:WF-06 `schemas/workflow-run.ts::WorkflowRunStatus` → `har_workflow_schema::workflow_run::WorkflowRunStatus`
+- [x] unit:WF-06 `schemas/workflow-run.ts::TERMINAL_WORKFLOW_STATUSES` → `har_workflow_schema::workflow_run::TERMINAL_WORKFLOW_STATUSES`
+- [x] unit:WF-06 `schemas/workflow-run.ts::RESUMABLE_WORKFLOW_STATUSES` → `har_workflow_schema::workflow_run::RESUMABLE_WORKFLOW_STATUSES`
+- [x] unit:WF-06 `schemas/workflow-run.ts::workflowStepStatusSchema` → `har_workflow_schema::workflow_run::WorkflowStepStatus`
+- [x] unit:WF-06 `schemas/workflow-run.ts::WorkflowStepStatus` → `har_workflow_schema::workflow_run::WorkflowStepStatus`
+- [x] unit:WF-06 `schemas/workflow-run.ts::nodeStateSchema` → `har_workflow_schema::workflow_run::NodeState`
+- [x] unit:WF-06 `schemas/workflow-run.ts::NodeState` → `har_workflow_schema::workflow_run::NodeState`
+- [x] unit:WF-06 `schemas/workflow-run.ts::nodeOutputSchema` → `har_workflow_schema::workflow_run::NodeOutput` (discriminated union; all 5 state variants; failed requires error field) — cycle3 differential PASS
+- [x] unit:WF-06 `schemas/workflow-run.ts::NodeOutput` → `har_workflow_schema::workflow_run::NodeOutput`
+- [≠] unit:WF-06 `schemas/workflow-run.ts::workflowRunSchema` → `har_workflow_schema::workflow_run::WorkflowRun` — D1 nullable-presence PASS (absent→REJECT, null→None, present→Some, serialize→explicit null); D2 `z.date()`↔`DateTime<Utc>` QUALIFIED intentional mapping (garbage/non-datetime REJECT preserved; ISO accepted because wire/DB form is ISO string; no validation lost). Owner sign-off required for the `- [≠]`.
+- [≠] unit:WF-06 `schemas/workflow-run.ts::WorkflowRun` → `har_workflow_schema::workflow_run::WorkflowRun` — `started_at`/`completed_at`/`last_activity_at` as `DateTime<Utc>` (intentional typed-equivalent; see workflowRunSchema row)
+- [x] unit:WF-06 `schemas/workflow-run.ts::ApprovalContext` → `har_workflow_schema::workflow_run::ApprovalContext` (iteration/onRejectMaxAttempts: f64 — plain TS number, no .int())
+- [x] unit:WF-06 `schemas/workflow-run.ts::isApprovalContext` → `har_workflow_schema::workflow_run::is_approval_context(&Value) -> bool`
+- [x] unit:WF-06 `schemas/workflow-run.ts::artifactTypeSchema` → `har_workflow_schema::workflow_run::ArtifactType`
+- [x] unit:WF-06 `schemas/workflow-run.ts::ArtifactType` → `har_workflow_schema::workflow_run::ArtifactType`
+- [x] unit:WF-06 compile-time exhaustiveness assertion → `har_workflow_schema::workflow_run::assert_node_output_covers_node_state()` (exhaustive match)
 
 ### WF-07 — schemas/node-artifact.ts
 
-- [ ] unit:WF-07 `schemas/node-artifact.ts::nodeArtifactSchema` → `workflows::schemas::node_artifact::NodeArtifact` [!] blocked: must read node-artifact.ts at port time
-- [ ] unit:WF-07 `schemas/node-artifact.ts::NodeArtifact` → `workflows::schemas::node_artifact::NodeArtifact` [!] blocked: must read node-artifact.ts at port time
+NEEDS-HUMAN resolved: node-artifact.ts read; actual shape confirmed. outputType is a free string (NOT ArtifactType); size: z.number().int().nonnegative() → u64.
+
+- [x] unit:WF-07 `schemas/node-artifact.ts::nodeArtifactSchema` → `har_workflow_schema::node_artifact::NodeArtifact` (struct with 7 fields; camelCase wire names) — cycle3 differential PASS
+- [x] unit:WF-07 `schemas/node-artifact.ts::NodeArtifact` → `har_workflow_schema::node_artifact::NodeArtifact`
+- [x] unit:WF-07 `NodeArtifact::validate()` — outputType.min(1), producedAt datetime (FIX-B Z-only: all offsets REJECT incl +00:00), size non-negative (type-enforced) — cycle3 differential PASS
+- [x] unit:WF-07 `NodeArtifact::parse(Value)` — deserialize + validate — cycle3 differential PASS
 
 ### WF-08 — schemas/workflow-node-session.ts
 
-- [ ] unit:WF-08 `schemas/workflow-node-session.ts::WorkflowNodeSession` → `workflows::schemas::workflow_node_session::WorkflowNodeSession` [!] blocked: must read at port time
+NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 fields, all string/nullable-string, no numeric fields.
+
+- [x] unit:WF-08 `schemas/workflow-node-session.ts::workflowNodeSessionSchema` → `har_workflow_schema::workflow_node_session::WorkflowNodeSession` — cycle3 differential PASS
+- [x] unit:WF-08 `schemas/workflow-node-session.ts::WorkflowNodeSession` → `har_workflow_schema::workflow_node_session::WorkflowNodeSession` (8 fields; snake_case wire names; last_run_id nullable) — D4 absent→REJECT, null→None, present→Some, serialize→explicit null; cycle3 PASS
 
 ### WF-09 — dag-executor.ts (exported functions)
 

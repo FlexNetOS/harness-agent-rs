@@ -61,3 +61,6 @@ directories = "5"
 
 # Ordered maps (when insertion order matters)
 indexmap = { version = "2", features = ["serde"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
