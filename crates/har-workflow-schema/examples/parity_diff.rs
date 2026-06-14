@@ -1,4 +1,4 @@
-//! Differential parity harness — emits Rust-side parse results for the same cycle-1
+//! Differential parity harness — emits Rust-side parse results for the same cycle-1/2/3
 //! fixtures the TS oracle (Archon/parity_oracle.ts) runs. Output is JSON: a list of
 //! { id, ok, data? }. Run: `cargo run -p har-workflow-schema --example parity_diff`.
 //!
@@ -12,12 +12,17 @@
 //!     structural deserialize AND superRefine in one shot)
 //!   - workflow    → `from_value::<WorkflowDefinition>` (+ node validation) / `WorkflowBase`
 //!     (WF-02; `workflowDefinitionSchema.safeParse`)
+//!   - workflow-run types → WF-06 round-trip checks
+//!   - node-artifact      → WF-07 `NodeArtifact::parse(Value)` (deserialize + validate)
+//!   - workflow-node-session → WF-08 round-trip checks
 
 use har_workflow_schema::{
-    validate_dag_node, validate_workflow_base, validate_workflow_definition, DagNode,
-    LoopNodeConfig, ModelReasoningEffort, StepRetryConfig, ThinkingConfig, WebSearchMode,
-    WorkflowBase, WorkflowDefinition, WorkflowHookEvent, WorkflowHookMatcher, WorkflowNodeHooks,
-    WorkflowRequirement, WORKFLOW_HOOK_EVENTS,
+    is_approval_context, validate_dag_node, validate_workflow_base, validate_workflow_definition,
+    ArtifactType, DagNode, LoopNodeConfig, ModelReasoningEffort, NodeArtifact, NodeOutput,
+    NodeState, StepRetryConfig, ThinkingConfig, WebSearchMode, WorkflowBase, WorkflowDefinition,
+    WorkflowHookEvent, WorkflowHookMatcher, WorkflowNodeHooks, WorkflowNodeSession,
+    WorkflowRequirement, WorkflowRun, WorkflowRunStatus, RESUMABLE_WORKFLOW_STATUSES,
+    TERMINAL_WORKFLOW_STATUSES, WORKFLOW_HOOK_EVENTS,
 };
 use serde_json::{json, Value};
 
@@ -383,6 +388,306 @@ fn main() {
     out.push(def_case("def.node_maxatt_ten", json!({"name":"n","description":"d","nodes":[{"id":"a","approval":{"message":"m","on_reject":{"prompt":"p","max_attempts":10}}}]})));
     // WorkflowDefinition base-error + node-error combined → reject
     out.push(def_case("def.base_and_node_err", json!({"name":"","description":"d","nodes":[{"id":"a","prompt":"hi","maxBudgetUsd":0}]})));
+
+    // ════════════════════════════════════════════════════════════════════════
+    // WF-06 workflow-run (cycle 3)
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── WorkflowRunStatus wire names ──
+    let all_statuses = ["pending", "running", "completed", "failed", "cancelled", "paused"];
+    for s in all_statuses {
+        let id = format!("runstatus.{s}");
+        match serde_json::from_value::<WorkflowRunStatus>(json!(s)) {
+            Ok(v) => out.push(rec_ok(&id, serde_json::to_value(&v).unwrap())),
+            Err(_) => out.push(rec_err(&id)),
+        }
+    }
+    out.push({
+        let id = "runstatus.unknown";
+        match serde_json::from_value::<WorkflowRunStatus>(json!("archived")) {
+            Ok(_) => rec_ok(id, json!("archived")),
+            Err(_) => rec_err(id),
+        }
+    });
+
+    // ── TERMINAL / RESUMABLE constants ──
+    out.push(rec_ok(
+        "runstatus.terminal_count",
+        json!(TERMINAL_WORKFLOW_STATUSES.len()),
+    ));
+    out.push(rec_ok(
+        "runstatus.resumable_count",
+        json!(RESUMABLE_WORKFLOW_STATUSES.len()),
+    ));
+
+    // ── NodeState wire names ──
+    let all_states = ["pending", "running", "completed", "failed", "skipped"];
+    for s in all_states {
+        let id = format!("nodestate.{s}");
+        match serde_json::from_value::<NodeState>(json!(s)) {
+            Ok(v) => out.push(rec_ok(&id, serde_json::to_value(&v).unwrap())),
+            Err(_) => out.push(rec_err(&id)),
+        }
+    }
+    out.push({
+        let id = "nodestate.cancelled";
+        match serde_json::from_value::<NodeState>(json!("cancelled")) {
+            Ok(_) => rec_ok(id, json!("cancelled")),
+            Err(_) => rec_err(id),
+        }
+    });
+
+    // ── NodeOutput: completed ──
+    out.push({
+        let id = "nodeout.completed_minimal";
+        let v = json!({ "state": "completed", "output": "done" });
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(no) => rec_ok(id, serde_json::to_value(&no).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeout.completed_full";
+        let v = json!({ "state": "completed", "output": "r", "sessionId": "s", "structuredOutput": {"k":"v"}, "declaredFields": ["k"] });
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(no) => rec_ok(id, serde_json::to_value(&no).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeout.running";
+        let v = json!({ "state": "running", "output": "" });
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(no) => rec_ok(id, serde_json::to_value(&no).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeout.failed_with_error";
+        let v = json!({ "state": "failed", "output": "", "error": "timeout" });
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(no) => rec_ok(id, serde_json::to_value(&no).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeout.failed_no_error";
+        let v = json!({ "state": "failed", "output": "" }); // missing error field → rejected
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(_) => rec_err(id),  // should NOT succeed
+            Err(_) => rec_ok(id, json!(false)), // correctly rejected
+        }
+    });
+    out.push({
+        let id = "nodeout.pending";
+        let v = json!({ "state": "pending", "output": "" });
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(no) => rec_ok(id, serde_json::to_value(&no).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeout.skipped";
+        let v = json!({ "state": "skipped", "output": "" });
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(no) => rec_ok(id, serde_json::to_value(&no).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeout.cancelled_state";
+        let v = json!({ "state": "cancelled", "output": "" }); // not a NodeOutput state
+        match serde_json::from_value::<NodeOutput>(v) {
+            Ok(_) => rec_err(id),
+            Err(_) => rec_ok(id, json!(false)), // correctly rejected
+        }
+    });
+
+    // ── ArtifactType wire names ──
+    let artifact_types = ["pr", "commit", "file_created", "file_modified", "branch"];
+    for a in artifact_types {
+        let id = format!("artifacttype.{a}");
+        match serde_json::from_value::<ArtifactType>(json!(a)) {
+            Ok(v) => out.push(rec_ok(&id, serde_json::to_value(&v).unwrap())),
+            Err(_) => out.push(rec_err(&id)),
+        }
+    }
+
+    // ── is_approval_context ──
+    out.push(rec_ok("approval_ctx.valid", json!(is_approval_context(&json!({"nodeId":"n","message":"m"})))));
+    out.push(rec_ok("approval_ctx.missing_nodeId", json!(is_approval_context(&json!({"message":"m"})))));
+    out.push(rec_ok("approval_ctx.missing_message", json!(is_approval_context(&json!({"nodeId":"n"})))));
+    out.push(rec_ok("approval_ctx.null", json!(is_approval_context(&Value::Null))));
+    out.push(rec_ok("approval_ctx.non_string_nodeId", json!(is_approval_context(&json!({"nodeId":42,"message":"m"})))));
+
+    // ── WorkflowRun round-trip ──
+    // FIX-A (cycle 3): absent nullable fields → REJECT (zod v4 .nullable() is required-present).
+    // This fixture previously accepted when nullable fields were absent — that was wrong.
+    // zod v4 rejects: parent_conversation_id/codebase_id/completed_at/last_activity_at/
+    // working_path/user_id must all be present (as string or null).
+    out.push({
+        let id = "workflowrun.absent_nullables";
+        let v = json!({
+            "id": "run-1", "workflow_name": "deploy", "conversation_id": "c1",
+            "status": "running", "user_message": "go", "metadata": {},
+            "started_at": "2024-01-01T00:00:00Z"
+        });
+        match serde_json::from_value::<WorkflowRun>(v) {
+            Ok(_) => rec_err(id),                  // should NOT accept absent nullable fields
+            Err(_) => rec_ok(id, json!(false)),    // correctly rejected
+        }
+    });
+    out.push({
+        let id = "workflowrun.null_fields";
+        let v = json!({
+            "id": "r", "workflow_name": "w", "conversation_id": "c",
+            "parent_conversation_id": null, "codebase_id": null,
+            "status": "pending", "user_message": "", "metadata": {},
+            "started_at": "2024-01-01T00:00:00Z",
+            "completed_at": null, "last_activity_at": null,
+            "working_path": null, "user_id": null
+        });
+        match serde_json::from_value::<WorkflowRun>(v) {
+            Ok(r) => rec_ok(id, serde_json::to_value(&r).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+
+    // ════════════════════════════════════════════════════════════════════════
+    // WF-07 node-artifact (cycle 3)
+    // ════════════════════════════════════════════════════════════════════════
+
+    out.push({
+        let id = "nodeartifact.valid_minimal";
+        let v = json!({
+            "nodeId": "plan", "outputType": "plan", "path": "nodes/plan.md",
+            "runId": "run-1", "producedAt": "2024-01-01T12:00:00Z", "size": 1024
+        });
+        match NodeArtifact::parse(v) {
+            Ok(a) => rec_ok(id, serde_json::to_value(&a).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "nodeartifact.empty_output_type";
+        let v = json!({
+            "nodeId": "n", "outputType": "", "path": "p",
+            "runId": "r", "producedAt": "2024-01-01T12:00:00Z", "size": 0
+        });
+        match NodeArtifact::parse(v) {
+            Ok(_) => rec_err(id),
+            Err(_) => rec_ok(id, json!(false)),
+        }
+    });
+    out.push({
+        let id = "nodeartifact.invalid_produced_at";
+        let v = json!({
+            "nodeId": "n", "outputType": "t", "path": "p",
+            "runId": "r", "producedAt": "not-a-datetime", "size": 0
+        });
+        match NodeArtifact::parse(v) {
+            Ok(_) => rec_err(id),
+            Err(_) => rec_ok(id, json!(false)),
+        }
+    });
+    out.push({
+        let id = "nodeartifact.negative_size";
+        let v = json!({
+            "nodeId": "n", "outputType": "t", "path": "p",
+            "runId": "r", "producedAt": "2024-01-01T12:00:00Z", "size": -1
+        });
+        match NodeArtifact::parse(v) {
+            Ok(_) => rec_err(id),
+            Err(_) => rec_ok(id, json!(false)),
+        }
+    });
+    out.push({
+        let id = "nodeartifact.with_session";
+        let v = json!({
+            "nodeId": "n", "outputType": "report", "path": "nodes/n.md",
+            "runId": "r", "producedAt": "2024-06-15T09:30:00.000Z",
+            "size": 2048, "sessionId": "sess-abc"
+        });
+        match NodeArtifact::parse(v) {
+            Ok(a) => rec_ok(id, serde_json::to_value(&a).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+
+    // ════════════════════════════════════════════════════════════════════════
+    // WF-08 workflow-node-session (cycle 3)
+    // ════════════════════════════════════════════════════════════════════════
+
+    out.push({
+        let id = "wns.valid_with_last_run";
+        let v = json!({
+            "workflow_name": "deploy", "node_id": "analyze",
+            "scope_key": "repo-42", "provider": "claude",
+            "provider_session_id": "sess-abc",
+            "last_run_id": "run-1",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        });
+        match serde_json::from_value::<WorkflowNodeSession>(v) {
+            Ok(s) => rec_ok(id, serde_json::to_value(&s).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    out.push({
+        let id = "wns.null_last_run_id";
+        let v = json!({
+            "workflow_name": "w", "node_id": "n",
+            "scope_key": "s", "provider": "codex",
+            "provider_session_id": "sid",
+            "last_run_id": null,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        });
+        match serde_json::from_value::<WorkflowNodeSession>(v) {
+            Ok(s) => rec_ok(id, serde_json::to_value(&s).unwrap()),
+            Err(_) => rec_err(id),
+        }
+    });
+    // FIX-A/D4 (cycle 3): absent last_run_id → REJECT (zod v4 .nullable() is required-present).
+    // Previously the port accepted absent with a "pragmatic wire parity" comment. Corrected.
+    out.push({
+        let id = "wns.absent_last_run_id";
+        let v = json!({
+            "workflow_name": "w", "node_id": "n",
+            "scope_key": "s", "provider": "p",
+            "provider_session_id": "sid",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        });
+        match serde_json::from_value::<WorkflowNodeSession>(v) {
+            Ok(_) => rec_err(id),               // should NOT accept absent nullable key
+            Err(_) => rec_ok(id, json!(false)), // correctly rejected
+        }
+    });
+    // FIX-B (cycle 3): offset timestamps → REJECT (zod v4 .datetime() is Z-only).
+    // Previously the port accepted +HH:MM / -HH:MM offsets. Corrected.
+    out.push({
+        let id = "nodeartifact.produced_at_positive_offset";
+        let v = json!({
+            "nodeId": "n", "outputType": "t", "path": "p",
+            "runId": "r", "producedAt": "2024-06-15T09:30:00+05:30", "size": 100
+        });
+        match NodeArtifact::parse(v) {
+            Ok(_) => rec_err(id),               // should NOT accept offset
+            Err(_) => rec_ok(id, json!(false)), // correctly rejected
+        }
+    });
+    out.push({
+        let id = "nodeartifact.produced_at_negative_offset";
+        let v = json!({
+            "nodeId": "n", "outputType": "t", "path": "p",
+            "runId": "r", "producedAt": "2024-06-15T14:00:00-08:00", "size": 100
+        });
+        match NodeArtifact::parse(v) {
+            Ok(_) => rec_err(id),               // should NOT accept offset
+            Err(_) => rec_ok(id, json!(false)), // correctly rejected
+        }
+    });
 
     println!("{}", serde_json::to_string_pretty(&out).unwrap());
 }

@@ -8,12 +8,12 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2
-cycles_total: 2
-ledger: parity 6/79 units verified (PR-01; WF-01 dag-node, WF-02 workflow, WF-03/04/05)
-last_item: cycle 2 — WF-01 dag-node + WF-02 workflow schemas — PASS gate (107/107 fixtures)
-status: ITERATE — cycle 2 committed; next cycle 3 = WF-06/07/08 run+artifact+session schemas
-last_update: 2026-06-13T18:30:00Z
+cycles_this_session: 3
+cycles_total: 3
+ledger: parity 9/79 units verified (PR-01; WF-01..08) — full har-workflow-schema SCHEMA layer done
+last_item: cycle 3 — WF-06 run + WF-07 artifact + WF-08 session schemas — PASS gate (zod-v4 semantics)
+status: AT CYCLE BUDGET (3/3) — HAND OFF. Next session resumes at cycle 4 = WF-09 dag-executor deps
+last_update: 2026-06-13T20:00:00Z
 
 ## Verified units (parity gate PASS)
 - PR-01 har-contract ← providers/src/types.ts (QUALIFIED: pure types, wire-shape verified)
@@ -22,15 +22,24 @@ last_update: 2026-06-13T18:30:00Z
 - WF-03 Loop, WF-04 Retry (delay_ms f64), WF-05 Hooks ← workflows/src/schemas/*
   Differential harness: crates/har-workflow-schema/examples/parity_diff.rs; findings/parity-cycle{1,2}.md
 
-## Key parity lessons (apply to every schema unit)
+## Key parity lessons (apply to every schema unit — each was a gate FAIL caught+fixed)
 - zod `z.number()` WITHOUT `.int()` → Rust f64, NOT integer (fractional values are source-valid).
-- zod `.trim()` is a TRANSFORM: store the trimmed value, not just validate on trimmed.
+- zod `.trim()` is a TRANSFORM: store the trimmed value (deserialize_with), not just validate on trimmed.
 - Restore EVERY value-bound (.positive/.min/.max/.nonempty/.trim().min(1)); collect ALL issues (no fail-fast).
-- Self-reported "green" is not the gate: always run cargo clippy --all-targets + differential parity vs live bun.
+- Source is **zod v4**: `.nullable()` ≠ optional (key REQUIRED-present, value may be null → absent REJECTS;
+  use deserialize_with WITHOUT #[serde(default)]). `.datetime()` is **Z-only** (offsets REJECT).
+- `z.date()` (JS Date) → `chrono::DateTime<Utc>` (`- [≠]`, JSON has no Date type; validation preserved).
+- Self-reported "green" is NOT the gate: the port's own tests can encode wrong behavior. The live
+  differential diff vs `bun` is the authority. Always cargo clippy --all-targets + differential parity.
+
+## OWNER SIGN-OFF NEEDED (`- [≠]`)
+- WF-06 date fields `z.date()` ↔ `chrono::DateTime<Utc>` representational mapping (recorded, not approved).
 
 ## Next units (dependency order, from cartographer)
-cycle 3: WF-06 workflow-run + WF-07 node-artifact + WF-08 node-session schemas (resolve the 2 NEEDS-HUMAN shapes)
-then: PA paths → GI git → IS isolation → CO db (MAP→hf) → WF-09..14 executor → WF-09 dag-executor (the core)
+cycle 4: WF-11 executor-shared utils → WF-12 condition-evaluator → WF-13 output-ref (pure fns, strong parity)
+  OR the leaf-crate track: PA paths → GI git → IS isolation types (unblocks more of the graph)
+then: WF-14 model-validation → WF-09 dag-executor (the core state machine) → PR-02.. providers → CO db (MAP→hf)
+Differential harness pattern: crates/har-workflow-schema/{examples/parity_diff.rs, tests/parity_cycle3_differential.rs}
 
 ## Scope (owner directive)
 - Archon v0.4.1 CURRENT architecture only. Legacy versions excluded (record as excluded, not as work).

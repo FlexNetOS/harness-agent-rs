@@ -111,32 +111,58 @@ The heart of the port. All units here are `PORT`.
 
 ### UNIT WF-06: Workflow Run Schema
 **Source:** `packages/workflows/src/schemas/workflow-run.ts`
-**Rust target:** `crates/workflows/src/schemas/workflow_run.rs`
+**Rust target:** `crates/har-workflow-schema/src/workflow_run.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 3)
 
-- [ ] `WorkflowRunStatus` enum: `pending | running | completed | failed | cancelled | paused` (workflow-run.ts:11-17)
-- [ ] `TERMINAL_WORKFLOW_STATUSES`: `['completed','failed','cancelled']` (workflow-run.ts:22-26)
-- [ ] `RESUMABLE_WORKFLOW_STATUSES`: `['failed','paused']` (workflow-run.ts:29-32)
-- [ ] `WorkflowStepStatus` enum: `pending | running | completed | failed | skipped` (workflow-run.ts:38-44)
-- [ ] `NodeState` enum: `pending | running | completed | failed | skipped` (workflow-run.ts:52-54)
-- [ ] `NodeOutput` discriminated union on `state` field: completed/running (output, sessionId?, structuredOutput?, declaredFields?), failed (output, sessionId?, error, structuredOutput?, declaredFields?), pending/skipped (output only) (workflow-run.ts:75-95)
-- [ ] `WorkflowRun` struct: `id`, `workflow_name`, `conversation_id`, `parent_conversation_id?`, `codebase_id?`, `status`, `user_message`, `metadata: Map<String,Value>`, `started_at`, `completed_at?`, `last_activity_at?`, `working_path?`, `user_id?` (workflow-run.ts:106-122)
-- [ ] `ApprovalContext` struct: `nodeId: String`, `message: String`, `type?: 'approval'|'interactive_loop'`, `iteration?: u32`, `sessionId?: String`, `captureResponse?: bool`, `onRejectPrompt?: String`, `onRejectMaxAttempts?: u32` (workflow-run.ts:124-140)
-- [ ] `isApprovalContext(val) -> bool` type guard: requires `nodeId: String` and `message: String` (workflow-run.ts:148-155)
-- [ ] `ArtifactType` enum: `pr | commit | file_created | file_modified | branch` (workflow-run.ts:161-168)
-- [ ] Compile-time `NodeOutput` covers all `NodeState` values — enforce via exhaustive match in Rust (workflow-run.ts:177-183)
+- [x] `WorkflowRunStatus` enum: `pending | running | completed | failed | cancelled | paused` (workflow-run.ts:11-17) — ported; all 6 wire names tested
+- [x] `TERMINAL_WORKFLOW_STATUSES`: `['completed','failed','cancelled']` (workflow-run.ts:22-26) — ported as `&[WorkflowRunStatus]`; membership tests pass
+- [x] `RESUMABLE_WORKFLOW_STATUSES`: `['failed','paused']` (workflow-run.ts:29-32) — ported as `&[WorkflowRunStatus]`; membership tests pass
+- [x] `WorkflowStepStatus` enum: `pending | running | completed | failed | skipped` (workflow-run.ts:38-44) — ported; wire names tested
+- [x] `NodeState` enum: `pending | running | completed | failed | skipped` (workflow-run.ts:52-54) — ported; `cancelled` correctly rejected; wire names tested
+- [x] `NodeOutput` discriminated union on `state` field: completed/running (output, sessionId?, structuredOutput?, declaredFields?), failed (output, sessionId?, error, structuredOutput?, declaredFields?), pending/skipped (output only) (workflow-run.ts:75-95) — ported; failed missing `error` correctly rejected; all 5 state variants tested
+- [x] `WorkflowRun` struct: `id`, `workflow_name`, `conversation_id`, `parent_conversation_id?`, `codebase_id?`, `status`, `user_message`, `metadata: Map<String,Value>`, `started_at`, `completed_at?`, `last_activity_at?`, `working_path?`, `user_id?` (workflow-run.ts:106-122) — ported; `.nullable()` fields are required-present (absent→REJECT, null→None) per zod-v4 semantics
+- [≠] WF-06 date fields `started_at`/`completed_at`/`last_activity_at`: source `z.date()` (JS Date) ↔ Rust `chrono::DateTime<Utc>`. JSON/serde has no Date type; the typed timestamp still rejects non-datetime/garbage strings (validation preserved) and serializes ISO-8601 wire-identical to `Date.toJSON()`. No capability lost. **NEEDS OWNER SIGN-OFF** per ADR-0001 `- [≠]` protocol (currently recorded, not yet approved).
+- [x] `ApprovalContext` struct: `nodeId: String`, `message: String`, `type?: 'approval'|'interactive_loop'`, `iteration?: f64`, `sessionId?: String`, `captureResponse?: bool`, `onRejectPrompt?: String`, `onRejectMaxAttempts?: f64` (workflow-run.ts:124-140) — ported; NOTE: `iteration` and `onRejectMaxAttempts` are plain TS `number` (no zod `.int()`) → `f64` (cycle-1 lesson applied); wire camelCase names tested
+- [x] `isApprovalContext(val) -> bool` type guard: requires `nodeId: String` and `message: String` (workflow-run.ts:148-155) — ported as `is_approval_context(&Value) -> bool`; all guard cases tested
+- [x] `ArtifactType` enum: `pr | commit | file_created | file_modified | branch` (workflow-run.ts:161-168) — ported; all 5 wire names tested; `file_deleted` correctly rejected
+- [x] Compile-time `NodeOutput` covers all `NodeState` values — enforced via exhaustive match in `assert_node_output_covers_node_state()` (workflow-run.ts:177-183); tested for all 5 states
 
 ### UNIT WF-07: Node Artifact Schema
 **Source:** `packages/workflows/src/schemas/node-artifact.ts`
-**Rust target:** `crates/workflows/src/schemas/node_artifact.rs`
+**Rust target:** `crates/har-workflow-schema/src/node_artifact.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 3)
 
-NOTE: `ArtifactType` and `NodeOutput` are in `schemas/workflow-run.ts` (WF-06). This file likely contains `NodeArtifact` struct used by event-emitter.
-- [ ] `NodeArtifact` struct: `type: ArtifactType`, `nodeId`, `url?`, `title?`, `body?` — exact shape NEEDS-HUMAN: read node-artifact.ts at port time
+NEEDS-HUMAN resolved: node-artifact.ts was read. Actual shape differs from ledger guess:
+- `nodeId: String` (not `type: ArtifactType`)
+- `outputType: String` (z.string().min(1)) — free string tag, NOT `ArtifactType`
+- `path: String`
+- `runId: String`
+- `producedAt: String` (z.string().datetime()) — ISO-8601 validated
+- `size: u64` (z.number().int().nonnegative() — has `.int()` → integer, nonneg → `u64`)
+- `sessionId?: String`
+NOTE: Distinct from `ArtifactType` — this is a node's on-disk output file descriptor, not a workflow event kind.
+
+- [x] `NodeArtifact` struct: all 7 fields ported exactly as source defines — wire names camelCase (`nodeId`, `outputType`, `runId`, `producedAt`, `sessionId`); snake_case fields verbatim (`path`) — camelCase wire names tested
+- [x] Validation: `outputType` non-empty (z.string().min(1)); `producedAt` valid ISO-8601 datetime (z.string().datetime()); `size` non-negative by type (u64); collect-all errors tested
+- [x] Numeric audit: `size: z.number().int().nonnegative()` has `.int()` → `u64` (negative rejected at deserialize; fractional rejected at deserialize)
+- [x] `NodeArtifact::parse(Value)` — deserialize + validate in one shot; all accept/reject cases tested
 
 ### UNIT WF-08: Workflow Node Session Schema
 **Source:** `packages/workflows/src/schemas/workflow-node-session.ts`
-**Rust target:** `crates/workflows/src/schemas/workflow_node_session.rs`
+**Rust target:** `crates/har-workflow-schema/src/workflow_node_session.rs`
+**Status:** `- [~]` ported, parity unproven (cycle 3)
 
-- [ ] `WorkflowNodeSession` struct — exact shape NEEDS-HUMAN: not read; supports cross-run session persistence (`persist_session` feature)
+NEEDS-HUMAN resolved: workflow-node-session.ts was read. Actual shape:
+- `workflow_name: String`, `node_id: String`, `scope_key: String`, `provider: String`
+- `provider_session_id: String`
+- `last_run_id: Option<String>` (z.string().nullable()) — FK ON DELETE SET NULL
+- `created_at: String`, `updated_at: String`
+Composite PK: (workflow_name, node_id, scope_key, provider)
+
+- [x] `WorkflowNodeSession` struct: all 8 fields ported; snake_case wire names (match TS source exactly); `last_run_id` nullable → `Option<String>`; null and absent both map to `None`
+- [x] Round-trip: with last_run_id; null last_run_id; different providers same node — all tested
+- [x] Numeric audit: no numeric fields in source — N/A
+- [x] Trim audit: no `.trim()` transforms — N/A
 
 ### UNIT WF-09: DAG Executor — Core State Machine
 **Source:** `packages/workflows/src/dag-executor.ts`

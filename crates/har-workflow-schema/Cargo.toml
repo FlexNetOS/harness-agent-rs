@@ -10,3 +10,4 @@ har-contract = { path = "../har-contract" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+chrono.workspace = true
