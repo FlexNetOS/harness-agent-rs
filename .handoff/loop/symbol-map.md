@@ -412,37 +412,44 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### IS-01 — types.ts
 
-- [ ] unit:IS-01 `isolation/types.ts::IsolationProviderType` → `isolation::types::IsolationProviderType`
-- [ ] unit:IS-01 `isolation/types.ts::IsolationWorkflowType` → `isolation::types::IsolationWorkflowType`
-- [ ] unit:IS-01 `isolation/types.ts::EnvironmentStatus` → `isolation::types::EnvironmentStatus`
-- [ ] unit:IS-01 `isolation/types.ts::IsolationRequest` → `isolation::types::IsolationRequest`
-- [ ] unit:IS-01 `isolation/types.ts::IssueIsolationRequest` → `isolation::types::IssueIsolationRequest`
-- [ ] unit:IS-01 `isolation/types.ts::PRIsolationRequest` → `isolation::types::PRIsolationRequest`
-- [ ] unit:IS-01 `isolation/types.ts::ReviewIsolationRequest` → `isolation::types::ReviewIsolationRequest`
-- [ ] unit:IS-01 `isolation/types.ts::ThreadIsolationRequest` → `isolation::types::ThreadIsolationRequest`
-- [ ] unit:IS-01 `isolation/types.ts::TaskIsolationRequest` → `isolation::types::TaskIsolationRequest`
-- [ ] unit:IS-01 `isolation/types.ts::WorktreeEnvironment` → `isolation::types::WorktreeEnvironment`
-- [ ] unit:IS-01 `isolation/types.ts::IIsolationProvider` → `isolation::types::IIsolationProvider` (trait)
-- [ ] unit:IS-01 `isolation/types.ts::DestroyResult` → `isolation::types::DestroyResult`
-- [ ] unit:IS-01 `isolation/types.ts::WorktreeCreateConfig` → `isolation::types::WorktreeCreateConfig`
-- [ ] unit:IS-01 `isolation/types.ts::IsolationResolution` → `isolation::types::IsolationResolution`
-- [ ] unit:IS-01 `isolation/types.ts::ResolutionMethod` → `isolation::types::ResolutionMethod`
-- [ ] unit:IS-01 `isolation/types.ts::ResolveRequest` → `isolation::types::ResolveRequest`
-- [ ] unit:IS-01 `isolation/types.ts::IsolationHints` → `isolation::types::IsolationHints`
-- [ ] unit:IS-01 `isolation/types.ts::WorktreeStatusBreakdown` → `isolation::types::WorktreeStatusBreakdown`
-- [ ] unit:IS-01 `isolation/types.ts::isPRIsolationRequest` → `isolation::types::is_pr_isolation_request()`
+- [x] unit:IS-01 `isolation/types.ts::IsolationProviderType` → `har_isolation::types::IsolationProviderType` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::IsolationWorkflowType` → `har_isolation::types::IsolationWorkflowType` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::EnvironmentStatus` → `har_isolation::types::EnvironmentStatus` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::IsolationRequest` → `har_isolation::types::IsolationRequest` (cycle 9) — `#[serde(tag="workflowType")]`
+- [x] unit:IS-01 `isolation/types.ts::IssueIsolationRequest` → `IsolationRequest::Issue { base, identifier }` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::PRIsolationRequest` → `IsolationRequest::Pr { base, identifier, pr_branch, pr_sha?, is_fork_pr }` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::ReviewIsolationRequest` → `IsolationRequest::Review { base, identifier }` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::ThreadIsolationRequest` → `IsolationRequest::Thread { base, identifier }` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::TaskIsolationRequest` → `IsolationRequest::Task { base, identifier, from_branch? }` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::WorktreeEnvironment` → `har_isolation::types::WorktreeEnvironment` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::IIsolationProvider` → `har_isolation::types::IsolationProvider` trait (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::DestroyResult` → `har_isolation::types::DestroyResult` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::WorktreeCreateConfig` → `har_isolation::types::WorktreeCreateConfig` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::IsolationResolution` → `har_isolation::types::IsolationResolution` (cycle 9) — Resolved variant boxed
+- [x] unit:IS-01 `isolation/types.ts::ResolutionMethod` → `har_isolation::types::ResolutionMethod` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::ResolveRequest` → `har_isolation::types::ResolveRequest` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::IsolationHints` → `har_isolation::types::IsolationHints` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::WorktreeStatusBreakdown` → `har_isolation::types::WorktreeStatusBreakdown` (cycle 9)
+- [x] unit:IS-01 `isolation/types.ts::isPRIsolationRequest` → `har_isolation::types::is_pr_isolation_request()` (cycle 9)
 
 ### IS-02 to IS-08
 
-- [ ] unit:IS-02 `isolation/providers/worktree.ts::WorktreeProvider` → `isolation::providers::worktree::WorktreeProvider`
-- [ ] unit:IS-03 `isolation/resolver.ts::IsolationResolver` → `isolation::resolver::IsolationResolver`
-- [ ] unit:IS-04 `isolation/factory.ts::configureIsolation` → `isolation::factory::configure_isolation()`
-- [ ] unit:IS-04 `isolation/factory.ts::getIsolationProvider` → `isolation::factory::get_isolation_provider()`
-- [ ] unit:IS-04 `isolation/factory.ts::resetIsolationProvider` → `isolation::factory::reset_isolation_provider()`
-- [ ] unit:IS-05 `isolation/pr-state.ts::PrState` → `isolation::pr_state::PrState` [!] blocked: must read at port time
-- [ ] unit:IS-06 `isolation/worktree-copy.ts::copyFiles` → `isolation::worktree_copy::copy_files()`
-- [ ] unit:IS-07 `isolation/errors.ts::IsolationBlockedError` → `isolation::errors::IsolationBlockedError`
-- [ ] unit:IS-08 `isolation/store.ts::IIsolationStore` → `isolation::store::IIsolationStore` (trait)
+- [ ] unit:IS-02 `isolation/providers/worktree.ts::WorktreeProvider` → `har_isolation::providers::worktree::WorktreeProvider` (next cycle)
+- [ ] unit:IS-03 `isolation/resolver.ts::IsolationResolver` → `har_isolation::resolver::IsolationResolver` (next cycle)
+- [x] unit:IS-04 `isolation/factory.ts::configureIsolation` → `har_isolation::factory::configure_isolation()` (cycle 9)
+- [≠] unit:IS-04 `isolation/factory.ts::getIsolationProvider` → `har_isolation::factory::get_isolation_provider()` (cycle 9, panics until IS-02)
+- [x] unit:IS-04 `isolation/factory.ts::resetIsolationProvider` → `har_isolation::factory::reset_isolation_provider()` (cycle 9)
+- [x] unit:IS-05 `isolation/pr-state.ts::PrState` → `har_isolation::pr_state::PrState` (cycle 9) — NEEDS-HUMAN RESOLVED
+- [x] unit:IS-05 `isolation/pr-state.ts::getPrState` → `har_isolation::pr_state::get_pr_state()` (cycle 9)
+- [x] unit:IS-06 `isolation/worktree-copy.ts::parseCopyFileEntry` → `har_isolation::worktree_copy::parse_copy_file_entry()` (cycle 9)
+- [x] unit:IS-06 `isolation/worktree-copy.ts::isPathWithinRoot` → `har_isolation::worktree_copy::is_path_within_root()` (cycle 9)
+- [x] unit:IS-06 `isolation/worktree-copy.ts::copyWorktreeFile` → `har_isolation::worktree_copy::copy_worktree_file()` (cycle 9)
+- [x] unit:IS-06 `isolation/worktree-copy.ts::copyWorktreeFiles` → `har_isolation::worktree_copy::copy_worktree_files()` (cycle 9)
+- [x] unit:IS-07 `isolation/errors.ts::IsolationBlockedError` → `har_isolation::errors::IsolationBlockedError` (cycle 9)
+- [x] unit:IS-07 `isolation/errors.ts::classifyIsolationError` → `har_isolation::errors::classify_isolation_error()` (cycle 9)
+- [x] unit:IS-07 `isolation/errors.ts::isKnownIsolationError` → `har_isolation::errors::is_known_isolation_error()` (cycle 9)
+- [x] unit:IS-07 `isolation/errors.ts::ERROR_PATTERNS` → `har_isolation::errors::ERROR_PATTERNS` (cycle 9) — all 13 patterns, exact message strings
+- [x] unit:IS-08 `isolation/store.ts::IIsolationStore` → `har_isolation::store::IsolationStore` trait (cycle 9)
 
 ---
 
