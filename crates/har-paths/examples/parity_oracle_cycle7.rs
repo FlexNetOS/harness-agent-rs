@@ -6,13 +6,14 @@
 use std::path::{Path, PathBuf};
 
 use har_paths::archon_paths::{
-    expand_tilde, get_archon_config_path, get_archon_env_path, get_archon_workspaces_path,
-    get_archon_worktrees_path, get_command_folder_search_paths, get_home_commands_path,
-    get_home_scripts_path, get_home_workflows_path, get_legacy_home_workflows_path,
-    get_project_artifacts_path, get_project_logs_path, get_project_root, get_project_source_path,
-    get_project_worktrees_path, get_repo_archon_env_path, get_run_artifacts_path, get_run_log_path,
-    get_web_dist_dir, get_workflow_folder_search_paths, get_archon_home, is_docker, parse_owner_repo,
-    resolve_project_root_from_cwd, ArchonPathError,
+    expand_tilde, get_archon_config_path, get_archon_env_path, get_archon_home,
+    get_archon_workspaces_path, get_archon_worktrees_path, get_command_folder_search_paths,
+    get_home_commands_path, get_home_scripts_path, get_home_workflows_path,
+    get_legacy_home_workflows_path, get_project_artifacts_path, get_project_logs_path,
+    get_project_root, get_project_source_path, get_project_worktrees_path,
+    get_repo_archon_env_path, get_run_artifacts_path, get_run_log_path, get_web_dist_dir,
+    get_workflow_folder_search_paths, is_docker, parse_owner_repo, resolve_project_root_from_cwd,
+    ArchonPathError,
 };
 use har_paths::env_loader::load_archon_env;
 use har_paths::strip_cwd_env::strip_cwd_env;
@@ -52,11 +53,7 @@ fn jpath(p: PathBuf) -> String {
 /// `Option<(owner,repo)>` → JSON matching TS `{owner,repo}` object or `null`.
 fn jowner(o: Option<(String, String)>) -> String {
     match o {
-        Some((owner, repo)) => format!(
-            "{{\"owner\":{},\"repo\":{}}}",
-            jstr(&owner),
-            jstr(&repo)
-        ),
+        Some((owner, repo)) => format!("{{\"owner\":{},\"repo\":{}}}", jstr(&owner), jstr(&repo)),
         None => "null".to_string(),
     }
 }
@@ -84,7 +81,11 @@ fn obj(pairs: &[(&str, String)]) -> String {
 }
 
 fn jbool(b: bool) -> String {
-    if b { "true".into() } else { "false".into() }
+    if b {
+        "true".into()
+    } else {
+        "false".into()
+    }
 }
 
 fn keys_of_interest() -> Vec<String> {
@@ -157,7 +158,10 @@ fn main() {
             ("unicode", jowner(parse_owner_repo("öwner/repo"))),
             ("tilde_char", jowner(parse_owner_repo("own~er/repo"))),
             ("plus", jowner(parse_owner_repo("a+b/repo"))),
-            ("trailing_slash_multi", jowner(parse_owner_repo("owner/repo/"))),
+            (
+                "trailing_slash_multi",
+                jowner(parse_owner_repo("owner/repo/")),
+            ),
             ("dotfile_owner", jowner(parse_owner_repo(".hidden/repo"))),
         ]),
 
@@ -168,14 +172,20 @@ fn main() {
             ("home_workflows", jresult(get_home_workflows_path())),
             ("home_commands", jresult(get_home_commands_path())),
             ("home_scripts", jresult(get_home_scripts_path())),
-            ("legacy_home_workflows", jresult(get_legacy_home_workflows_path())),
+            (
+                "legacy_home_workflows",
+                jresult(get_legacy_home_workflows_path()),
+            ),
             ("archon_env", jresult(get_archon_env_path())),
             (
                 "repo_archon_env",
                 jpath(get_repo_archon_env_path(Path::new("/projects/myapp"))),
             ),
             ("project_root", jresult(get_project_root("owner", "repo"))),
-            ("project_source", jresult(get_project_source_path("owner", "repo"))),
+            (
+                "project_source",
+                jresult(get_project_source_path("owner", "repo")),
+            ),
             (
                 "project_worktrees",
                 jresult(get_project_worktrees_path("owner", "repo")),
@@ -184,23 +194,37 @@ fn main() {
                 "project_artifacts",
                 jresult(get_project_artifacts_path("owner", "repo")),
             ),
-            ("project_logs", jresult(get_project_logs_path("owner", "repo"))),
+            (
+                "project_logs",
+                jresult(get_project_logs_path("owner", "repo")),
+            ),
             (
                 "run_artifacts",
                 jresult(get_run_artifacts_path("owner", "repo", "run-123")),
             ),
-            ("run_log", jresult(get_run_log_path("owner", "repo", "run-123"))),
+            (
+                "run_log",
+                jresult(get_run_log_path("owner", "repo", "run-123")),
+            ),
             ("web_dist", jresult(get_web_dist_dir("v0.3.2"))),
-            ("cmd_search_none", jvec(get_command_folder_search_paths(None))),
+            (
+                "cmd_search_none",
+                jvec(get_command_folder_search_paths(None)),
+            ),
             (
                 "cmd_search_dup1",
                 jvec(get_command_folder_search_paths(Some(".archon/commands"))),
             ),
             (
                 "cmd_search_dup2",
-                jvec(get_command_folder_search_paths(Some(".archon/commands/defaults"))),
+                jvec(get_command_folder_search_paths(Some(
+                    ".archon/commands/defaults",
+                ))),
             ),
-            ("cmd_search_empty", jvec(get_command_folder_search_paths(Some("")))),
+            (
+                "cmd_search_empty",
+                jvec(get_command_folder_search_paths(Some(""))),
+            ),
             (
                 "cmd_search_custom",
                 jvec(get_command_folder_search_paths(Some("custom-cmds"))),

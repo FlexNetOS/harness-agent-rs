@@ -268,9 +268,7 @@ pub enum ModelValidationError {
 
     /// Tier key in tiers config is not a valid tier name.
     /// model-validation.ts:102-106 `assertValidTierName`.
-    #[error(
-        "Tier name '{name}' is invalid. Supported tiers: {supported}."
-    )]
+    #[error("Tier name '{name}' is invalid. Supported tiers: {supported}.")]
     InvalidTierName { name: String, supported: String },
 
     /// Tier has no configured preset and no built-in default.
@@ -410,7 +408,10 @@ pub fn build_ai_profile(
 
     // Layer 2 & 3: globalTiers then repoTiers.
     // model-validation.ts:154-161.
-    for tiers in [options.global_tiers, options.repo_tiers].into_iter().flatten() {
+    for tiers in [options.global_tiers, options.repo_tiers]
+        .into_iter()
+        .flatten()
+    {
         for (name, entry) in tiers {
             // Validate the tier name is small/medium/large.
             assert_valid_tier_name(name)?;
@@ -421,7 +422,10 @@ pub fn build_ai_profile(
 
     // Layer 4 & 5: globalAliases then repoAliases.
     // model-validation.ts:163-170.
-    for alias_map in [options.global_aliases, options.repo_aliases].into_iter().flatten() {
+    for alias_map in [options.global_aliases, options.repo_aliases]
+        .into_iter()
+        .flatten()
+    {
         for (name, entry) in alias_map {
             assert_not_reserved(name)?;
             assert_custom_alias_prefix(name)?;
@@ -637,23 +641,20 @@ mod tests {
             codex.get("small").unwrap().effort.as_deref(),
             Some("minimal")
         );
-        assert_eq!(codex.get("medium").unwrap().effort.as_deref(), Some("medium"));
+        assert_eq!(
+            codex.get("medium").unwrap().effort.as_deref(),
+            Some("medium")
+        );
         assert_eq!(codex.get("large").unwrap().effort.as_deref(), Some("high"));
 
         // pi defaults
         let pi = map.get("pi").expect("pi key");
-        assert_eq!(
-            pi.get("small").unwrap().model,
-            "anthropic/claude-haiku-4-5"
-        );
+        assert_eq!(pi.get("small").unwrap().model, "anthropic/claude-haiku-4-5");
         assert_eq!(
             pi.get("medium").unwrap().model,
             "anthropic/claude-sonnet-4-6"
         );
-        assert_eq!(
-            pi.get("large").unwrap().model,
-            "anthropic/claude-opus-4-7"
-        );
+        assert_eq!(pi.get("large").unwrap().model, "anthropic/claude-opus-4-7");
 
         // copilot
         let copilot = map.get("copilot").expect("copilot key");
@@ -704,7 +705,8 @@ mod tests {
 
     #[test]
     fn build_ai_profile_unknown_provider_has_no_tier_defaults() {
-        let profile = build_ai_profile("unknown-provider", BuildAiProfileOptions::default()).unwrap();
+        let profile =
+            build_ai_profile("unknown-provider", BuildAiProfileOptions::default()).unwrap();
         // No tier defaults seeded for unknown providers.
         assert!(profile.aliases.is_empty());
     }
@@ -904,9 +906,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(
-            matches!(err, ModelValidationError::AliasNameReserved { .. })
-        );
+        assert!(matches!(
+            err,
+            ModelValidationError::AliasNameReserved { .. }
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -1002,9 +1005,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(
-            matches!(err, ModelValidationError::InvalidModel { name } if name == "@test")
-        );
+        assert!(matches!(err, ModelValidationError::InvalidModel { name } if name == "@test"));
     }
 
     // -----------------------------------------------------------------------
@@ -1210,7 +1211,10 @@ mod tests {
         };
         let err = resolve_model_spec(&empty_profile, "@ghost").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("(none)"), "must say (none) when no aliases defined");
+        assert!(
+            msg.contains("(none)"),
+            "must say (none) when no aliases defined"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1437,7 +1441,10 @@ mod tests {
         let json = serde_json::to_string(&preset).unwrap();
         // effort and thinking must be absent (skip_serializing_if)
         assert!(!json.contains("effort"), "effort should be absent: {json}");
-        assert!(!json.contains("thinking"), "thinking should be absent: {json}");
+        assert!(
+            !json.contains("thinking"),
+            "thinking should be absent: {json}"
+        );
     }
 
     // -----------------------------------------------------------------------

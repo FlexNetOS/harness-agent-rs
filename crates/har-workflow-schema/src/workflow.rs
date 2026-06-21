@@ -118,13 +118,19 @@ pub struct WorkflowBase {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// Codex reasoning effort. workflow.ts:72.
-    #[serde(rename = "modelReasoningEffort", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "modelReasoningEffort",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub model_reasoning_effort: Option<ModelReasoningEffort>,
     /// Codex web search mode. workflow.ts:73.
     #[serde(rename = "webSearchMode", skip_serializing_if = "Option::is_none")]
     pub web_search_mode: Option<WebSearchMode>,
     /// Additional directories to include. workflow.ts:74.
-    #[serde(rename = "additionalDirectories", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "additionalDirectories",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub additional_directories: Option<Vec<String>>,
     /// Interactive mode flag. workflow.ts:75.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -389,7 +395,10 @@ pub enum WorkflowValidationError {
 
     /// A node in `nodes` failed its own validation. workflow.ts:115 (dagNodeSchema composing).
     #[error("node validation failed")]
-    NodeError { index: usize, errors: Vec<DagNodeValidationError> },
+    NodeError {
+        index: usize,
+        errors: Vec<DagNodeValidationError>,
+    },
 }
 
 /// Validate a `WorkflowBase` against all zod value-bound constraints.
@@ -443,7 +452,10 @@ pub fn validate_workflow_definition(def: &WorkflowDefinition) -> Vec<WorkflowVal
     for (i, node) in def.nodes.iter().enumerate() {
         let node_errors = validate_dag_node(node);
         if !node_errors.is_empty() {
-            errors.push(WorkflowValidationError::NodeError { index: i, errors: node_errors });
+            errors.push(WorkflowValidationError::NodeError {
+                index: i,
+                errors: node_errors,
+            });
         }
     }
 
@@ -593,7 +605,9 @@ mod tests {
 
     #[test]
     fn load_command_result_success() {
-        let v = LoadCommandResult::Success { content: "prompt content".to_string() };
+        let v = LoadCommandResult::Success {
+            content: "prompt content".to_string(),
+        };
         let s = serde_json::to_value(&v).unwrap();
         assert_eq!(s["success"], "true");
         assert_eq!(s["content"], "prompt content");
@@ -616,7 +630,10 @@ mod tests {
             ("invalid_name", LoadCommandFailureReason::InvalidName),
             ("empty_file", LoadCommandFailureReason::EmptyFile),
             ("not_found", LoadCommandFailureReason::NotFound),
-            ("permission_denied", LoadCommandFailureReason::PermissionDenied),
+            (
+                "permission_denied",
+                LoadCommandFailureReason::PermissionDenied,
+            ),
             ("read_error", LoadCommandFailureReason::ReadError),
         ];
         for (wire, expected) in cases {
@@ -665,8 +682,7 @@ mod tests {
             ("validation_error", WorkflowLoadErrorType::ValidationError),
         ];
         for (wire, expected) in cases {
-            let v: WorkflowLoadErrorType =
-                serde_json::from_str(&format!(r#""{wire}""#)).unwrap();
+            let v: WorkflowLoadErrorType = serde_json::from_str(&format!(r#""{wire}""#)).unwrap();
             assert_eq!(&v, expected);
         }
     }
@@ -675,7 +691,10 @@ mod tests {
 
     #[test]
     fn workflow_load_result_empty() {
-        let r = WorkflowLoadResult { workflows: vec![], errors: vec![] };
+        let r = WorkflowLoadResult {
+            workflows: vec![],
+            errors: vec![],
+        };
         assert!(r.workflows.is_empty());
         assert!(r.errors.is_empty());
     }
@@ -695,7 +714,10 @@ mod tests {
         // name:'' must reject — z.string().min(1). workflow.ts:68.
         let b = base("", "desc");
         let errors = validate_workflow_base(&b);
-        assert!(errors.contains(&WorkflowValidationError::NameEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&WorkflowValidationError::NameEmpty),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -712,7 +734,10 @@ mod tests {
         // description:'' must reject — z.string().min(1). workflow.ts:69.
         let b = base("n", "");
         let errors = validate_workflow_base(&b);
-        assert!(errors.contains(&WorkflowValidationError::DescriptionEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&WorkflowValidationError::DescriptionEmpty),
+            "got: {errors:?}"
+        );
     }
 
     // ── provider .trim().min(1) ───────────────────────────────────────────────
@@ -724,7 +749,10 @@ mod tests {
             serde_json::from_value(json!({"name": "n", "description": "d", "provider": "  "}))
                 .unwrap();
         let errors = validate_workflow_base(&v);
-        assert!(errors.contains(&WorkflowValidationError::ProviderBlank), "got: {errors:?}");
+        assert!(
+            errors.contains(&WorkflowValidationError::ProviderBlank),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -747,14 +775,21 @@ mod tests {
             "name": "wf", "description": "d", "provider": "   claude   "
         }))
         .unwrap();
-        assert_eq!(v.provider.as_deref(), Some("claude"),
-            "WorkflowBase.provider must be stored trimmed (zod .trim() transform, workflow.ts:69)");
+        assert_eq!(
+            v.provider.as_deref(),
+            Some("claude"),
+            "WorkflowBase.provider must be stored trimmed (zod .trim() transform, workflow.ts:69)"
+        );
         let round_tripped = serde_json::to_value(&v).unwrap();
-        assert_eq!(round_tripped["provider"], "claude",
-            "WorkflowBase.provider must serialize as trimmed value");
+        assert_eq!(
+            round_tripped["provider"], "claude",
+            "WorkflowBase.provider must serialize as trimmed value"
+        );
         let errors = validate_workflow_base(&v);
-        assert!(errors.is_empty(),
-            "trimmed non-empty provider should pass validation; got: {errors:?}");
+        assert!(
+            errors.is_empty(),
+            "trimmed non-empty provider should pass validation; got: {errors:?}"
+        );
     }
 
     #[test]
@@ -764,11 +799,16 @@ mod tests {
             "name": "wf", "description": "d", "provider": "   "
         }))
         .unwrap();
-        assert_eq!(v.provider.as_deref(), Some(""),
-            "whitespace-only provider must trim to empty string");
+        assert_eq!(
+            v.provider.as_deref(),
+            Some(""),
+            "whitespace-only provider must trim to empty string"
+        );
         let errors = validate_workflow_base(&v);
-        assert!(errors.contains(&WorkflowValidationError::ProviderBlank),
-            "whitespace-only provider must fail ProviderBlank; got: {errors:?}");
+        assert!(
+            errors.contains(&WorkflowValidationError::ProviderBlank),
+            "whitespace-only provider must fail ProviderBlank; got: {errors:?}"
+        );
     }
 
     // ── fallbackModel .min(1) ─────────────────────────────────────────────────
@@ -781,7 +821,10 @@ mod tests {
         }))
         .unwrap();
         let errors = validate_workflow_base(&v);
-        assert!(errors.contains(&WorkflowValidationError::FallbackModelEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&WorkflowValidationError::FallbackModelEmpty),
+            "got: {errors:?}"
+        );
     }
 
     // ── tags elements .min(1) ─────────────────────────────────────────────────
@@ -790,10 +833,12 @@ mod tests {
     fn validate_base_tags_empty_element_fails() {
         // tags:[''] must reject element — z.array(z.string().min(1)). workflow.ts:94.
         let v: WorkflowBase =
-            serde_json::from_value(json!({"name": "n", "description": "d", "tags": [""]}))
-                .unwrap();
+            serde_json::from_value(json!({"name": "n", "description": "d", "tags": [""]})).unwrap();
         let errors = validate_workflow_base(&v);
-        assert!(errors.contains(&WorkflowValidationError::TagsElementEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&WorkflowValidationError::TagsElementEmpty),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -818,7 +863,9 @@ mod tests {
         .unwrap();
         let errors = validate_workflow_definition(&v);
         assert!(
-            errors.iter().any(|e| matches!(e, WorkflowValidationError::NodeError { .. })),
+            errors
+                .iter()
+                .any(|e| matches!(e, WorkflowValidationError::NodeError { .. })),
             "got: {errors:?}"
         );
     }
@@ -843,11 +890,20 @@ mod tests {
         }))
         .unwrap();
         let errors = validate_workflow_definition(&v);
-        assert!(errors.contains(&WorkflowValidationError::NameEmpty), "got: {errors:?}");
         assert!(
-            errors.iter().any(|e| matches!(e, WorkflowValidationError::NodeError { .. })),
+            errors.contains(&WorkflowValidationError::NameEmpty),
             "got: {errors:?}"
         );
-        assert_eq!(errors.len(), 2, "expected exactly 2 errors; got: {errors:?}");
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, WorkflowValidationError::NodeError { .. })),
+            "got: {errors:?}"
+        );
+        assert_eq!(
+            errors.len(),
+            2,
+            "expected exactly 2 errors; got: {errors:?}"
+        );
     }
 }

@@ -110,11 +110,7 @@ pub async fn get_pr_state(
     match exec_file_async(
         "gh",
         &[
-            "pr", "list",
-            "--head", branch,
-            "--state", "all",
-            "--json", "state",
-            "--limit", "1",
+            "pr", "list", "--head", branch, "--state", "all", "--json", "state", "--limit", "1",
         ],
         ExecOptions {
             timeout_ms: Some(15_000),

@@ -20,8 +20,8 @@ use tracing::{error, warn};
 
 use crate::exec::run_git;
 use crate::types::{
-    BranchName, GitError, RepoPath, Result, WorktreeInfo, WorktreePath,
-    to_branch_name, to_worktree_path,
+    to_branch_name, to_worktree_path, BranchName, GitError, RepoPath, Result, WorktreeInfo,
+    WorktreePath,
 };
 use har_paths::{get_archon_workspaces_path, get_project_worktrees_path};
 
@@ -118,10 +118,7 @@ pub fn get_worktree_base(
 /// `@deprecated` — kept for backward compatibility (mirrors the source
 /// deprecation comment in `worktree.ts:108-121`). Prefer reading `layout`
 /// from `get_worktree_base()` in new code.
-pub fn is_project_scoped_worktree_base(
-    repo_path: &RepoPath,
-    codebase_name: Option<&str>,
-) -> bool {
+pub fn is_project_scoped_worktree_base(repo_path: &RepoPath, codebase_name: Option<&str>) -> bool {
     get_worktree_base(repo_path, codebase_name, None)
         .map(|(_, layout)| layout == WorktreeLayout::WorkspaceScoped)
         .unwrap_or(false)
@@ -214,9 +211,10 @@ pub async fn list_worktrees(repo_path: &RepoPath) -> Result<Vec<WorktreeInfo>> {
                 } else if let Some(rest) = line.strip_prefix("branch ") {
                     let branch = rest.replace("refs/heads/", "");
                     if !current_path.is_empty() {
-                        if let (Ok(p), Ok(b)) =
-                            (to_worktree_path(current_path.clone()), to_branch_name(branch))
-                        {
+                        if let (Ok(p), Ok(b)) = (
+                            to_worktree_path(current_path.clone()),
+                            to_branch_name(branch),
+                        ) {
                             worktrees.push(WorktreeInfo { path: p, branch: b });
                         }
                     }
@@ -322,10 +320,7 @@ pub async fn is_worktree_path(path: &str) -> Result<bool> {
 /// Throws if uncommitted changes exist (git's natural guardrail).
 ///
 /// Mirrors `removeWorktree(repoPath, worktreePath)` in `worktree.ts:269-276`.
-pub async fn remove_worktree(
-    repo_path: &RepoPath,
-    worktree_path: &WorktreePath,
-) -> Result<()> {
+pub async fn remove_worktree(repo_path: &RepoPath, worktree_path: &WorktreePath) -> Result<()> {
     run_git(
         repo_path.as_str(),
         &["worktree", "remove", worktree_path.as_str()],

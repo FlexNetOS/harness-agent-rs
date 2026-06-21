@@ -12,8 +12,8 @@ use tracing::error;
 use crate::branch::get_default_branch;
 use crate::exec::{run_git, run_git_cwd};
 use crate::types::{
-    BranchName, GitError, GitErrorCode, GitResult, RepoPath, Result, WorkspaceSyncResult,
-    to_repo_path,
+    to_repo_path, BranchName, GitError, GitErrorCode, GitResult, RepoPath, Result,
+    WorkspaceSyncResult,
 };
 
 /// Find the root of the git repository containing the given path.
@@ -149,10 +149,7 @@ pub async fn sync_workspace(
         }
         Err(e) => {
             return Err(GitError::ProcessError {
-                message: format!(
-                    "Sync fetch from origin/{} failed: {}",
-                    branch_to_sync, e
-                ),
+                message: format!("Sync fetch from origin/{} failed: {}", branch_to_sync, e),
             });
         }
     }
@@ -299,7 +296,10 @@ fn inject_token_into_url(url: &str, token: &str) -> std::result::Result<String, 
     } else if let Some(rest) = url.strip_prefix("http://") {
         Ok(format!("http://{}@{}", token, rest))
     } else {
-        Err(format!("Unsupported URL scheme for token injection: {}", url))
+        Err(format!(
+            "Unsupported URL scheme for token injection: {}",
+            url
+        ))
     }
 }
 

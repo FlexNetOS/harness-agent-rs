@@ -26,17 +26,17 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, error, info, warn};
 
 use har_git::{
-    ExecOptions, WorktreeBaseOverride, exec_file_async, find_worktree_by_branch,
-    get_canonical_repo_path, get_worktree_base, list_worktrees, mkdir_async, remove_worktree,
-    sync_workspace, to_branch_name, to_repo_path, to_worktree_path, verify_worktree_ownership,
-    worktree_exists,
+    exec_file_async, find_worktree_by_branch, get_canonical_repo_path, get_worktree_base,
+    list_worktrees, mkdir_async, remove_worktree, sync_workspace, to_branch_name, to_repo_path,
+    to_worktree_path, verify_worktree_ownership, worktree_exists, ExecOptions,
+    WorktreeBaseOverride,
 };
 use har_paths::get_archon_workspaces_path;
 
 use crate::types::{
-    DestroyOptions, DestroyResult, IsolationProvider, IsolationProviderType, IsolationRequest,
+    AdoptedFrom, AdoptedWorktreeMetadata, CreatedWorktreeMetadata, DestroyOptions, DestroyResult,
+    EnvironmentStatus, IsolationProvider, IsolationProviderType, IsolationRequest,
     RepoConfigLoader, WorktreeCreateConfig, WorktreeEnvironment, WorktreeMetadata,
-    AdoptedWorktreeMetadata, AdoptedFrom, CreatedWorktreeMetadata, EnvironmentStatus,
 };
 use crate::worktree_copy::copy_worktree_files;
 use crate::{IsolationError, Result};
@@ -56,10 +56,7 @@ const GIT_OPERATION_TIMEOUT_MS: u64 = 5 * 60 * 1000;
 /// - Resolved path escapes repoRoot → Err (covers symlink / nested `../` edge cases)
 ///
 /// Source: `resolveRepoLocalOverride` at `worktree.ts:71-113`.
-fn resolve_repo_local_override(
-    raw_path: Option<&str>,
-    repo_root: &str,
-) -> Result<Option<String>> {
+fn resolve_repo_local_override(raw_path: Option<&str>, repo_root: &str) -> Result<Option<String>> {
     let raw = match raw_path {
         None => return Ok(None),
         Some(r) => r,
@@ -83,7 +80,7 @@ fn resolve_repo_local_override(
         || normalized.starts_with("../")
         || normalized.starts_with("..\\")
         || normalized.contains("/../")
-        || normalized.contains("\\..\\" )
+        || normalized.contains("\\..\\")
     {
         return Err(IsolationError::Other(format!(
             ".archon/config.yaml worktree.path must stay within the repo (got: {trimmed}). \
@@ -93,16 +90,13 @@ fn resolve_repo_local_override(
 
     // Double-check via resolved absolute paths.
     let resolved = {
-        let base = std::fs::canonicalize(repo_root)
-            .unwrap_or_else(|_| PathBuf::from(repo_root));
+        let base = std::fs::canonicalize(repo_root).unwrap_or_else(|_| PathBuf::from(repo_root));
         base.join(&normalized)
     };
-    let repo_root_resolved = std::fs::canonicalize(repo_root)
-        .unwrap_or_else(|_| PathBuf::from(repo_root));
+    let repo_root_resolved =
+        std::fs::canonicalize(repo_root).unwrap_or_else(|_| PathBuf::from(repo_root));
 
-    if resolved != repo_root_resolved
-        && !resolved.starts_with(repo_root_resolved.join(""))
-    {
+    if resolved != repo_root_resolved && !resolved.starts_with(repo_root_resolved.join("")) {
         return Err(IsolationError::Other(format!(
             ".archon/config.yaml worktree.path resolves outside the repo root (got: {trimmed} → {}).",
             resolved.display()
@@ -170,7 +164,12 @@ impl WorktreeProvider {
             IsolationRequest::Issue { identifier, .. } => {
                 format!("archon/issue-{identifier}")
             }
-            IsolationRequest::Pr { identifier, pr_branch, is_fork_pr, .. } => {
+            IsolationRequest::Pr {
+                identifier,
+                pr_branch,
+                is_fork_pr,
+                ..
+            } => {
                 if !is_fork_pr {
                     // Same-repo PR: use actual branch (already exists on remote).
                     pr_branch.clone()
@@ -258,9 +257,12 @@ impl WorktreeProvider {
         };
         let repo_path = to_repo_path(base.canonical_repo_path.clone())
             .map_err(|e| IsolationError::Other(e.to_string()))?;
-        let (base_dir, _layout) =
-            get_worktree_base(&repo_path, base.codebase_name.as_deref(), Some(&worktree_override))
-                .map_err(|e| IsolationError::Other(e.to_string()))?;
+        let (base_dir, _layout) = get_worktree_base(
+            &repo_path,
+            base.codebase_name.as_deref(),
+            Some(&worktree_override),
+        )
+        .map_err(|e| IsolationError::Other(e.to_string()))?;
         // `join` base + branch_name (Node-style: always appends).
         let worktree_path = base_dir.join(branch_name);
         Ok(worktree_path.to_string_lossy().to_string())
@@ -294,8 +296,8 @@ impl WorktreeProvider {
         let Ok(worktrees) = list_worktrees(&repo).await else {
             return false;
         };
-        let target = std::fs::canonicalize(worktree_path)
-            .unwrap_or_else(|_| PathBuf::from(worktree_path));
+        let target =
+            std::fs::canonicalize(worktree_path).unwrap_or_else(|_| PathBuf::from(worktree_path));
         worktrees.iter().any(|wt| {
             std::fs::canonicalize(wt.path.as_str())
                 .map(|p| p == target)
@@ -350,9 +352,8 @@ impl WorktreeProvider {
                     result.warnings.push(warning);
                     false
                 } else {
-                    let warning = format!(
-                        "Unexpected error deleting branch '{branch_name}': {msg}"
-                    );
+                    let warning =
+                        format!("Unexpected error deleting branch '{branch_name}': {msg}");
                     error!(repo_path, branch_name, err = %msg, "branch_delete_failed");
                     result.warnings.push(warning);
                     false
@@ -393,9 +394,7 @@ impl WorktreeProvider {
                     debug!(repo_path, branch_name, "remote_branch_already_deleted");
                     true
                 } else {
-                    let warning = format!(
-                        "Failed to delete remote branch '{branch_name}': {msg}"
-                    );
+                    let warning = format!("Failed to delete remote branch '{branch_name}': {msg}");
                     error!(repo_path, branch_name, err = %msg, "remote_branch_delete_failed");
                     result.warnings.push(warning);
                     false
@@ -543,8 +542,7 @@ impl WorktreeProvider {
 
         let base_branch = match configured_base_branch {
             Some(b) => Some(
-                to_branch_name(b.to_string())
-                    .map_err(|e| IsolationError::Other(e.to_string()))?,
+                to_branch_name(b.to_string()).map_err(|e| IsolationError::Other(e.to_string()))?,
             ),
             None => None,
         };
@@ -669,7 +667,14 @@ impl WorktreeProvider {
 
         let res = exec_file_async(
             "git",
-            &["-C", worktree_path, "submodule", "update", "--init", "--recursive"],
+            &[
+                "-C",
+                worktree_path,
+                "submodule",
+                "update",
+                "--init",
+                "--recursive",
+            ],
             ExecOptions {
                 timeout_ms: Some(120_000),
                 ..Default::default()
@@ -696,12 +701,7 @@ impl WorktreeProvider {
     /// Non-fatal on failure.
     ///
     /// Source: `applyGitIdentity` at `worktree.ts:764-781`.
-    async fn apply_git_identity(
-        &self,
-        worktree_path: &str,
-        email: &str,
-        name: Option<&str>,
-    ) {
+    async fn apply_git_identity(&self, worktree_path: &str, email: &str, name: Option<&str>) {
         let res = exec_file_async(
             "git",
             &["-C", worktree_path, "config", "user.email", email],
@@ -770,13 +770,20 @@ impl WorktreeProvider {
     ///
     /// Source: `cleanOrphanWorktreeIfExists` at `worktree.ts:1224-1239`.
     async fn clean_orphan_worktree_if_exists(&self, repo_path: &str, worktree_path: &str) {
-        let Ok(wt_typed) = to_worktree_path(worktree_path.to_string()) else { return; };
-        let Ok(repo_typed) = to_repo_path(repo_path.to_string()) else { return; };
+        let Ok(wt_typed) = to_worktree_path(worktree_path.to_string()) else {
+            return;
+        };
+        let Ok(repo_typed) = to_repo_path(repo_path.to_string()) else {
+            return;
+        };
 
         if worktree_exists(&wt_typed).await.unwrap_or(false) {
             warn!(repo_path, worktree_path, "isolation.orphan_cleanup_started");
             match remove_worktree(&repo_typed, &wt_typed).await {
-                Ok(_) => info!(repo_path, worktree_path, "isolation.orphan_cleanup_completed"),
+                Ok(_) => info!(
+                    repo_path,
+                    worktree_path, "isolation.orphan_cleanup_completed"
+                ),
                 Err(e) => error!(
                     repo_path,
                     worktree_path,
@@ -828,11 +835,7 @@ impl WorktreeProvider {
     /// Create worktree from a PR.
     ///
     /// Source: `createFromPR` at `worktree.ts:925-947`.
-    async fn create_from_pr(
-        &self,
-        request: &IsolationRequest,
-        worktree_path: &str,
-    ) -> Result<()> {
+    async fn create_from_pr(&self, request: &IsolationRequest, worktree_path: &str) -> Result<()> {
         let (identifier, pr_branch, pr_sha, is_fork_pr, base) = match request {
             IsolationRequest::Pr {
                 identifier,
@@ -841,7 +844,11 @@ impl WorktreeProvider {
                 is_fork_pr,
                 base,
             } => (identifier, pr_branch, pr_sha, is_fork_pr, base),
-            _ => return Err(IsolationError::Other("create_from_pr: not a PR request".into())),
+            _ => {
+                return Err(IsolationError::Other(
+                    "create_from_pr: not a PR request".into(),
+                ))
+            }
         };
 
         let repo_path = &base.canonical_repo_path;
@@ -892,8 +899,14 @@ impl WorktreeProvider {
         let res = exec_file_async(
             "git",
             &[
-                "-C", repo_path, "worktree", "add", worktree_path,
-                "-b", pr_branch, &format!("origin/{pr_branch}"),
+                "-C",
+                repo_path,
+                "worktree",
+                "add",
+                worktree_path,
+                "-b",
+                pr_branch,
+                &format!("origin/{pr_branch}"),
             ],
             ExecOptions {
                 timeout_ms: Some(GIT_OPERATION_TIMEOUT_MS),
@@ -924,7 +937,10 @@ impl WorktreeProvider {
         let res2 = exec_file_async(
             "git",
             &[
-                "-C", worktree_path, "branch", "--set-upstream-to",
+                "-C",
+                worktree_path,
+                "branch",
+                "--set-upstream-to",
                 &format!("origin/{pr_branch}"),
             ],
             ExecOptions {
@@ -961,7 +977,13 @@ impl WorktreeProvider {
             // SHA provided: create at specific commit for reproducible reviews.
             exec_file_async(
                 "git",
-                &["-C", repo_path, "fetch", "origin", &format!("pull/{pr_number}/head")],
+                &[
+                    "-C",
+                    repo_path,
+                    "fetch",
+                    "origin",
+                    &format!("pull/{pr_number}/head"),
+                ],
                 ExecOptions {
                     timeout_ms: Some(GIT_OPERATION_TIMEOUT_MS),
                     ..Default::default()
@@ -1017,7 +1039,10 @@ impl WorktreeProvider {
                     exec_file_async(
                         "git",
                         &[
-                            "-C", &rp2, "fetch", "origin",
+                            "-C",
+                            &rp2,
+                            "fetch",
+                            "origin",
                             &format!("pull/{pn2}/head:{rb2}"),
                         ],
                         ExecOptions {
@@ -1034,7 +1059,14 @@ impl WorktreeProvider {
 
             exec_file_async(
                 "git",
-                &["-C", repo_path, "worktree", "add", worktree_path, &review_branch],
+                &[
+                    "-C",
+                    repo_path,
+                    "worktree",
+                    "add",
+                    worktree_path,
+                    &review_branch,
+                ],
                 ExecOptions {
                     timeout_ms: Some(GIT_OPERATION_TIMEOUT_MS),
                     ..Default::default()
@@ -1061,7 +1093,11 @@ impl WorktreeProvider {
         self.clean_orphan_directory_if_exists(worktree_path).await?;
 
         // Determine start-point: explicit fromBranch overrides base branch.
-        let start_point = if let IsolationRequest::Task { from_branch: Some(fb), .. } = request {
+        let start_point = if let IsolationRequest::Task {
+            from_branch: Some(fb),
+            ..
+        } = request
+        {
             fb.clone()
         } else {
             format!("origin/{base_branch}")
@@ -1070,8 +1106,14 @@ impl WorktreeProvider {
         let res = exec_file_async(
             "git",
             &[
-                "-C", repo_path, "worktree", "add", worktree_path,
-                "-b", branch_name, &start_point,
+                "-C",
+                repo_path,
+                "worktree",
+                "add",
+                worktree_path,
+                "-b",
+                branch_name,
+                &start_point,
             ],
             ExecOptions {
                 timeout_ms: Some(GIT_OPERATION_TIMEOUT_MS),
@@ -1084,7 +1126,11 @@ impl WorktreeProvider {
             Ok(_) => Ok(()),
             Err(e) if e.to_string().contains("already exists") => {
                 // Branch already exists.
-                if let IsolationRequest::Task { from_branch: Some(fb), .. } = request {
+                if let IsolationRequest::Task {
+                    from_branch: Some(fb),
+                    ..
+                } = request
+                {
                     return Err(IsolationError::Other(format!(
                         "Branch \"{branch_name}\" already exists. Cannot create it from \"{fb}\". \
                          Either choose a different --branch name or omit --from."
@@ -1094,9 +1140,7 @@ impl WorktreeProvider {
                 // Branch exists but no explicit start-point override — reset it.
                 warn!(
                     branch_name,
-                    start_point,
-                    repo_path,
-                    "worktree.branch_exists_resetting_to_start_point"
+                    start_point, repo_path, "worktree.branch_exists_resetting_to_start_point"
                 );
                 exec_file_async(
                     "git",
@@ -1111,7 +1155,14 @@ impl WorktreeProvider {
 
                 exec_file_async(
                     "git",
-                    &["-C", repo_path, "worktree", "add", worktree_path, branch_name],
+                    &[
+                        "-C",
+                        repo_path,
+                        "worktree",
+                        "add",
+                        worktree_path,
+                        branch_name,
+                    ],
                     ExecOptions {
                         timeout_ms: Some(GIT_OPERATION_TIMEOUT_MS),
                         ..Default::default()
@@ -1154,11 +1205,14 @@ impl WorktreeProvider {
         let worktree_override = WorktreeBaseOverride {
             repo_local: override_path,
         };
-        let repo_path_typed = to_repo_path(repo_path.clone())
-            .map_err(|e| IsolationError::Other(e.to_string()))?;
-        let (base_dir, _layout) =
-            get_worktree_base(&repo_path_typed, base.codebase_name.as_deref(), Some(&worktree_override))
-                .map_err(|e| IsolationError::Other(e.to_string()))?;
+        let repo_path_typed =
+            to_repo_path(repo_path.clone()).map_err(|e| IsolationError::Other(e.to_string()))?;
+        let (base_dir, _layout) = get_worktree_base(
+            &repo_path_typed,
+            base.codebase_name.as_deref(),
+            Some(&worktree_override),
+        )
+        .map_err(|e| IsolationError::Other(e.to_string()))?;
         mkdir_async(&base_dir, true).await?;
 
         if matches!(request, IsolationRequest::Pr { .. }) {
@@ -1171,24 +1225,23 @@ impl WorktreeProvider {
         // Stamp git identity.
         if let Some(identity) = base.git_identity.as_ref() {
             if !identity.email.is_empty() {
-                self.apply_git_identity(
-                    worktree_path,
-                    &identity.email,
-                    identity.name.as_deref(),
-                )
-                .await;
+                self.apply_git_identity(worktree_path, &identity.email, identity.name.as_deref())
+                    .await;
             }
         }
 
         // Initialize submodules unless explicitly opted out.
-        if worktree_config.map(|c| c.init_submodules != Some(false)).unwrap_or(true) {
+        if worktree_config
+            .map(|c| c.init_submodules != Some(false))
+            .unwrap_or(true)
+        {
             self.init_submodules(worktree_path).await?;
         }
 
         // Copy configured files.
-        let config_load_failed =
-            self.copy_configured_files(repo_path, worktree_path, worktree_config)
-                .await;
+        let config_load_failed = self
+            .copy_configured_files(repo_path, worktree_path, worktree_config)
+            .await;
 
         let mut warnings: Vec<String> = Vec::new();
         if config_load_failed {
@@ -1216,15 +1269,17 @@ impl IsolationProvider for WorktreeProvider {
 
         // Load config exactly once.
         let repo_config: Option<WorktreeCreateConfig> =
-            (self.load_config)(base.canonical_repo_path.clone())
-                .await;
+            (self.load_config)(base.canonical_repo_path.clone()).await;
 
         let branch_name = self.generate_branch_name(&request);
         let worktree_path = self.get_worktree_path(&request, &branch_name, repo_config.as_ref())?;
         let env_id = worktree_path.clone();
 
         // Check for existing worktree (adoption).
-        if let Some(existing) = self.find_existing(&request, &branch_name, &worktree_path).await? {
+        if let Some(existing) = self
+            .find_existing(&request, &branch_name, &worktree_path)
+            .await?
+        {
             return Ok(existing);
         }
 
@@ -1240,7 +1295,11 @@ impl IsolationProvider for WorktreeProvider {
             branch_name,
             status: EnvironmentStatus::Active,
             created_at: chrono::Utc::now(),
-            warnings: if warnings.is_empty() { None } else { Some(warnings) },
+            warnings: if warnings.is_empty() {
+                None
+            } else {
+                Some(warnings)
+            },
             metadata: WorktreeMetadata::Created(CreatedWorktreeMetadata {
                 adopted: false,
                 request: Some(request),
@@ -1251,7 +1310,11 @@ impl IsolationProvider for WorktreeProvider {
     /// Destroy an isolated environment.
     ///
     /// Source: `destroy` at `worktree.ts:191-301`.
-    async fn destroy(&self, env_id: &str, options: Option<DestroyOptions>) -> Result<DestroyResult> {
+    async fn destroy(
+        &self,
+        env_id: &str,
+        options: Option<DestroyOptions>,
+    ) -> Result<DestroyResult> {
         let worktree_path = env_id;
         let options = options.unwrap_or_default();
 
@@ -1332,9 +1395,8 @@ impl IsolationProvider for WorktreeProvider {
                         result.directory_clean = true;
                     }
                     Err(e) => {
-                        let warning = format!(
-                            "Failed to clean remaining directory at {worktree_path}: {e}"
-                        );
+                        let warning =
+                            format!("Failed to clean remaining directory at {worktree_path}: {e}");
                         error!(err = %e, worktree_path, "remaining_directory_cleanup_failed");
                         result.warnings.push(warning);
                         // directory_clean stays false
@@ -1358,14 +1420,16 @@ impl IsolationProvider for WorktreeProvider {
 
         // Post-removal verification.
         if result.worktree_removed {
-            let still_registered =
-                self.is_worktree_registered(&repo_path, worktree_path).await;
+            let still_registered = self.is_worktree_registered(&repo_path, worktree_path).await;
             if still_registered {
                 result.worktree_removed = false;
                 let warning = format!(
                     "Worktree at {worktree_path} was reported removed but is still registered in git"
                 );
-                warn!(worktree_path, repo_path, "worktree_removal_verification_failed");
+                warn!(
+                    worktree_path,
+                    repo_path, "worktree_removal_verification_failed"
+                );
                 result.warnings.push(warning);
             }
         }
@@ -1401,12 +1465,10 @@ impl IsolationProvider for WorktreeProvider {
             return Ok(None);
         }
 
-        let repo_path = get_canonical_repo_path(worktree_path)
-            .await
-            .map_err(|e| {
-                error!(err = %e, worktree_path, "worktree_query_failed");
-                IsolationError::Other(e.to_string())
-            })?;
+        let repo_path = get_canonical_repo_path(worktree_path).await.map_err(|e| {
+            error!(err = %e, worktree_path, "worktree_query_failed");
+            IsolationError::Other(e.to_string())
+        })?;
 
         let worktrees = list_worktrees(&repo_path).await.map_err(|e| {
             error!(err = %e, worktree_path, "worktree_query_failed");
@@ -1472,8 +1534,8 @@ impl IsolationProvider for WorktreeProvider {
     ///
     /// Source: `adopt` at `worktree.ts:490-531`.
     async fn adopt(&self, path: &str) -> Result<Option<WorktreeEnvironment>> {
-        let wt_typed = to_worktree_path(path.to_string())
-            .map_err(|e| IsolationError::Other(e.to_string()))?;
+        let wt_typed =
+            to_worktree_path(path.to_string()).map_err(|e| IsolationError::Other(e.to_string()))?;
 
         if !worktree_exists(&wt_typed).await.unwrap_or(false) {
             return Ok(None);
@@ -1481,9 +1543,9 @@ impl IsolationProvider for WorktreeProvider {
 
         let (repo_path, worktrees) = match get_canonical_repo_path(path).await {
             Ok(rp) => {
-                let wts = list_worktrees(&rp).await.map_err(|e| {
-                    IsolationError::Other(e.to_string())
-                })?;
+                let wts = list_worktrees(&rp)
+                    .await
+                    .map_err(|e| IsolationError::Other(e.to_string()))?;
                 (rp, wts)
             }
             Err(e) => {
@@ -1623,8 +1685,14 @@ mod tests {
     #[test]
     fn issue_branch_naming() {
         let p = provider();
-        assert_eq!(p.generate_branch_name(&issue_request("42")), "archon/issue-42");
-        assert_eq!(p.generate_branch_name(&issue_request("123")), "archon/issue-123");
+        assert_eq!(
+            p.generate_branch_name(&issue_request("42")),
+            "archon/issue-42"
+        );
+        assert_eq!(
+            p.generate_branch_name(&issue_request("123")),
+            "archon/issue-123"
+        );
     }
 
     #[test]
@@ -1650,7 +1718,10 @@ mod tests {
     #[test]
     fn review_branch_naming() {
         let p = provider();
-        assert_eq!(p.generate_branch_name(&review_request()), "archon/review-77");
+        assert_eq!(
+            p.generate_branch_name(&review_request()),
+            "archon/review-77"
+        );
     }
 
     #[test]
@@ -1660,7 +1731,11 @@ mod tests {
         // Must be exactly "archon/thread-{8 hex chars}"
         assert!(branch.starts_with("archon/thread-"), "got: {branch}");
         let hash_part = &branch["archon/thread-".len()..];
-        assert_eq!(hash_part.len(), 8, "short hash must be 8 hex chars, got: {hash_part}");
+        assert_eq!(
+            hash_part.len(),
+            8,
+            "short hash must be 8 hex chars, got: {hash_part}"
+        );
         assert!(
             hash_part.chars().all(|c| c.is_ascii_hexdigit()),
             "hash must be hex, got: {hash_part}"
@@ -1686,13 +1761,19 @@ mod tests {
     #[test]
     fn task_branch_naming_simple() {
         let p = provider();
-        assert_eq!(p.generate_branch_name(&task_request("my task")), "archon/task-my-task");
+        assert_eq!(
+            p.generate_branch_name(&task_request("my task")),
+            "archon/task-my-task"
+        );
     }
 
     #[test]
     fn task_branch_naming_uppercase() {
         let p = provider();
-        assert_eq!(p.generate_branch_name(&task_request("My Task")), "archon/task-my-task");
+        assert_eq!(
+            p.generate_branch_name(&task_request("My Task")),
+            "archon/task-my-task"
+        );
     }
 
     #[test]
@@ -1709,7 +1790,11 @@ mod tests {
         let long_id = "a".repeat(200);
         let branch = p.generate_branch_name(&task_request(&long_id));
         let slug = &branch["archon/task-".len()..];
-        assert!(slug.len() <= 50, "slug must be <= 50 chars, got {} chars", slug.len());
+        assert!(
+            slug.len() <= 50,
+            "slug must be <= 50 chars, got {} chars",
+            slug.len()
+        );
     }
 
     #[test]
@@ -1774,7 +1859,10 @@ mod tests {
         let result = resolve_repo_local_override(Some("/etc/evil"), "/tmp/repo");
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("must be relative to the repo root"), "got: {msg}");
+        assert!(
+            msg.contains("must be relative to the repo root"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -1791,13 +1879,19 @@ mod tests {
     async fn directory_exists_true_for_existing_dir() {
         let dir = TempDir::new().unwrap();
         let p = provider();
-        assert!(p.directory_exists(dir.path().to_str().unwrap()).await.unwrap());
+        assert!(p
+            .directory_exists(dir.path().to_str().unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
     async fn directory_exists_false_for_missing_dir() {
         let p = provider();
-        assert!(!p.directory_exists("/nonexistent/path/xyz_99999").await.unwrap());
+        assert!(!p
+            .directory_exists("/nonexistent/path/xyz_99999")
+            .await
+            .unwrap());
     }
 
     // ─── health_check ──────────────────────────────────────────────────────────
@@ -1825,7 +1919,9 @@ mod tests {
                 .await
                 .expect("git init/config");
         }
-        tokio::fs::write(dir.join("README.md"), "init").await.unwrap();
+        tokio::fs::write(dir.join("README.md"), "init")
+            .await
+            .unwrap();
         tokio::process::Command::new("git")
             .args(["add", "-A"])
             .current_dir(dir)
@@ -1902,7 +1998,11 @@ mod tests {
                         }),
                     )
                     .await;
-                assert!(destroy_result.is_ok(), "destroy should not error: {:?}", destroy_result);
+                assert!(
+                    destroy_result.is_ok(),
+                    "destroy should not error: {:?}",
+                    destroy_result
+                );
                 let dr = destroy_result.unwrap();
                 assert!(dr.worktree_removed, "worktree should be reported removed");
             }
@@ -1940,10 +2040,7 @@ mod tests {
         let p = provider();
         // Destroying a non-existent path but without canonicalRepoPath → returns
         // early with both removed=true because path is already gone.
-        let result = p
-            .destroy("/nonexistent/worktree/xyz", None)
-            .await
-            .unwrap();
+        let result = p.destroy("/nonexistent/worktree/xyz", None).await.unwrap();
         assert!(result.worktree_removed);
         assert!(result.directory_clean);
     }

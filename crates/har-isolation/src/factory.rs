@@ -1,3 +1,5 @@
+use crate::providers::WorktreeProvider;
+use crate::types::{IsolationProvider, RepoConfigLoader, WorktreeCreateConfig};
 /// Isolation provider factory (singleton pattern).
 ///
 /// Ports `packages/isolation/src/factory.ts`.
@@ -20,9 +22,7 @@
 ///
 /// Tests that call `configure_isolation` / `reset_isolation_provider` must be
 /// marked `#[serial_test::serial]` because they mutate process-global state.
-use std::sync::{Mutex, OnceLock, Arc};
-use crate::providers::WorktreeProvider;
-use crate::types::{IsolationProvider, RepoConfigLoader, WorktreeCreateConfig};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Global singleton state.
 struct IsolationSingleton {
@@ -45,9 +45,7 @@ fn global_state() -> &'static Mutex<IsolationSingleton> {
 /// A no-op loader: returns `None` for any repo path.
 /// Source default: `() => Promise.resolve(null)` at `factory.ts:12`.
 fn default_loader() -> RepoConfigLoader {
-    Arc::new(|_path: String| {
-        Box::pin(async { Option::<WorktreeCreateConfig>::None })
-    })
+    Arc::new(|_path: String| Box::pin(async { Option::<WorktreeCreateConfig>::None }))
 }
 
 /// Configure the isolation system with a repo config loader.
@@ -149,7 +147,7 @@ mod tests {
         l("/any/repo".to_string()).await;
         assert!(was_called.load(std::sync::atomic::Ordering::SeqCst));
         reset_isolation_provider(); // cleanup
-        // Restore default so we don't pollute other tests.
+                                    // Restore default so we don't pollute other tests.
         configure_isolation(default_loader());
     }
 
@@ -161,7 +159,10 @@ mod tests {
         set_isolation_provider(p);
         // get_isolation_provider should not panic.
         let got = get_isolation_provider();
-        assert_eq!(got.provider_type(), crate::types::IsolationProviderType::Worktree);
+        assert_eq!(
+            got.provider_type(),
+            crate::types::IsolationProviderType::Worktree
+        );
         reset_isolation_provider(); // cleanup
     }
 

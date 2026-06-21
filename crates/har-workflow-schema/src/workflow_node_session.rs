@@ -181,8 +181,10 @@ mod tests {
             "updated_at": "2024-01-01T00:00:00Z"
         });
         // zod v4: .nullable() ≠ .optional(); absent key → REJECT
-        assert!(serde_json::from_value::<WorkflowNodeSession>(v).is_err(),
-            "absent last_run_id must be rejected (zod v4 .nullable() is required-present)");
+        assert!(
+            serde_json::from_value::<WorkflowNodeSession>(v).is_err(),
+            "absent last_run_id must be rejected (zod v4 .nullable() is required-present)"
+        );
     }
 
     /// FIX-A serialize: `last_run_id: None` must serialize as explicit `null`, not absent.
@@ -200,8 +202,14 @@ mod tests {
         };
         let v = serde_json::to_value(&s).unwrap();
         // None must serialize as explicit null (not absent key)
-        assert!(v.get("last_run_id").is_some(), "last_run_id key must be present");
-        assert!(v["last_run_id"].is_null(), "last_run_id None must be explicit null");
+        assert!(
+            v.get("last_run_id").is_some(),
+            "last_run_id key must be present"
+        );
+        assert!(
+            v["last_run_id"].is_null(),
+            "last_run_id None must be explicit null"
+        );
     }
 
     // ── Wire names (snake_case) ───────────────────────────────────────────
@@ -226,7 +234,10 @@ mod tests {
         assert!(v.get("node_id").is_some(), "missing node_id");
         assert!(v.get("scope_key").is_some(), "missing scope_key");
         assert!(v.get("provider").is_some(), "missing provider");
-        assert!(v.get("provider_session_id").is_some(), "missing provider_session_id");
+        assert!(
+            v.get("provider_session_id").is_some(),
+            "missing provider_session_id"
+        );
         assert!(v.get("last_run_id").is_some(), "missing last_run_id");
         assert!(v.get("created_at").is_some(), "missing created_at");
         assert!(v.get("updated_at").is_some(), "missing updated_at");

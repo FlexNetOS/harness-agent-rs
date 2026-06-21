@@ -38,47 +38,77 @@ pub mod model_validation;
 pub mod executor_shared;
 
 // Cycle 4: WF-13 and WF-12
-pub mod output_ref;
 pub mod condition_evaluator;
+pub mod output_ref;
 
 // Public re-exports for downstream consumers.
-pub use output_ref::{
-    declared_fields_from_schema, resolve_node_output_field, FieldResolution, OutputRefError,
-    OutputRefErrorReason,
-};
 pub use condition_evaluator::{evaluate_condition, split_outside_quotes, EvaluationResult};
-pub use model_validation::{
-    // Constants
-    TIER_NAMES, CLAUDE_EFFORTS, CODEX_REASONING_EFFORTS,
-    // Types
-    TierName, ModelAliasPreset, RawAliasEntry, RawAliasesConfig, RawTiersConfig,
-    ResolvedAiProfile, ResolvedModelSpec, BuildAiProfileOptions,
-    EffortField, EffortRouting,
-    // Errors
-    ModelValidationError,
-    // Functions
-    tier_fallback_chain, is_literal_spec,
-    build_ai_profile, resolve_model_spec,
-    assert_not_reserved_pub, route_preset_effort,
-};
 pub use executor_shared::{
-    // Error classification
-    ErrorType, FATAL_PATTERNS, TRANSIENT_PATTERNS,
-    matches_pattern, classify_error,
-    // Subprocess failure formatting
-    RawSubprocessError, SubprocessFailure, SubprocessLogFields, format_subprocess_failure,
+    build_prompt_with_context,
+    classify_error,
+    // Completion signal
+    detect_completion_signal,
     // Credit exhaustion detection
     detect_credit_exhaustion,
-    // Variable substitution
-    CONTEXT_VAR_PATTERN_STR, SubstitutionResult, BaseBranchEmptyError,
-    substitute_workflow_variables, build_prompt_with_context,
-    // Completion signal
-    detect_completion_signal, strip_completion_tags,
+    format_subprocess_failure,
     // Script detection
     is_inline_script,
     // Command name validation
     is_valid_command_name,
+    load_command_prompt,
+    matches_pattern,
+    safe_send_message,
+    strip_completion_tags,
+    substitute_workflow_variables,
+    BaseBranchEmptyError,
+    CommandLoadIoError,
+    CommandPromptDeps,
+    // Error classification
+    ErrorType,
+    LoadedConfig,
+    MarkdownEntry,
     // Dep-touching traits and types
-    MessagePlatform, SendMessageContext, UnknownErrorTracker, SafeSendError, safe_send_message,
-    CommandPromptDeps, MarkdownEntry, LoadedConfig, CommandLoadIoError, load_command_prompt,
+    MessagePlatform,
+    // Subprocess failure formatting
+    RawSubprocessError,
+    SafeSendError,
+    SendMessageContext,
+    SubprocessFailure,
+    SubprocessLogFields,
+    SubstitutionResult,
+    UnknownErrorTracker,
+    // Variable substitution
+    CONTEXT_VAR_PATTERN_STR,
+    FATAL_PATTERNS,
+    TRANSIENT_PATTERNS,
+};
+pub use model_validation::{
+    assert_not_reserved_pub,
+    build_ai_profile,
+    is_literal_spec,
+    resolve_model_spec,
+    route_preset_effort,
+    // Functions
+    tier_fallback_chain,
+    BuildAiProfileOptions,
+    EffortField,
+    EffortRouting,
+    ModelAliasPreset,
+    // Errors
+    ModelValidationError,
+    RawAliasEntry,
+    RawAliasesConfig,
+    RawTiersConfig,
+    ResolvedAiProfile,
+    ResolvedModelSpec,
+    // Types
+    TierName,
+    CLAUDE_EFFORTS,
+    CODEX_REASONING_EFFORTS,
+    // Constants
+    TIER_NAMES,
+};
+pub use output_ref::{
+    declared_fields_from_schema, resolve_node_output_field, FieldResolution, OutputRefError,
+    OutputRefErrorReason,
 };

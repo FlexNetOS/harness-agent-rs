@@ -12,7 +12,10 @@ fn out_ok(v: Value) {
 fn out_throw(msg: String) {
     // Rust has no err.code analog for git-process errors; report null like JS would
     // for git CLI errors (those carry message text, not an errno).
-    println!("{}", json!({ "kind": "throw", "message": msg, "code": Value::Null }));
+    println!(
+        "{}",
+        json!({ "kind": "throw", "message": msg, "code": Value::Null })
+    );
 }
 
 fn r(s: &str) -> g::RepoPath {
@@ -64,15 +67,11 @@ async fn main() {
             Ok(()) => out_ok(json!("void")),
             Err(e) => out_throw(e.to_string()),
         },
-        "hasUncommittedChanges" => {
-            out_ok(json!(g::has_uncommitted_changes(&s("path")).await))
-        }
-        "commitAllChanges" => {
-            match g::commit_all_changes(&s("path"), &s("message")).await {
-                Ok(v) => out_ok(json!(v)),
-                Err(e) => out_throw(e.to_string()),
-            }
-        }
+        "hasUncommittedChanges" => out_ok(json!(g::has_uncommitted_changes(&s("path")).await)),
+        "commitAllChanges" => match g::commit_all_changes(&s("path"), &s("message")).await {
+            Ok(v) => out_ok(json!(v)),
+            Err(e) => out_throw(e.to_string()),
+        },
         "isBranchMerged" => {
             match g::is_branch_merged(&r(&s("repo")), &b(&s("branch")), &b(&s("main"))).await {
                 Ok(v) => out_ok(json!(v)),
@@ -92,7 +91,9 @@ async fn main() {
         "getLastCommitDate" => match g::get_last_commit_date(&s("path")).await {
             Ok(None) => out_ok(Value::Null),
             // Emit ISO-8601 UTC like JS `.toISOString()` for cross-impl diff.
-            Ok(Some(dt)) => out_ok(json!(dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))),
+            Ok(Some(dt)) => out_ok(json!(
+                dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            )),
             Err(e) => out_throw(e.to_string()),
         },
         // ── repo ──
@@ -195,6 +196,9 @@ async fn main() {
             Ok(v) => out_ok(json!(v.as_str())),
             Err(e) => out_throw(e.to_string()),
         },
-        other => println!("{}", json!({ "kind": "error", "message": format!("unknown op {other}") })),
+        other => println!(
+            "{}",
+            json!({ "kind": "error", "message": format!("unknown op {other}") })
+        ),
     }
 }

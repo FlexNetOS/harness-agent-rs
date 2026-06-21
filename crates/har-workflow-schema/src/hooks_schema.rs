@@ -89,7 +89,6 @@ impl WorkflowHookEvent {
             Self::InstructionsLoaded => "InstructionsLoaded",
         }
     }
-
 }
 
 impl std::str::FromStr for WorkflowHookEvent {
@@ -249,8 +248,8 @@ impl WorkflowNodeHooks {
     pub fn parse(value: serde_json::Value) -> Result<Self, Vec<HookValidationError>> {
         use std::str::FromStr;
 
-        let map: HashMap<String, serde_json::Value> = serde_json::from_value(value)
-            .map_err(|_| vec![])?;
+        let map: HashMap<String, serde_json::Value> =
+            serde_json::from_value(value).map_err(|_| vec![])?;
 
         let valid_names: String = WORKFLOW_HOOK_EVENTS
             .iter()
@@ -312,8 +311,7 @@ impl Serialize for WorkflowNodeHooks {
 impl<'de> Deserialize<'de> for WorkflowNodeHooks {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use std::str::FromStr;
-        let raw: HashMap<String, Vec<WorkflowHookMatcher>> =
-            HashMap::deserialize(deserializer)?;
+        let raw: HashMap<String, Vec<WorkflowHookMatcher>> = HashMap::deserialize(deserializer)?;
         let mut events = HashMap::new();
         for (key, matchers) in raw {
             if let Ok(event) = WorkflowHookEvent::from_str(&key) {
@@ -336,7 +334,11 @@ mod tests {
 
     #[test]
     fn workflow_hook_event_count_is_21() {
-        assert_eq!(WORKFLOW_HOOK_EVENTS.len(), 21, "WORKFLOW_HOOK_EVENTS must have exactly 21 entries");
+        assert_eq!(
+            WORKFLOW_HOOK_EVENTS.len(),
+            21,
+            "WORKFLOW_HOOK_EVENTS must have exactly 21 entries"
+        );
     }
 
     #[test]
@@ -353,8 +355,14 @@ mod tests {
     #[test]
     fn unknown_event_from_str_returns_err() {
         use std::str::FromStr;
-        assert!(WorkflowHookEvent::from_str("preToolUse").is_err(), "camelCase should not match");
-        assert!(WorkflowHookEvent::from_str("pre_tool_use").is_err(), "snake_case should not match");
+        assert!(
+            WorkflowHookEvent::from_str("preToolUse").is_err(),
+            "camelCase should not match"
+        );
+        assert!(
+            WorkflowHookEvent::from_str("pre_tool_use").is_err(),
+            "snake_case should not match"
+        );
         assert!(WorkflowHookEvent::from_str("").is_err());
         assert!(WorkflowHookEvent::from_str("Unknown").is_err());
     }
@@ -363,10 +371,22 @@ mod tests {
     fn event_names_match_source_exactly() {
         // Spot-check a selection to verify exact wire names from hooks.ts:10-32.
         assert_eq!(WorkflowHookEvent::PreToolUse.as_str(), "PreToolUse");
-        assert_eq!(WorkflowHookEvent::PostToolUseFailure.as_str(), "PostToolUseFailure");
-        assert_eq!(WorkflowHookEvent::UserPromptSubmit.as_str(), "UserPromptSubmit");
-        assert_eq!(WorkflowHookEvent::InstructionsLoaded.as_str(), "InstructionsLoaded");
-        assert_eq!(WorkflowHookEvent::ElicitationResult.as_str(), "ElicitationResult");
+        assert_eq!(
+            WorkflowHookEvent::PostToolUseFailure.as_str(),
+            "PostToolUseFailure"
+        );
+        assert_eq!(
+            WorkflowHookEvent::UserPromptSubmit.as_str(),
+            "UserPromptSubmit"
+        );
+        assert_eq!(
+            WorkflowHookEvent::InstructionsLoaded.as_str(),
+            "InstructionsLoaded"
+        );
+        assert_eq!(
+            WorkflowHookEvent::ElicitationResult.as_str(),
+            "ElicitationResult"
+        );
     }
 
     #[test]
@@ -455,7 +475,9 @@ mod tests {
         let result = WorkflowNodeHooks::parse(json);
         assert!(result.is_err(), "should reject unknown event key");
         let errors = result.unwrap_err();
-        assert!(errors.iter().any(|e| matches!(e, HookValidationError::UnknownEvent { key, .. } if key == "preToolUse")));
+        assert!(errors.iter().any(
+            |e| matches!(e, HookValidationError::UnknownEvent { key, .. } if key == "preToolUse")
+        ));
     }
 
     #[test]

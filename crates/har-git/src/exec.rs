@@ -93,17 +93,17 @@ pub async fn exec_file_async(
             })?,
             Err(_) => {
                 return Err(GitError::ProcessError {
-                    message: format!(
-                        "Command '{}' timed out after {}ms",
-                        cmd, ms
-                    ),
+                    message: format!("Command '{}' timed out after {}ms", cmd, ms),
                 });
             }
         }
     } else {
-        child.wait_with_output().await.map_err(|e| GitError::ProcessError {
-            message: format!("Process wait error: {}", e),
-        })?
+        child
+            .wait_with_output()
+            .await
+            .map_err(|e| GitError::ProcessError {
+                message: format!("Process wait error: {}", e),
+            })?
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -162,7 +162,15 @@ pub async fn run_git(
 ) -> Result<ExecOutput> {
     let mut args = vec!["-C", repo_or_cwd];
     args.extend_from_slice(sub_args);
-    exec_file_async("git", &args, ExecOptions { timeout_ms, ..Default::default() }).await
+    exec_file_async(
+        "git",
+        &args,
+        ExecOptions {
+            timeout_ms,
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 /// Convenience: run a git command with a `cwd` option instead of `-C`.

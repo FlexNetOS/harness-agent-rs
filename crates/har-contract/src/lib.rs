@@ -61,14 +61,20 @@ pub struct CodexProviderDefaults {
     pub model: Option<String>,
 
     /// Structurally matches `@archon/workflows ModelReasoningEffort`. types.ts:30.
-    #[serde(rename = "modelReasoningEffort", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "modelReasoningEffort",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub model_reasoning_effort: Option<ModelReasoningEffortCodex>,
 
     /// Structurally matches `@archon/workflows WebSearchMode`. types.ts:32.
     #[serde(rename = "webSearchMode", skip_serializing_if = "Option::is_none")]
     pub web_search_mode: Option<WebSearchModeCodex>,
 
-    #[serde(rename = "additionalDirectories", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "additionalDirectories",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub additional_directories: Option<Vec<String>>,
 
     /// Path to the Codex CLI binary. types.ts:35.
@@ -106,7 +112,10 @@ pub struct CopilotProviderDefaults {
     pub model: Option<String>,
 
     /// Reasoning effort — mirrors `CodexProviderDefaults.modelReasoningEffort`. types.ts:50.
-    #[serde(rename = "modelReasoningEffort", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "modelReasoningEffort",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub model_reasoning_effort: Option<CopilotReasoningEffort>,
 
     /// Absolute path to the Copilot CLI binary. types.ts:56.
@@ -118,7 +127,10 @@ pub struct CopilotProviderDefaults {
     pub config_dir: Option<String>,
 
     /// Opt in to Copilot config discovery from the repo. Default: false. types.ts:68.
-    #[serde(rename = "enableConfigDiscovery", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "enableConfigDiscovery",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub enable_config_discovery: Option<bool>,
 
     /// Reuse CLI logged-in user credentials. Default: true. types.ts:74.
@@ -342,7 +354,10 @@ pub struct SystemPromptPreset {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub append: Option<String>,
     /// Exclude dynamic sections. types.ts:233.
-    #[serde(rename = "excludeDynamicSections", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "excludeDynamicSections",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub exclude_dynamic_sections: Option<bool>,
 }
 
@@ -773,12 +788,21 @@ mod tests {
         assert_eq!(json["content"], "Hello");
         assert_eq!(json["flush"], true);
         let back: MessageChunk = serde_json::from_value(json).unwrap();
-        assert!(matches!(back, MessageChunk::Assistant { flush: Some(true), .. }));
+        assert!(matches!(
+            back,
+            MessageChunk::Assistant {
+                flush: Some(true),
+                ..
+            }
+        ));
     }
 
     #[test]
     fn message_chunk_assistant_no_flush_omits_field() {
-        let chunk = MessageChunk::Assistant { content: "hi".into(), flush: None };
+        let chunk = MessageChunk::Assistant {
+            content: "hi".into(),
+            flush: None,
+        };
         let json = serde_json::to_value(&chunk).unwrap();
         assert!(json.get("flush").is_none(), "flush=None should be omitted");
     }
@@ -801,7 +825,12 @@ mod tests {
     fn message_chunk_result_full_round_trip() {
         let chunk = MessageChunk::Result {
             session_id: Some("sess-42".into()),
-            tokens: Some(TokenUsage { input: 100, output: 50, total: Some(150), cost: Some(0.002) }),
+            tokens: Some(TokenUsage {
+                input: 100,
+                output: 50,
+                total: Some(150),
+                cost: Some(0.002),
+            }),
             structured_output: Some(json!({"key": "val"})),
             is_error: Some(false),
             error_subtype: None,
@@ -831,7 +860,13 @@ mod tests {
             "errors": ["Budget exceeded"]
         });
         let chunk: MessageChunk = serde_json::from_value(json).unwrap();
-        if let MessageChunk::Result { is_error, error_subtype, errors, .. } = chunk {
+        if let MessageChunk::Result {
+            is_error,
+            error_subtype,
+            errors,
+            ..
+        } = chunk
+        {
             assert_eq!(is_error, Some(true));
             assert_eq!(error_subtype.as_deref(), Some("error_max_budget_usd"));
             assert_eq!(errors, Some(vec!["Budget exceeded".to_owned()]));
@@ -856,7 +891,12 @@ mod tests {
             "toolCallId": "tc-001"
         });
         let chunk: MessageChunk = serde_json::from_value(json).unwrap();
-        if let MessageChunk::Tool { tool_name, tool_call_id, .. } = &chunk {
+        if let MessageChunk::Tool {
+            tool_name,
+            tool_call_id,
+            ..
+        } = &chunk
+        {
             assert_eq!(tool_name, "bash");
             assert_eq!(tool_call_id.as_deref(), Some("tc-001"));
         } else {
@@ -888,7 +928,11 @@ mod tests {
             "workflowName": "deploy-feature"
         });
         let chunk: MessageChunk = serde_json::from_value(json).unwrap();
-        if let MessageChunk::WorkflowDispatch { worker_conversation_id, workflow_name } = &chunk {
+        if let MessageChunk::WorkflowDispatch {
+            worker_conversation_id,
+            workflow_name,
+        } = &chunk
+        {
             assert_eq!(worker_conversation_id, "conv-abc");
             assert_eq!(workflow_name, "deploy-feature");
         } else {
@@ -1009,7 +1053,10 @@ mod tests {
             "futureProp": "x"
         });
         let d: ClaudeProviderDefaults = serde_json::from_value(json).unwrap();
-        assert_eq!(d.setting_sources, Some(vec![SettingSource::Project, SettingSource::User]));
+        assert_eq!(
+            d.setting_sources,
+            Some(vec![SettingSource::Project, SettingSource::User])
+        );
         assert_eq!(d.extra["futureProp"], "x");
     }
 
@@ -1023,15 +1070,17 @@ mod tests {
             "codexBinaryPath": "/usr/local/bin/codex"
         });
         let d: CodexProviderDefaults = serde_json::from_value(json).unwrap();
-        assert_eq!(d.model_reasoning_effort, Some(ModelReasoningEffortCodex::High));
+        assert_eq!(
+            d.model_reasoning_effort,
+            Some(ModelReasoningEffortCodex::High)
+        );
         assert_eq!(d.web_search_mode, Some(WebSearchModeCodex::Live));
     }
 
     #[test]
     fn pi_extension_flag_value_bool_and_string() {
         let json = json!({"flag1": true, "flag2": "somevalue"});
-        let flags: HashMap<String, PiExtensionFlagValue> =
-            serde_json::from_value(json).unwrap();
+        let flags: HashMap<String, PiExtensionFlagValue> = serde_json::from_value(json).unwrap();
         assert!(matches!(flags["flag1"], PiExtensionFlagValue::Bool(true)));
         assert!(matches!(flags["flag2"], PiExtensionFlagValue::String(_)));
     }

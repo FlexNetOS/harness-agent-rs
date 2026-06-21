@@ -58,7 +58,11 @@ fn strip_completion_tags_adversarial_matches_ts() {
         ("prefix-names", "<a>SIG</ab> ok", Some("SIG")),
         ("close-with-space", "<a>SIG</a > ok", Some("SIG")),
         ("promise-attrs", "a <promise foo=\"x\">z</promise> b", None),
-        ("nested-promise", "<promise>a<promise>b</promise>c</promise>", None),
+        (
+            "nested-promise",
+            "<promise>a<promise>b</promise>c</promise>",
+            None,
+        ),
     ];
     for (key, content, until) in cases {
         let ts = strip[*key].as_str().unwrap();

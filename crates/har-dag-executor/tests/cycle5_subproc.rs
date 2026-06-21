@@ -38,7 +38,8 @@ fn format_subprocess_failure_truncation_matches_ts() {
         let ts = o[key].as_str().unwrap();
         let rust = format_subprocess_failure(&err, label).user_message;
         assert_eq!(
-            rust, ts,
+            rust,
+            ts,
             "format_subprocess_failure divergence: key={} ts_len={} rust_len={}",
             key,
             ts.chars().count(),

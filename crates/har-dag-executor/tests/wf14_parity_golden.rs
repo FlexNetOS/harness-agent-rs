@@ -42,7 +42,8 @@ fn canonicalize(v: &Value) -> String {
     fn sort(v: &Value) -> Value {
         match v {
             Value::Object(m) => {
-                let mut bt: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+                let mut bt: std::collections::BTreeMap<String, Value> =
+                    std::collections::BTreeMap::new();
                 for (k, val) in m {
                     bt.insert(k.clone(), sort(val));
                 }
@@ -92,8 +93,7 @@ fn wf14_rust_matches_ts_golden() {
     let mut failures: Vec<String> = Vec::new();
     let mut intentional_seen: Vec<String> = Vec::new();
 
-    let all_cases: std::collections::BTreeSet<&String> =
-        gmap.keys().chain(rmap.keys()).collect();
+    let all_cases: std::collections::BTreeSet<&String> = gmap.keys().chain(rmap.keys()).collect();
 
     for case in &all_cases {
         let g = gmap.get(*case);
@@ -111,7 +111,10 @@ fn wf14_rust_matches_ts_golden() {
                         if let (Some(ge), Some(re)) = (g["error"].as_str(), r["error"].as_str()) {
                             let gp = ge.split("Defined aliases:").next().unwrap_or("");
                             let rp = re.split("Defined aliases:").next().unwrap_or("");
-                            assert_eq!(gp, rp, "even the intentional-divergence case must share the error prefix");
+                            assert_eq!(
+                                gp, rp,
+                                "even the intentional-divergence case must share the error prefix"
+                            );
                         }
                     } else {
                         failures.push(format!(

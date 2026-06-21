@@ -25,18 +25,17 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 use har_git::{
-    find_worktree_by_branch, get_canonical_repo_path, is_ancestor_of, to_branch_name,
-    to_repo_path, to_worktree_path, verify_worktree_ownership, worktree_exists,
+    find_worktree_by_branch, get_canonical_repo_path, is_ancestor_of, to_branch_name, to_repo_path,
+    to_worktree_path, verify_worktree_ownership, worktree_exists,
 };
 
 use crate::store::IsolationStore;
-use crate::types::{
-    CodebaseSummary, CreateEnvironmentParams, DestroyOptions,
-    IsolationHints, IsolationProviderType, IsolationRequest, IsolationRequestBase,
-    IsolationResolution, IsolationWorkflowType, ResolveRequest, ResolvedPayload,
-    ResolutionMethod,
-};
 use crate::types::IsolationProvider;
+use crate::types::{
+    CodebaseSummary, CreateEnvironmentParams, DestroyOptions, IsolationHints,
+    IsolationProviderType, IsolationRequest, IsolationRequestBase, IsolationResolution,
+    IsolationWorkflowType, ResolutionMethod, ResolveRequest, ResolvedPayload,
+};
 use crate::{IsolationError, Result};
 
 /// Default stale-threshold days if not set by caller.
@@ -45,8 +44,11 @@ const DEFAULT_STALE_THRESHOLD_DAYS: u32 = 14;
 
 /// Optional async cleanup function injected at creation time.
 /// Mirrors `IsolationResolverDeps.cleanup?: { makeRoom, getBreakdown }`.
-pub type CleanupFn =
-    Arc<dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = u32> + Send>> + Send + Sync>;
+pub type CleanupFn = Arc<
+    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = u32> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Full set of constructor dependencies.
 ///
@@ -76,7 +78,9 @@ impl IsolationResolver {
     ///
     /// Source: `constructor(deps)` at `resolver.ts:73-83`.
     pub fn new(deps: IsolationResolverDeps) -> Result<Self> {
-        let stale_threshold_days = deps.stale_threshold_days.unwrap_or(DEFAULT_STALE_THRESHOLD_DAYS);
+        let stale_threshold_days = deps
+            .stale_threshold_days
+            .unwrap_or(DEFAULT_STALE_THRESHOLD_DAYS);
         if stale_threshold_days == 0 {
             return Err(IsolationError::Other(
                 "staleThresholdDays must be > 0".to_string(),
@@ -123,21 +127,32 @@ impl IsolationResolver {
 
         if exists {
             // Collect base-branch warnings (non-fatal).
-            let warnings = self.collect_base_branch_warnings(&row.branch_name, &working_path, hints).await;
+            let warnings = self
+                .collect_base_branch_warnings(&row.branch_name, &working_path, hints)
+                .await;
 
             info!(env_id, working_path, "isolation.resolved.existing");
-            return Ok(Some(IsolationResolution::Resolved(Box::new(ResolvedPayload {
-                env: row,
-                cwd: working_path,
-                method: ResolutionMethod::Existing,
-                warnings: if warnings.is_empty() { None } else { Some(warnings) },
-            }))));
+            return Ok(Some(IsolationResolution::Resolved(Box::new(
+                ResolvedPayload {
+                    env: row,
+                    cwd: working_path,
+                    method: ResolutionMethod::Existing,
+                    warnings: if warnings.is_empty() {
+                        None
+                    } else {
+                        Some(warnings)
+                    },
+                },
+            ))));
         }
 
         // Worktree is missing — mark the DB row destroyed and return None
         // (caller will emit StaleCleaned).
         // Source: `if (env) { await this.markDestroyedBestEffort(env.id); }` at resolver.ts:247-249.
-        warn!(env_id, working_path, "isolation.resolve_existing.worktree_missing");
+        warn!(
+            env_id,
+            working_path, "isolation.resolve_existing.worktree_missing"
+        );
         self.mark_destroyed_best_effort(env_id).await;
         Ok(None)
     }
@@ -177,25 +192,40 @@ impl IsolationResolver {
         if !exists {
             // Stale — mark destroyed and fall through to next stage.
             // Source: `await this.markDestroyedBestEffort(existing.id); return null;` at resolver.ts:315-316.
-            warn!(workflow_id, working_path, "isolation.workflow_reuse.worktree_missing");
+            warn!(
+                workflow_id,
+                working_path, "isolation.workflow_reuse.worktree_missing"
+            );
             self.mark_destroyed_best_effort(&row.id).await;
             return Ok(None);
         }
 
         // Ownership check — THROWS on cross-clone mismatch (propagates as Err).
         // Source: `assertWorktreeOwnership` at resolver.ts:300-305 (re-throws).
-        self.assert_worktree_ownership(canonical_repo_path, &working_path).await?;
+        self.assert_worktree_ownership(canonical_repo_path, &working_path)
+            .await?;
 
         // Collect base-branch warnings (non-fatal).
-        let warnings = self.collect_base_branch_warnings(&row.branch_name, &working_path, hints).await;
+        let warnings = self
+            .collect_base_branch_warnings(&row.branch_name, &working_path, hints)
+            .await;
 
-        info!(workflow_id, working_path, "isolation.resolved.workflow_reuse");
-        Ok(Some(IsolationResolution::Resolved(Box::new(ResolvedPayload {
-            env: row,
-            cwd: working_path,
-            method: ResolutionMethod::WorkflowReuse,
-            warnings: if warnings.is_empty() { None } else { Some(warnings) },
-        }))))
+        info!(
+            workflow_id,
+            working_path, "isolation.resolved.workflow_reuse"
+        );
+        Ok(Some(IsolationResolution::Resolved(Box::new(
+            ResolvedPayload {
+                env: row,
+                cwd: working_path,
+                method: ResolutionMethod::WorkflowReuse,
+                warnings: if warnings.is_empty() {
+                    None
+                } else {
+                    Some(warnings)
+                },
+            },
+        ))))
     }
 
     // ─── Stage 4: Linked-issue reuse ─────────────────────────────────────────
@@ -220,11 +250,7 @@ impl IsolationResolver {
             let workflow_id = issue_num.to_string();
             let row = match self
                 .store
-                .find_active_by_workflow(
-                    &codebase.id,
-                    IsolationWorkflowType::Issue,
-                    &workflow_id,
-                )
+                .find_active_by_workflow(&codebase.id, IsolationWorkflowType::Issue, &workflow_id)
                 .await?
             {
                 None => continue,
@@ -241,22 +267,33 @@ impl IsolationResolver {
             if !exists {
                 // Stale — mark destroyed and try the next linked issue.
                 // Source: `await this.markDestroyedBestEffort(linkedEnv.id);` at resolver.ts:360.
-                warn!(issue_num, working_path, "isolation.linked_issue_reuse.worktree_missing");
+                warn!(
+                    issue_num,
+                    working_path, "isolation.linked_issue_reuse.worktree_missing"
+                );
                 self.mark_destroyed_best_effort(&row.id).await;
                 continue;
             }
 
             // Ownership check — THROWS on cross-clone mismatch (propagates as Err).
             // Source: `assertWorktreeOwnership` at resolver.ts:344-349 (re-throws).
-            self.assert_worktree_ownership(canonical_repo_path, &working_path).await?;
+            self.assert_worktree_ownership(canonical_repo_path, &working_path)
+                .await?;
 
-            info!(issue_num, working_path, "isolation.resolved.linked_issue_reuse");
-            return Ok(Some(IsolationResolution::Resolved(Box::new(ResolvedPayload {
-                env: row,
-                cwd: working_path,
-                method: ResolutionMethod::LinkedIssueReuse { issue_number: issue_num },
-                warnings: None,
-            }))));
+            info!(
+                issue_num,
+                working_path, "isolation.resolved.linked_issue_reuse"
+            );
+            return Ok(Some(IsolationResolution::Resolved(Box::new(
+                ResolvedPayload {
+                    env: row,
+                    cwd: working_path,
+                    method: ResolutionMethod::LinkedIssueReuse {
+                        issue_number: issue_num,
+                    },
+                    warnings: None,
+                },
+            ))));
         }
 
         Ok(None)
@@ -286,8 +323,8 @@ impl IsolationResolver {
 
         let repo_path_typed = to_repo_path(canonical_repo_path.to_string())
             .map_err(|e| IsolationError::Other(e.to_string()))?;
-        let branch_typed = to_branch_name(branch.clone())
-            .map_err(|e| IsolationError::Other(e.to_string()))?;
+        let branch_typed =
+            to_branch_name(branch.clone()).map_err(|e| IsolationError::Other(e.to_string()))?;
 
         let adopted_path = match find_worktree_by_branch(&repo_path_typed, &branch_typed).await? {
             None => return Ok(None),
@@ -306,7 +343,8 @@ impl IsolationResolver {
 
         // Ownership check — THROWS on cross-clone mismatch.
         // Source: `assertWorktreeOwnership` at resolver.ts:386-390.
-        self.assert_worktree_ownership(canonical_repo_path, &working_path).await?;
+        self.assert_worktree_ownership(canonical_repo_path, &working_path)
+            .await?;
 
         // Persist to store with adoption metadata.
         // Source: `metadata: { adopted: true, adopted_from: 'skill' }` at resolver.ts:402.
@@ -327,19 +365,26 @@ impl IsolationResolver {
                 working_path: working_path.clone(),
                 branch_name: branch.clone(),
                 created_by_platform: None,
-                created_by_user_id: git_identity
-                    .and_then(|i| if i.email.is_empty() { None } else { Some(i.email.clone()) }),
+                created_by_user_id: git_identity.and_then(|i| {
+                    if i.email.is_empty() {
+                        None
+                    } else {
+                        Some(i.email.clone())
+                    }
+                }),
                 metadata: Some(meta),
             })
             .await?;
 
         info!(branch, working_path, "isolation.resolved.branch_adoption");
-        Ok(Some(IsolationResolution::Resolved(Box::new(ResolvedPayload {
-            env,
-            cwd: working_path,
-            method: ResolutionMethod::BranchAdoption { branch },
-            warnings: None,
-        }))))
+        Ok(Some(IsolationResolution::Resolved(Box::new(
+            ResolvedPayload {
+                env,
+                cwd: working_path,
+                method: ResolutionMethod::BranchAdoption { branch },
+                warnings: None,
+            },
+        ))))
     }
 
     // ─── Stage 6: Create new ──────────────────────────────────────────────────
@@ -376,12 +421,8 @@ impl IsolationResolver {
             git_identity: git_identity.cloned(),
         };
 
-        let request = self.build_isolation_request(
-            base,
-            workflow_type.clone(),
-            workflow_id,
-            hints,
-        )?;
+        let request =
+            self.build_isolation_request(base, workflow_type.clone(), workflow_id, hints)?;
 
         // Create the worktree environment.
         let wt_env = match self.provider.create(request.clone()).await {
@@ -414,8 +455,13 @@ impl IsolationResolver {
                 working_path: working_path.clone(),
                 branch_name: branch_name.clone(),
                 created_by_platform: Some(platform_type.to_string()),
-                created_by_user_id: git_identity
-                    .and_then(|i| if i.email.is_empty() { None } else { Some(i.email.clone()) }),
+                created_by_user_id: git_identity.and_then(|i| {
+                    if i.email.is_empty() {
+                        None
+                    } else {
+                        Some(i.email.clone())
+                    }
+                }),
                 metadata: None,
             })
             .await
@@ -459,10 +505,7 @@ impl IsolationResolver {
 
         info!(
             workflow_id,
-            working_path,
-            branch_name,
-            auto_cleaned_count,
-            "isolation.resolved.created"
+            working_path, branch_name, auto_cleaned_count, "isolation.resolved.created"
         );
 
         Ok(IsolationResolution::Resolved(Box::new(ResolvedPayload {
@@ -666,7 +709,9 @@ impl IsolationResolver {
         let codebase = match &request.codebase {
             None => {
                 debug!("isolation.no_codebase_shortcircuit");
-                return Ok(IsolationResolution::None { cwd: "/workspace".to_string() });
+                return Ok(IsolationResolution::None {
+                    cwd: "/workspace".to_string(),
+                });
             }
             Some(c) => c,
         };
@@ -676,8 +721,7 @@ impl IsolationResolver {
             Ok(rp) => rp.as_str().to_string(),
             Err(e) => {
                 let msg = e.to_string().to_lowercase();
-                if msg.contains("not a git repository")
-                    || msg.contains("no such file or directory")
+                if msg.contains("not a git repository") || msg.contains("no such file or directory")
                 {
                     // Known blocking condition.
                     return Ok(IsolationResolution::Blocked {
@@ -761,8 +805,8 @@ mod tests {
     use super::*;
     use crate::store::test_support::InMemoryIsolationStore;
     use crate::types::{
-        AdoptedWorktreeMetadata, EnvironmentStatus, IsolationProviderType,
-        WorktreeEnvironment, WorktreeMetadata, DestroyOptions, DestroyResult,
+        AdoptedWorktreeMetadata, DestroyOptions, DestroyResult, EnvironmentStatus,
+        IsolationProviderType, WorktreeEnvironment, WorktreeMetadata,
     };
     use std::sync::Arc;
 
@@ -945,7 +989,10 @@ mod tests {
     #[tokio::test]
     async fn existing_env_id_not_in_store_returns_stale_cleaned() {
         let store = InMemoryIsolationStore::new();
-        let provider = Arc::new(MockProvider { healthy: false, create_result: None });
+        let provider = Arc::new(MockProvider {
+            healthy: false,
+            create_result: None,
+        });
         let resolver = make_resolver(store, provider);
 
         let request = ResolveRequest {
@@ -988,7 +1035,10 @@ mod tests {
             .await
             .unwrap();
 
-        let provider = Arc::new(MockProvider { healthy: true, create_result: None });
+        let provider = Arc::new(MockProvider {
+            healthy: true,
+            create_result: None,
+        });
         let resolver = make_resolver(store, Arc::clone(&provider) as Arc<dyn IsolationProvider>);
 
         // We can't test "found via store + worktree on disk → Resolved.method = WorkflowReuse"
@@ -1022,7 +1072,10 @@ mod tests {
     #[tokio::test]
     async fn linked_issue_reuse_no_issues_skips() {
         let store = InMemoryIsolationStore::new();
-        let provider = Arc::new(MockProvider { healthy: false, create_result: None });
+        let provider = Arc::new(MockProvider {
+            healthy: false,
+            create_result: None,
+        });
         let resolver = make_resolver(store, provider);
 
         let result = resolver
@@ -1047,7 +1100,10 @@ mod tests {
     #[tokio::test]
     async fn linked_issue_reuse_empty_list_skips() {
         let store = InMemoryIsolationStore::new();
-        let provider = Arc::new(MockProvider { healthy: false, create_result: None });
+        let provider = Arc::new(MockProvider {
+            healthy: false,
+            create_result: None,
+        });
         let resolver = make_resolver(store, provider);
 
         let result = resolver
@@ -1143,16 +1199,15 @@ mod tests {
         };
 
         let req = resolver
-            .build_isolation_request(
-                base,
-                IsolationWorkflowType::Task,
-                "my-task",
-                Some(&hints),
-            )
+            .build_isolation_request(base, IsolationWorkflowType::Task, "my-task", Some(&hints))
             .unwrap();
 
         match req {
-            IsolationRequest::Task { from_branch, identifier, .. } => {
+            IsolationRequest::Task {
+                from_branch,
+                identifier,
+                ..
+            } => {
                 assert_eq!(identifier, "my-task");
                 assert_eq!(from_branch.as_deref(), Some("develop"));
             }
@@ -1211,7 +1266,13 @@ mod tests {
             .unwrap();
 
         match req {
-            IsolationRequest::Pr { is_fork_pr, pr_branch, pr_sha, identifier, .. } => {
+            IsolationRequest::Pr {
+                is_fork_pr,
+                pr_branch,
+                pr_sha,
+                identifier,
+                ..
+            } => {
                 assert_eq!(identifier, "99");
                 assert_eq!(pr_branch, "feature/my-pr");
                 assert!(is_fork_pr);
@@ -1237,7 +1298,10 @@ mod tests {
         });
 
         let store = InMemoryIsolationStore::new();
-        let provider = Arc::new(MockProvider { healthy: false, create_result: None });
+        let provider = Arc::new(MockProvider {
+            healthy: false,
+            create_result: None,
+        });
         let resolver = IsolationResolver::new(IsolationResolverDeps {
             store,
             provider,
@@ -1323,7 +1387,10 @@ mod tests {
         let result = resolver.resolve(request).await.unwrap();
         match result {
             IsolationResolution::StaleCleaned { previous_env_id } => {
-                assert_eq!(previous_env_id, env_row.id, "StaleCleaned must include the old env id");
+                assert_eq!(
+                    previous_env_id, env_row.id,
+                    "StaleCleaned must include the old env id"
+                );
             }
             other => panic!("expected StaleCleaned, got {other:?}"),
         }
@@ -1349,9 +1416,24 @@ mod tests {
             .output()
             .unwrap();
         assert!(out.status.success());
-        Command::new("git").arg("-C").arg(&repo1_s).args(["config", "user.email", "t@t.com"]).output().unwrap();
-        Command::new("git").arg("-C").arg(&repo1_s).args(["config", "user.name", "T"]).output().unwrap();
-        Command::new("git").arg("-C").arg(&repo1_s).args(["commit", "--allow-empty", "-q", "-m", "init"]).output().unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo1_s)
+            .args(["config", "user.email", "t@t.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo1_s)
+            .args(["config", "user.name", "T"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo1_s)
+            .args(["commit", "--allow-empty", "-q", "-m", "init"])
+            .output()
+            .unwrap();
 
         let root2 = tempfile::tempdir().unwrap();
         let repo2 = root2.path().join("repo2");
@@ -1362,18 +1444,38 @@ mod tests {
             .output()
             .unwrap();
         assert!(out.status.success());
-        Command::new("git").arg("-C").arg(&repo2_s).args(["config", "user.email", "t@t.com"]).output().unwrap();
-        Command::new("git").arg("-C").arg(&repo2_s).args(["config", "user.name", "T"]).output().unwrap();
-        Command::new("git").arg("-C").arg(&repo2_s).args(["commit", "--allow-empty", "-q", "-m", "init"]).output().unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo2_s)
+            .args(["config", "user.email", "t@t.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo2_s)
+            .args(["config", "user.name", "T"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo2_s)
+            .args(["commit", "--allow-empty", "-q", "-m", "init"])
+            .output()
+            .unwrap();
 
         // Create a worktree from repo2.
         let wt2 = root2.path().join("wt2").to_string_lossy().to_string();
         let out = Command::new("git")
-            .arg("-C").arg(&repo2_s)
+            .arg("-C")
+            .arg(&repo2_s)
             .args(["worktree", "add", "-q", "-b", "cross-branch", &wt2])
             .output()
             .unwrap();
-        assert!(out.status.success(), "worktree add failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "worktree add failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
 
         let store = InMemoryIsolationStore::new();
         let provider = Arc::new(MockProvider::default());
@@ -1381,6 +1483,9 @@ mod tests {
 
         // Assert that asserting ownership of wt2 (from repo2) against repo1 returns Err.
         let result = resolver.assert_worktree_ownership(&repo1_s, &wt2).await;
-        assert!(result.is_err(), "cross-clone ownership must be an error, got: {result:?}");
+        assert!(
+            result.is_err(),
+            "cross-clone ownership must be an error, got: {result:?}"
+        );
     }
 }

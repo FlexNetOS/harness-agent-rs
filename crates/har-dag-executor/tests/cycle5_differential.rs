@@ -42,7 +42,10 @@ fn classify_error_matches_ts() {
     // For plain pattern keys the oracle input was "Error: <key>"; for these named keys it
     // used a bespoke phrase. Reconstruct the inputs verbatim.
     let bespoke: &[(&str, &str)] = &[
-        ("MIXED unauthorized+timeout", "unauthorized: process exited with code 1"),
+        (
+            "MIXED unauthorized+timeout",
+            "unauthorized: process exited with code 1",
+        ),
         ("credit balance timeout", "credit balance timeout error"),
         ("UPPER UNAUTHORIZED", "UNAUTHORIZED"),
         ("UPPER TIMEOUT", "TIMEOUT"),
@@ -82,11 +85,23 @@ fn context_var_boundary_matches_ts() {
         ("followed-punct", "$CONTEXT.", Some("ISSUE")),
         ("followed-punct-comma", "$CONTEXT,next", Some("ISSUE")),
         ("followed-alnum", "$CONTEXT5", Some("ISSUE")),
-        ("followed-underscore-EXTRA", "$CONTEXT_EXTRA stays", Some("ISSUE")),
+        (
+            "followed-underscore-EXTRA",
+            "$CONTEXT_EXTRA stays",
+            Some("ISSUE"),
+        ),
         ("EXTERNAL end", "$EXTERNAL_CONTEXT", Some("ISSUE")),
         ("ISSUE end", "$ISSUE_CONTEXT", Some("ISSUE")),
-        ("EXTERNAL followed alnum", "$EXTERNAL_CONTEXTX", Some("ISSUE")),
-        ("multi", "a $CONTEXT b $EXTERNAL_CONTEXT c $ISSUE_CONTEXT", Some("X")),
+        (
+            "EXTERNAL followed alnum",
+            "$EXTERNAL_CONTEXTX",
+            Some("ISSUE"),
+        ),
+        (
+            "multi",
+            "a $CONTEXT b $EXTERNAL_CONTEXT c $ISSUE_CONTEXT",
+            Some("X"),
+        ),
         ("cleared no ctx", "$CONTEXT here", None),
         ("followed-newline", "$CONTEXT\nrest", Some("ISSUE")),
         ("followed-tab", "$CONTEXT\trest", Some("ISSUE")),
@@ -137,7 +152,11 @@ fn detect_completion_signal_matches_ts() {
     let det = o["detect"].as_object().unwrap();
 
     let cases: &[(&str, &str, &str)] = &[
-        ("matching-same-case", "<promise>COMPLETE</promise>", "COMPLETE"),
+        (
+            "matching-same-case",
+            "<promise>COMPLETE</promise>",
+            "COMPLETE",
+        ),
         ("matching-tag-diff-case", "<Signal>DONE</signal>", "DONE"),
         ("matching-tag-diff-case2", "<DONE>X</done>", "X"),
         ("nonmatching-tags", "<complete>X</done>", "X"),
@@ -146,8 +165,16 @@ fn detect_completion_signal_matches_ts() {
         ("plain-own-line", "line1\nCOMPLETE\nline2", "COMPLETE"),
         ("false-positive-not-yet", "not COMPLETE yet", "COMPLETE"),
         ("signal-with-attrs", "<tag foo=\"bar\">DONE</tag>", "DONE"),
-        ("signal-with-attrs-mismatch-case", "<Tag foo=\"bar\">DONE</TAG>", "DONE"),
-        ("whitespace-inside", "<promise>  COMPLETE  </promise>", "COMPLETE"),
+        (
+            "signal-with-attrs-mismatch-case",
+            "<Tag foo=\"bar\">DONE</TAG>",
+            "DONE",
+        ),
+        (
+            "whitespace-inside",
+            "<promise>  COMPLETE  </promise>",
+            "COMPLETE",
+        ),
         ("regex-special-signal", "done.now", "done.now"),
         ("nested-different", "<a>COMPLETE</b></a>", "COMPLETE"),
         ("middle-no-match", "the COMPLETE thing", "COMPLETE"),
@@ -172,11 +199,27 @@ fn strip_completion_tags_matches_ts() {
     let strip = o["strip"].as_object().unwrap();
 
     let cases: &[(&str, &str, Option<&str>)] = &[
-        ("promise-strip", "before <promise>secret</promise> after", None),
-        ("promise-strip-multiline", "x <promise>a\nb</promise> y", None),
+        (
+            "promise-strip",
+            "before <promise>secret</promise> after",
+            None,
+        ),
+        (
+            "promise-strip-multiline",
+            "x <promise>a\nb</promise> y",
+            None,
+        ),
         ("promise-case-insensitive", "x <PROMISE>z</PROMISE> y", None),
-        ("until-matching", "keep <COMPLETE>ALL_CLEAN</COMPLETE> keep", Some("ALL_CLEAN")),
-        ("until-mismatch", "keep <note>ALL_CLEAN</warning> keep", Some("ALL_CLEAN")),
+        (
+            "until-matching",
+            "keep <COMPLETE>ALL_CLEAN</COMPLETE> keep",
+            Some("ALL_CLEAN"),
+        ),
+        (
+            "until-mismatch",
+            "keep <note>ALL_CLEAN</warning> keep",
+            Some("ALL_CLEAN"),
+        ),
         ("until-case-diff", "keep <Done>SIG</done> keep", Some("SIG")),
         ("trim-result", "  <promise>x</promise>  ", None),
         ("until-multiple", "<a>S</a> mid <b>S</b>", Some("S")),
@@ -200,7 +243,9 @@ fn is_inline_script_matches_ts() {
     let inline = o["inline"].as_object().unwrap();
 
     // Each special char produces a "name<ch>x" input that must be inline=true.
-    let chars = [';', '(', ')', '{', '}', '&', '|', '<', '>', '$', '`', '"', '\'', ' '];
+    let chars = [
+        ';', '(', ')', '{', '}', '&', '|', '<', '>', '$', '`', '"', '\'', ' ',
+    ];
     for ch in chars {
         let key = format!("char_{}", ch as u32);
         let ts = inline[&key].as_bool().unwrap();

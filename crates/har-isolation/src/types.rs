@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 /// Isolation provider abstraction types.
 ///
 /// Ports `packages/isolation/src/types.ts`.
@@ -13,7 +14,6 @@
 ///
 /// Wire field names are camelCase to match the TypeScript source exactly.
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
 // ─── Simple string-union enums ─────────────────────────────────────────────
 
@@ -298,8 +298,7 @@ pub struct DestroyResult {
 pub trait IsolationProvider: Send + Sync {
     fn provider_type(&self) -> IsolationProviderType;
 
-    async fn create(&self, request: IsolationRequest)
-        -> crate::Result<WorktreeEnvironment>;
+    async fn create(&self, request: IsolationRequest) -> crate::Result<WorktreeEnvironment>;
 
     /// Best-effort cleanup. Returns `DestroyResult` with partial-failure details.
     async fn destroy(
@@ -403,8 +402,11 @@ pub struct WorktreeCreateConfig {
 ///
 /// Returns `None` when no config is found for the repo path.
 pub type RepoConfigLoader = std::sync::Arc<
-    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<WorktreeCreateConfig>> + Send>>
-        + Send
+    dyn Fn(
+            String,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Option<WorktreeCreateConfig>> + Send>,
+        > + Send
         + Sync,
 >;
 
@@ -654,7 +656,12 @@ mod tests {
         });
         let req: IsolationRequest = serde_json::from_value(json).unwrap();
         match &req {
-            IsolationRequest::Pr { pr_branch, is_fork_pr, pr_sha, .. } => {
+            IsolationRequest::Pr {
+                pr_branch,
+                is_fork_pr,
+                pr_sha,
+                ..
+            } => {
                 assert_eq!(pr_branch, "feat/new-feature");
                 assert_eq!(is_fork_pr, &true);
                 assert_eq!(pr_sha.as_deref(), Some("abc123"));
@@ -887,7 +894,10 @@ mod tests {
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["status"], "blocked");
         assert_eq!(v["reason"], "creation_failed");
-        assert!(v["userMessage"].as_str().unwrap().contains("Permission denied"));
+        assert!(v["userMessage"]
+            .as_str()
+            .unwrap()
+            .contains("Permission denied"));
     }
 
     #[test]

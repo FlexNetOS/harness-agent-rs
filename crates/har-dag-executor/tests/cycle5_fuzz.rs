@@ -6,7 +6,9 @@
 //! boundary; XML `\1` backreference backtracking) against any future regression and against a
 //! divergence the hand-picked fixtures might have missed. Archon left pristine; harness deleted.
 
-use har_dag_executor::{detect_completion_signal, strip_completion_tags, substitute_workflow_variables};
+use har_dag_executor::{
+    detect_completion_signal, strip_completion_tags, substitute_workflow_variables,
+};
 use serde_json::Value;
 
 const FUZZ: &str = include_str!("golden/cycle5_fuzz.json");

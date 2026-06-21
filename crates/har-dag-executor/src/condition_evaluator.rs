@@ -53,7 +53,7 @@ use std::collections::HashMap;
 
 use har_workflow_schema::NodeOutput;
 
-use crate::output_ref::{resolve_node_output_field, OutputRefError, FieldResolution};
+use crate::output_ref::{resolve_node_output_field, FieldResolution, OutputRefError};
 
 // ---------------------------------------------------------------------------
 // parse_float_js — JS parseFloat() semantics
@@ -218,15 +218,24 @@ pub struct EvaluationResult {
 
 impl EvaluationResult {
     fn parsed_true() -> Self {
-        Self { result: true, parsed: true }
+        Self {
+            result: true,
+            parsed: true,
+        }
     }
 
     fn parsed_false() -> Self {
-        Self { result: false, parsed: true }
+        Self {
+            result: false,
+            parsed: true,
+        }
     }
 
     fn unparsed() -> Self {
-        Self { result: false, parsed: false }
+        Self {
+            result: false,
+            parsed: false,
+        }
     }
 }
 
@@ -250,10 +259,7 @@ fn resolve_output_ref(
 ) -> Result<String, OutputRefError> {
     let node_output = node_outputs.get(node_id);
     if node_output.is_none() {
-        tracing::warn!(
-            node_id = node_id,
-            "condition_output_ref_unknown_node"
-        );
+        tracing::warn!(node_id = node_id, "condition_output_ref_unknown_node");
         return Ok(String::new());
     }
     let node_output = node_output.unwrap();
@@ -278,9 +284,9 @@ fn resolve_output_ref(
                 // A present null on the lenient no-schema path stringifies to "null",
                 // matching legacy structuredOutput-preference behavior.
                 // condition-evaluator.ts:71-73.
-                serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-                    Ok(serde_json::to_string(&v).unwrap_or_default())
-                }
+                serde_json::Value::Null
+                | serde_json::Value::Array(_)
+                | serde_json::Value::Object(_) => Ok(serde_json::to_string(&v).unwrap_or_default()),
             }
         }
     }
@@ -629,8 +635,14 @@ mod tests {
 
     #[test]
     fn split_multiple_separators() {
-        let parts = split_outside_quotes("$a.output == 'X' && $b.output == 'Y' && $c.output == 'Z'", "&&");
-        assert_eq!(parts, vec!["$a.output == 'X'", "$b.output == 'Y'", "$c.output == 'Z'"]);
+        let parts = split_outside_quotes(
+            "$a.output == 'X' && $b.output == 'Y' && $c.output == 'Z'",
+            "&&",
+        );
+        assert_eq!(
+            parts,
+            vec!["$a.output == 'X'", "$b.output == 'Y'", "$c.output == 'Z'"]
+        );
     }
 
     // ── evaluate_atom — string equality ───────────────────────────────────
@@ -985,11 +997,7 @@ mod tests {
 
     #[test]
     fn atom_dot_field_from_structured_output() {
-        let outputs = outputs_with_structured(
-            "classify",
-            "",
-            json!({"type": "BUG"}),
-        );
+        let outputs = outputs_with_structured("classify", "", json!({"type": "BUG"}));
         let r = eval("$classify.output.type == 'BUG'", &outputs);
         assert!(r.result);
         assert!(r.parsed);
@@ -998,11 +1006,7 @@ mod tests {
     #[test]
     fn atom_shorthand_field() {
         // $node.field == 'VALUE' is equivalent to $node.output.field == 'VALUE'
-        let outputs = outputs_with_structured(
-            "classify",
-            "",
-            json!({"type": "FEATURE"}),
-        );
+        let outputs = outputs_with_structured("classify", "", json!({"type": "FEATURE"}));
         let r = eval("$classify.type == 'FEATURE'", &outputs);
         assert!(r.result);
         assert!(r.parsed);
@@ -1084,14 +1088,18 @@ mod tests {
             "a".to_string(),
             NodeOutput::Completed {
                 output: "X".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         outputs.insert(
             "b".to_string(),
             NodeOutput::Completed {
                 output: "Y".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         let r = eval("$a.output == 'X' && $b.output == 'Y'", &outputs);
@@ -1106,7 +1114,9 @@ mod tests {
             "a".to_string(),
             NodeOutput::Completed {
                 output: "NOPE".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         // "b" is not in outputs — if AND short-circuits correctly, it should never
@@ -1123,14 +1133,18 @@ mod tests {
             "a".to_string(),
             NodeOutput::Completed {
                 output: "X".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         outputs.insert(
             "b".to_string(),
             NodeOutput::Completed {
                 output: "WRONG".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         let r = eval("$a.output == 'X' && $b.output == 'Y'", &outputs);
@@ -1147,7 +1161,9 @@ mod tests {
             "a".to_string(),
             NodeOutput::Completed {
                 output: "X".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         // "b" not in outputs — if OR short-circuits, it's never evaluated.
@@ -1163,14 +1179,18 @@ mod tests {
             "a".to_string(),
             NodeOutput::Completed {
                 output: "NOPE".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         outputs.insert(
             "b".to_string(),
             NodeOutput::Completed {
                 output: "Y".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         let r = eval("$a.output == 'X' || $b.output == 'Y'", &outputs);
@@ -1185,14 +1205,18 @@ mod tests {
             "a".to_string(),
             NodeOutput::Completed {
                 output: "NOPE".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         outputs.insert(
             "b".to_string(),
             NodeOutput::Completed {
                 output: "NOPE".to_string(),
-                session_id: None, structured_output: None, declared_fields: None,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             },
         );
         let r = eval("$a.output == 'X' || $b.output == 'Y'", &outputs);
@@ -1210,10 +1234,37 @@ mod tests {
     fn and_higher_precedence_than_or() {
         let mut outputs = HashMap::new();
         // a=NOPE, b=Y, c=Z → false || (true && true) → true
-        outputs.insert("a".to_string(), NodeOutput::Completed { output: "NOPE".to_string(), session_id: None, structured_output: None, declared_fields: None });
-        outputs.insert("b".to_string(), NodeOutput::Completed { output: "Y".to_string(), session_id: None, structured_output: None, declared_fields: None });
-        outputs.insert("c".to_string(), NodeOutput::Completed { output: "Z".to_string(), session_id: None, structured_output: None, declared_fields: None });
-        let r = eval("$a.output == 'X' || $b.output == 'Y' && $c.output == 'Z'", &outputs);
+        outputs.insert(
+            "a".to_string(),
+            NodeOutput::Completed {
+                output: "NOPE".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
+        outputs.insert(
+            "b".to_string(),
+            NodeOutput::Completed {
+                output: "Y".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
+        outputs.insert(
+            "c".to_string(),
+            NodeOutput::Completed {
+                output: "Z".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
+        let r = eval(
+            "$a.output == 'X' || $b.output == 'Y' && $c.output == 'Z'",
+            &outputs,
+        );
         assert!(r.result, "AND higher precedence than OR");
         assert!(r.parsed);
     }
@@ -1222,10 +1273,37 @@ mod tests {
     fn and_higher_precedence_and_clause_false() {
         let mut outputs = HashMap::new();
         // a=NOPE, b=Y, c=NOPE → false || (true && false) → false
-        outputs.insert("a".to_string(), NodeOutput::Completed { output: "NOPE".to_string(), session_id: None, structured_output: None, declared_fields: None });
-        outputs.insert("b".to_string(), NodeOutput::Completed { output: "Y".to_string(), session_id: None, structured_output: None, declared_fields: None });
-        outputs.insert("c".to_string(), NodeOutput::Completed { output: "NOPE".to_string(), session_id: None, structured_output: None, declared_fields: None });
-        let r = eval("$a.output == 'X' || $b.output == 'Y' && $c.output == 'Z'", &outputs);
+        outputs.insert(
+            "a".to_string(),
+            NodeOutput::Completed {
+                output: "NOPE".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
+        outputs.insert(
+            "b".to_string(),
+            NodeOutput::Completed {
+                output: "Y".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
+        outputs.insert(
+            "c".to_string(),
+            NodeOutput::Completed {
+                output: "NOPE".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
+        let r = eval(
+            "$a.output == 'X' || $b.output == 'Y' && $c.output == 'Z'",
+            &outputs,
+        );
         assert!(!r.result);
         assert!(r.parsed);
     }
@@ -1268,24 +1346,25 @@ mod tests {
         // Schemaless node output is not JSON → resolving .field THROWS.
         let outputs = outputs_with("n", "plain text");
         let result = evaluate_condition("$n.output.field == 'X'", &outputs);
-        assert!(result.is_err(), "OutputRefError must propagate (not be swallowed)");
+        assert!(
+            result.is_err(),
+            "OutputRefError must propagate (not be swallowed)"
+        );
     }
 
     #[test]
     fn schemaless_missing_key_propagates_as_error() {
         let outputs = outputs_with("n", r#"{"other":"val"}"#);
         let result = evaluate_condition("$n.output.missing_field == 'X'", &outputs);
-        assert!(result.is_err(), "missing key in schemaless JSON must propagate as error");
+        assert!(
+            result.is_err(),
+            "missing key in schemaless JSON must propagate as error"
+        );
     }
 
     #[test]
     fn declared_schema_field_not_in_schema_propagates() {
-        let outputs = outputs_with_declared(
-            "n",
-            "",
-            json!({"foo":"val"}),
-            vec!["foo".to_string()],
-        );
+        let outputs = outputs_with_declared("n", "", json!({"foo":"val"}), vec!["foo".to_string()]);
         let result = evaluate_condition("$n.output.bad_field == 'val'", &outputs);
         assert!(result.is_err(), "not-in-schema ref must propagate as error");
     }
@@ -1293,7 +1372,12 @@ mod tests {
     #[test]
     fn skipped_producer_ref_propagates_as_error() {
         let mut outputs = HashMap::new();
-        outputs.insert("n".to_string(), NodeOutput::Skipped { output: String::new() });
+        outputs.insert(
+            "n".to_string(),
+            NodeOutput::Skipped {
+                output: String::new(),
+            },
+        );
         let result = evaluate_condition("$n.output.field == 'X'", &outputs);
         assert!(result.is_err(), "producer-not-run must propagate as error");
     }
@@ -1305,9 +1389,17 @@ mod tests {
         // Bare `$node.output` (no field) on a skipped node → '' (no throw).
         // resolve_output_ref only calls resolve_node_output_field when field is Some.
         let mut outputs = HashMap::new();
-        outputs.insert("n".to_string(), NodeOutput::Skipped { output: String::new() });
+        outputs.insert(
+            "n".to_string(),
+            NodeOutput::Skipped {
+                output: String::new(),
+            },
+        );
         let r = eval("$n.output == ''", &outputs);
-        assert!(r.result, "bare output ref on skipped node returns '' which equals ''");
+        assert!(
+            r.result,
+            "bare output ref on skipped node returns '' which equals ''"
+        );
         assert!(r.parsed);
     }
 
@@ -1338,25 +1430,37 @@ mod tests {
         // Tests all combinations of two boolean outputs through an AND then OR expression.
         let mk = |a: &str, b: &str| -> HashMap<String, NodeOutput> {
             let mut m = HashMap::new();
-            m.insert("a".to_string(), NodeOutput::Completed {
-                output: a.to_string(), session_id: None, structured_output: None, declared_fields: None,
-            });
-            m.insert("b".to_string(), NodeOutput::Completed {
-                output: b.to_string(), session_id: None, structured_output: None, declared_fields: None,
-            });
+            m.insert(
+                "a".to_string(),
+                NodeOutput::Completed {
+                    output: a.to_string(),
+                    session_id: None,
+                    structured_output: None,
+                    declared_fields: None,
+                },
+            );
+            m.insert(
+                "b".to_string(),
+                NodeOutput::Completed {
+                    output: b.to_string(),
+                    session_id: None,
+                    structured_output: None,
+                    declared_fields: None,
+                },
+            );
             m
         };
 
         // AND truth table
-        assert!(eval("$a.output == 'T' && $b.output == 'T'", &mk("T","T")).result);
-        assert!(!eval("$a.output == 'T' && $b.output == 'T'", &mk("T","F")).result);
-        assert!(!eval("$a.output == 'T' && $b.output == 'T'", &mk("F","T")).result);
-        assert!(!eval("$a.output == 'T' && $b.output == 'T'", &mk("F","F")).result);
+        assert!(eval("$a.output == 'T' && $b.output == 'T'", &mk("T", "T")).result);
+        assert!(!eval("$a.output == 'T' && $b.output == 'T'", &mk("T", "F")).result);
+        assert!(!eval("$a.output == 'T' && $b.output == 'T'", &mk("F", "T")).result);
+        assert!(!eval("$a.output == 'T' && $b.output == 'T'", &mk("F", "F")).result);
 
         // OR truth table
-        assert!(eval("$a.output == 'T' || $b.output == 'T'", &mk("T","T")).result);
-        assert!(eval("$a.output == 'T' || $b.output == 'T'", &mk("T","F")).result);
-        assert!(eval("$a.output == 'T' || $b.output == 'T'", &mk("F","T")).result);
-        assert!(!eval("$a.output == 'T' || $b.output == 'T'", &mk("F","F")).result);
+        assert!(eval("$a.output == 'T' || $b.output == 'T'", &mk("T", "T")).result);
+        assert!(eval("$a.output == 'T' || $b.output == 'T'", &mk("T", "F")).result);
+        assert!(eval("$a.output == 'T' || $b.output == 'T'", &mk("F", "T")).result);
+        assert!(!eval("$a.output == 'T' || $b.output == 'T'", &mk("F", "F")).result);
     }
 }

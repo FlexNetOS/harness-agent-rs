@@ -161,7 +161,9 @@ pub(crate) fn is_valid_iso8601_datetime(s: &str) -> bool {
         return false;
     }
     // Must contain 'T' as the date-time separator
-    let Some(t_pos) = s.find('T') else { return false };
+    let Some(t_pos) = s.find('T') else {
+        return false;
+    };
     // Date portion: at least YYYY-MM-DD (10 chars)
     if t_pos < 10 {
         return false;
@@ -250,8 +252,10 @@ mod tests {
             session_id: None,
         };
         let errs = a.validate();
-        assert!(errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
-            "offset +05:30 must be rejected by zod v4 .datetime() (Z-only)");
+        assert!(
+            errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
+            "offset +05:30 must be rejected by zod v4 .datetime() (Z-only)"
+        );
     }
 
     /// FIX-B (cycle 3): zod v4 `.datetime()` rejects `-HH:MM` offsets too. `-08:00` → REJECT.
@@ -269,8 +273,10 @@ mod tests {
             session_id: None,
         };
         let errs = a.validate();
-        assert!(errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
-            "offset -08:00 must be rejected by zod v4 .datetime() (Z-only)");
+        assert!(
+            errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
+            "offset -08:00 must be rejected by zod v4 .datetime() (Z-only)"
+        );
     }
 
     // ── Reject cases: size ────────────────────────────────────────────────
@@ -317,7 +323,10 @@ mod tests {
             session_id: None,
         };
         let errs = a.validate();
-        assert!(errs.contains(&NodeArtifactValidationError::EmptyOutputType), "got: {errs:?}");
+        assert!(
+            errs.contains(&NodeArtifactValidationError::EmptyOutputType),
+            "got: {errs:?}"
+        );
     }
 
     // ── Reject cases: producedAt ──────────────────────────────────────────
@@ -334,7 +343,10 @@ mod tests {
             session_id: None,
         };
         let errs = a.validate();
-        assert!(errs.contains(&NodeArtifactValidationError::InvalidProducedAt), "got: {errs:?}");
+        assert!(
+            errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
+            "got: {errs:?}"
+        );
     }
 
     #[test]
@@ -349,7 +361,10 @@ mod tests {
             session_id: None,
         };
         let errs = a.validate();
-        assert!(errs.contains(&NodeArtifactValidationError::InvalidProducedAt), "got: {errs:?}");
+        assert!(
+            errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
+            "got: {errs:?}"
+        );
     }
 
     #[test]
@@ -364,7 +379,10 @@ mod tests {
             session_id: None,
         };
         let errs = a.validate();
-        assert!(errs.contains(&NodeArtifactValidationError::InvalidProducedAt), "got: {errs:?}");
+        assert!(
+            errs.contains(&NodeArtifactValidationError::InvalidProducedAt),
+            "got: {errs:?}"
+        );
     }
 
     // ── Multiple errors collected ─────────────────────────────────────────
@@ -373,7 +391,7 @@ mod tests {
     fn multiple_errors_collected() {
         let a = NodeArtifact {
             node_id: "n".to_string(),
-            output_type: String::new(),           // empty → error
+            output_type: String::new(), // empty → error
             path: "p".to_string(),
             run_id: "r".to_string(),
             produced_at: "not-a-datetime".to_string(), // invalid → error
@@ -423,7 +441,10 @@ mod tests {
             session_id: None,
         };
         let v = serde_json::to_value(&a).unwrap();
-        assert!(v.get("sessionId").is_none(), "sessionId should be absent when None");
+        assert!(
+            v.get("sessionId").is_none(),
+            "sessionId should be absent when None"
+        );
     }
 
     // ── Round-trip ────────────────────────────────────────────────────────

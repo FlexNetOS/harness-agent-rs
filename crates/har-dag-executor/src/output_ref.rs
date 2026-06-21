@@ -79,7 +79,11 @@ pub struct OutputRefError {
 
 impl OutputRefError {
     /// Construct a new `OutputRefError`. output-ref.ts:38-45.
-    pub fn new(node_id: impl Into<String>, field: impl Into<String>, reason: OutputRefErrorReason) -> Self {
+    pub fn new(
+        node_id: impl Into<String>,
+        field: impl Into<String>,
+        reason: OutputRefErrorReason,
+    ) -> Self {
         Self {
             node_id: node_id.into(),
             field: field.into(),
@@ -160,7 +164,10 @@ fn parse_output_object(text: &str) -> Option<Map<String, Value>> {
     let candidate: &str;
     let fenced: String;
     if let Some(caps) = FENCE_RE.captures(text) {
-        fenced = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+        fenced = caps
+            .get(1)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         candidate = &fenced;
     } else {
         candidate = text;
@@ -212,7 +219,11 @@ pub fn resolve_node_output_field(
     // output-ref.ts:116-118.
     match node_output {
         NodeOutput::Skipped { .. } | NodeOutput::Pending { .. } => {
-            return Err(OutputRefError::new(node_id, field, OutputRefErrorReason::ProducerNotRun));
+            return Err(OutputRefError::new(
+                node_id,
+                field,
+                OutputRefErrorReason::ProducerNotRun,
+            ));
         }
         _ => {}
     }
@@ -220,15 +231,36 @@ pub fn resolve_node_output_field(
     // Extract declared_fields and structured_output from the NodeOutput variant.
     // These fields are present on Completed, Running, and Failed variants.
     let (declared_fields, structured_output, output_text) = match node_output {
-        NodeOutput::Completed { declared_fields, structured_output, output, .. } => {
-            (declared_fields.as_deref(), structured_output.as_ref(), output.as_str())
-        }
-        NodeOutput::Running { declared_fields, structured_output, output, .. } => {
-            (declared_fields.as_deref(), structured_output.as_ref(), output.as_str())
-        }
-        NodeOutput::Failed { declared_fields, structured_output, output, .. } => {
-            (declared_fields.as_deref(), structured_output.as_ref(), output.as_str())
-        }
+        NodeOutput::Completed {
+            declared_fields,
+            structured_output,
+            output,
+            ..
+        } => (
+            declared_fields.as_deref(),
+            structured_output.as_ref(),
+            output.as_str(),
+        ),
+        NodeOutput::Running {
+            declared_fields,
+            structured_output,
+            output,
+            ..
+        } => (
+            declared_fields.as_deref(),
+            structured_output.as_ref(),
+            output.as_str(),
+        ),
+        NodeOutput::Failed {
+            declared_fields,
+            structured_output,
+            output,
+            ..
+        } => (
+            declared_fields.as_deref(),
+            structured_output.as_ref(),
+            output.as_str(),
+        ),
         // Covered above; unreachable here.
         NodeOutput::Pending { .. } | NodeOutput::Skipped { .. } => unreachable!(),
     };
@@ -240,7 +272,11 @@ pub fn resolve_node_output_field(
     // output-ref.ts:125-138.
     if let Some(decl) = declared_fields {
         if !decl.contains(&field.to_string()) {
-            return Err(OutputRefError::new(node_id, field, OutputRefErrorReason::NotInSchema));
+            return Err(OutputRefError::new(
+                node_id,
+                field,
+                OutputRefErrorReason::NotInSchema,
+            ));
         }
         // Prefer the parsed structured payload; fall back to parsing the JSON-serialized output.
         let obj = match structured_obj {
@@ -275,10 +311,18 @@ pub fn resolve_node_output_field(
     // output-ref.ts:153-156.
     let obj = parse_output_object(output_text);
     let Some(obj) = obj else {
-        return Err(OutputRefError::new(node_id, field, OutputRefErrorReason::Unparseable));
+        return Err(OutputRefError::new(
+            node_id,
+            field,
+            OutputRefErrorReason::Unparseable,
+        ));
     };
     if !obj.contains_key(field) {
-        return Err(OutputRefError::new(node_id, field, OutputRefErrorReason::MissingKey));
+        return Err(OutputRefError::new(
+            node_id,
+            field,
+            OutputRefErrorReason::MissingKey,
+        ));
     }
     // Field is present (may be null — callers decide what to do with it).
     Ok(FieldResolution::Value(obj[field].clone()))
@@ -292,7 +336,11 @@ mod tests {
     use serde_json::json;
 
     // Helper constructors for NodeOutput variants.
-    fn completed(output: &str, structured: Option<Value>, declared: Option<Vec<String>>) -> NodeOutput {
+    fn completed(
+        output: &str,
+        structured: Option<Value>,
+        declared: Option<Vec<String>>,
+    ) -> NodeOutput {
         NodeOutput::Completed {
             output: output.to_string(),
             session_id: None,
@@ -301,7 +349,11 @@ mod tests {
         }
     }
 
-    fn failed(output: &str, structured: Option<Value>, declared: Option<Vec<String>>) -> NodeOutput {
+    fn failed(
+        output: &str,
+        structured: Option<Value>,
+        declared: Option<Vec<String>>,
+    ) -> NodeOutput {
         NodeOutput::Failed {
             output: output.to_string(),
             session_id: None,
@@ -368,7 +420,9 @@ mod tests {
 
     #[test]
     fn skipped_throws_producer_not_run() {
-        let no = NodeOutput::Skipped { output: String::new() };
+        let no = NodeOutput::Skipped {
+            output: String::new(),
+        };
         let err = resolve_node_output_field(&no, "mynode", "field").unwrap_err();
         assert_eq!(err.reason, OutputRefErrorReason::ProducerNotRun);
         assert!(err.to_string().contains("did not run"));
@@ -378,7 +432,9 @@ mod tests {
 
     #[test]
     fn pending_throws_producer_not_run() {
-        let no = NodeOutput::Pending { output: String::new() };
+        let no = NodeOutput::Pending {
+            output: String::new(),
+        };
         let err = resolve_node_output_field(&no, "n", "f").unwrap_err();
         assert_eq!(err.reason, OutputRefErrorReason::ProducerNotRun);
     }
@@ -387,22 +443,14 @@ mod tests {
 
     #[test]
     fn declared_schema_field_in_schema_with_value() {
-        let no = completed(
-            r#"{"foo":"bar"}"#,
-            None,
-            Some(vec!["foo".to_string()]),
-        );
+        let no = completed(r#"{"foo":"bar"}"#, None, Some(vec!["foo".to_string()]));
         let res = resolve_node_output_field(&no, "n", "foo").unwrap();
         assert_eq!(res, FieldResolution::Value(json!("bar")));
     }
 
     #[test]
     fn declared_schema_field_not_in_schema_throws_not_in_schema() {
-        let no = completed(
-            r#"{"foo":"bar"}"#,
-            None,
-            Some(vec!["foo".to_string()]),
-        );
+        let no = completed(r#"{"foo":"bar"}"#, None, Some(vec!["foo".to_string()]));
         let err = resolve_node_output_field(&no, "mynode", "baz").unwrap_err();
         assert_eq!(err.reason, OutputRefErrorReason::NotInSchema);
         assert!(err.to_string().contains("not declared in node"));
@@ -560,10 +608,22 @@ mod tests {
     fn error_message_not_in_schema() {
         let err = OutputRefError::new("mynode", "badfield", OutputRefErrorReason::NotInSchema);
         let msg = err.to_string();
-        assert!(msg.contains("'$mynode.output.badfield'"), "ref format: {msg}");
-        assert!(msg.contains("not declared in node 'mynode'"), "node name: {msg}");
-        assert!(msg.contains("output_format schema"), "schema mention: {msg}");
-        assert!(msg.contains("Add 'badfield' to the schema"), "fix hint: {msg}");
+        assert!(
+            msg.contains("'$mynode.output.badfield'"),
+            "ref format: {msg}"
+        );
+        assert!(
+            msg.contains("not declared in node 'mynode'"),
+            "node name: {msg}"
+        );
+        assert!(
+            msg.contains("output_format schema"),
+            "schema mention: {msg}"
+        );
+        assert!(
+            msg.contains("Add 'badfield' to the schema"),
+            "fix hint: {msg}"
+        );
     }
 
     #[test]

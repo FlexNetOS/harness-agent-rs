@@ -70,9 +70,7 @@ pub fn is_docker() -> bool {
 pub fn expand_tilde(path: &str) -> PathBuf {
     if let Some(after) = path.strip_prefix('~') {
         // path.slice(1).replace(/^[/\\]/, '') in JS
-        let trimmed = after
-            .trim_start_matches('/')
-            .trim_start_matches('\\');
+        let trimmed = after.trim_start_matches('/').trim_start_matches('\\');
         let home = home_dir();
         if trimmed.is_empty() {
             home
@@ -499,14 +497,20 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn expand_tilde_plain_path() {
-        assert_eq!(expand_tilde("/absolute/path"), PathBuf::from("/absolute/path"));
+        assert_eq!(
+            expand_tilde("/absolute/path"),
+            PathBuf::from("/absolute/path")
+        );
     }
 
     #[test]
     #[serial_test::serial]
     fn expand_tilde_bare_tilde() {
         let result = expand_tilde("~");
-        assert!(result.as_os_str().len() > 1, "bare ~ should expand to home dir");
+        assert!(
+            result.as_os_str().len() > 1,
+            "bare ~ should expand to home dir"
+        );
         assert_ne!(result, PathBuf::from("~"));
     }
 
@@ -669,7 +673,11 @@ mod tests {
     fn command_paths_custom_folder_appended_last() {
         assert_eq!(
             get_command_folder_search_paths(Some("custom-cmds")),
-            vec![".archon/commands", ".archon/commands/defaults", "custom-cmds"]
+            vec![
+                ".archon/commands",
+                ".archon/commands/defaults",
+                "custom-cmds"
+            ]
         );
     }
 
@@ -763,7 +771,9 @@ mod tests {
                 let path = get_run_artifacts_path("owner", "repo", "run-123").unwrap();
                 assert_eq!(
                     path,
-                    PathBuf::from("/home/test/.archon/workspaces/owner/repo/artifacts/runs/run-123")
+                    PathBuf::from(
+                        "/home/test/.archon/workspaces/owner/repo/artifacts/runs/run-123"
+                    )
                 );
             },
         );
@@ -855,15 +865,12 @@ mod tests {
                 ("WORKSPACE_PATH", None),
             ],
             || {
-                let cwd = PathBuf::from(
-                    "/home/test/.archon/workspaces/myorg/myrepo/source/some/subdir",
-                );
+                let cwd =
+                    PathBuf::from("/home/test/.archon/workspaces/myorg/myrepo/source/some/subdir");
                 let result = resolve_project_root_from_cwd(&cwd).unwrap();
                 assert_eq!(
                     result,
-                    Some(PathBuf::from(
-                        "/home/test/.archon/workspaces/myorg/myrepo"
-                    ))
+                    Some(PathBuf::from("/home/test/.archon/workspaces/myorg/myrepo"))
                 );
             },
         );

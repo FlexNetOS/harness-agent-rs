@@ -129,7 +129,10 @@ pub fn classify_isolation_error(message: &str, stderr: Option<&str>) -> String {
         }
     }
 
-    format!("**Error:** Could not create isolated workspace ({}).", message)
+    format!(
+        "**Error:** Could not create isolated workspace ({}).",
+        message
+    )
 }
 
 /// Returns `true` if the error is a known infrastructure failure (should
@@ -204,7 +207,10 @@ mod tests {
     #[test]
     fn classify_submodule_failed() {
         let msg = classify_isolation_error("submodule initialization failed", None);
-        assert!(msg.contains("Submodule initialization failed"), "got: {msg}");
+        assert!(
+            msg.contains("Submodule initialization failed"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -242,7 +248,10 @@ mod tests {
 
     #[test]
     fn isolation_blocked_error_fields() {
-        let err = IsolationBlockedError::new("workspace limit reached", IsolationBlockReason::CreationFailed);
+        let err = IsolationBlockedError::new(
+            "workspace limit reached",
+            IsolationBlockReason::CreationFailed,
+        );
         assert_eq!(err.to_string(), "workspace limit reached");
         assert_eq!(err.reason, IsolationBlockReason::CreationFailed);
     }

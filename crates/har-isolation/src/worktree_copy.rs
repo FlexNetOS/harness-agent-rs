@@ -99,13 +99,18 @@ fn normalize_path(path: &Path) -> PathBuf {
             Component::ParentDir => {
                 // Only pop a Normal segment — never pop RootDir or Prefix.
                 match out.last() {
-                    Some(Component::Normal(_)) => { out.pop(); }
+                    Some(Component::Normal(_)) => {
+                        out.pop();
+                    }
                     _ => {
                         // If there's a root or nothing, just push the `..` (or drop it).
                         // For rooted paths the `..` is effectively a no-op past the root.
                         // For relative paths without a root, we push it so relative paths
                         // that escape their prefix are represented correctly.
-                        if matches!(out.last(), Some(Component::RootDir) | Some(Component::Prefix(_))) {
+                        if matches!(
+                            out.last(),
+                            Some(Component::RootDir) | Some(Component::Prefix(_))
+                        ) {
                             // Can't go above root — drop the `..`
                         } else {
                             out.push(component);
@@ -197,9 +202,7 @@ pub async fn copy_worktree_file(
                 copy_dir_recursive(&source_path, &dest_path).await
             } else {
                 // Copy single file (mirrors `copyFile(src, dst)`).
-                tokio::fs::copy(&source_path, &dest_path)
-                    .await
-                    .map(|_| ())
+                tokio::fs::copy(&source_path, &dest_path).await.map(|_| ())
             };
 
             match result {
@@ -279,8 +282,7 @@ pub async fn copy_worktree_files(
                 error!(entry = %file_config, err = %e, "invalid_config_entry");
             }
             Ok(entry) => {
-                let success =
-                    copy_worktree_file(canonical_repo_path, worktree_path, &entry).await;
+                let success = copy_worktree_file(canonical_repo_path, worktree_path, &entry).await;
                 if success {
                     copied.push(entry);
                 }
@@ -384,22 +386,29 @@ mod tests {
         // the real `/etc/hosts`.
         let src_dir = tempdir().unwrap();
         let dst_dir = tempdir().unwrap();
-        tokio::fs::create_dir_all(src_dir.path().join("etc")).await.unwrap();
-        tokio::fs::write(src_dir.path().join("etc/hosts"), "INNER").await.unwrap();
+        tokio::fs::create_dir_all(src_dir.path().join("etc"))
+            .await
+            .unwrap();
+        tokio::fs::write(src_dir.path().join("etc/hosts"), "INNER")
+            .await
+            .unwrap();
 
-        let copied = copy_worktree_files(
-            src_dir.path(),
-            dst_dir.path(),
-            &["/etc/hosts".to_string()],
-        )
-        .await;
+        let copied =
+            copy_worktree_files(src_dir.path(), dst_dir.path(), &["/etc/hosts".to_string()]).await;
 
-        assert_eq!(copied.len(), 1, "absolute entry resolving under root should be copied");
+        assert_eq!(
+            copied.len(),
+            1,
+            "absolute entry resolving under root should be copied"
+        );
         assert_eq!(copied[0].source, "/etc/hosts");
         let content = tokio::fs::read_to_string(dst_dir.path().join("etc/hosts"))
             .await
             .unwrap();
-        assert_eq!(content, "INNER", "must copy the under-root file, not the real /etc/hosts");
+        assert_eq!(
+            content, "INNER",
+            "must copy the under-root file, not the real /etc/hosts"
+        );
     }
 
     #[test]
@@ -461,9 +470,12 @@ mod tests {
         tokio::fs::create_dir_all(src_dir.path().join("data/fixtures"))
             .await
             .unwrap();
-        tokio::fs::write(src_dir.path().join("data/fixtures/seed.sql"), "INSERT INTO foo VALUES (1);")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            src_dir.path().join("data/fixtures/seed.sql"),
+            "INSERT INTO foo VALUES (1);",
+        )
+        .await
+        .unwrap();
         tokio::fs::write(src_dir.path().join("data/config.json"), r#"{"key":"val"}"#)
             .await
             .unwrap();
@@ -555,8 +567,12 @@ mod tests {
         let src_dir = tempdir().unwrap();
         let dst_dir = tempdir().unwrap();
 
-        tokio::fs::write(src_dir.path().join(".env"), "A=1").await.unwrap();
-        tokio::fs::write(src_dir.path().join("config.yaml"), "x: y").await.unwrap();
+        tokio::fs::write(src_dir.path().join(".env"), "A=1")
+            .await
+            .unwrap();
+        tokio::fs::write(src_dir.path().join("config.yaml"), "x: y")
+            .await
+            .unwrap();
 
         let result = copy_worktree_files(
             src_dir.path(),
@@ -584,7 +600,11 @@ mod tests {
         )
         .await;
 
-        assert_eq!(result.len(), 1, "only the existing file should be in result");
+        assert_eq!(
+            result.len(),
+            1,
+            "only the existing file should be in result"
+        );
         assert_eq!(result[0].source, "exists.txt");
     }
 
@@ -602,7 +622,7 @@ mod tests {
             dst_dir.path(),
             &[
                 ".env".to_string(),
-                "".to_string(),   // empty entry — should be skipped, not panic
+                "".to_string(),    // empty entry — should be skipped, not panic
                 "   ".to_string(), // whitespace only
             ],
         )

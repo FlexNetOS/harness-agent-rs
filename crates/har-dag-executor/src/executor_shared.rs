@@ -182,18 +182,8 @@ pub struct RawSubprocessError {
 /// Truncation: tail-truncation (last 2000 chars) + `"\n…[truncated]"` suffix.
 /// executor-shared.ts:116-161.
 pub fn format_subprocess_failure(err: &RawSubprocessError, label: &str) -> SubprocessFailure {
-    let stderr = err
-        .stderr
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let raw_message = err
-        .message
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let stderr = err.stderr.as_deref().unwrap_or("").trim().to_string();
+    let raw_message = err.message.as_deref().unwrap_or("").trim().to_string();
 
     // The first line of Node's ExecFileException.message is `Command failed: <cmd>`.
     // For `bash -c <body>` / `bun -e <body>` that line embeds the full script body.
@@ -277,9 +267,8 @@ const CREDIT_EXHAUSTION_PATTERNS: &[&str] = &[
 /// Extract a reset-time clause from a session-limit message, e.g. "resets 3am (America/Mexico_City)".
 /// executor-shared.ts:181-184.
 fn extract_reset_time(text: &str) -> Option<String> {
-    static RESET_RE: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"(?i)resets\s+([^\n·.!]+)").expect("reset_time regex")
-    });
+    static RESET_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?i)resets\s+([^\n·.!]+)").expect("reset_time regex"));
     RESET_RE
         .captures(text)
         .and_then(|c| c.get(1))
@@ -300,7 +289,10 @@ pub fn detect_credit_exhaustion(text: &str) -> Option<String> {
                 "Claude session limit reached — resets {}. Abandon this run and retry after reset.",
                 rt
             ),
-            None => "Claude session limit reached — abandon this run and retry when the session resets.".to_string(),
+            None => {
+                "Claude session limit reached — abandon this run and retry when the session resets."
+                    .to_string()
+            }
         });
     }
 
@@ -418,7 +410,11 @@ pub fn substitute_workflow_variables(
     }
 
     // Guard for missing docsDir. executor-shared.ts:414.
-    let resolved_docs_dir = if docs_dir.is_empty() { "docs/" } else { docs_dir };
+    let resolved_docs_dir = if docs_dir.is_empty() {
+        "docs/"
+    } else {
+        docs_dir
+    };
 
     // Substitute safe variables (always). executor-shared.ts:419-423.
     // Note: source uses $WORKFLOW_ID but callers pass a run-ID; we map both per the
@@ -835,10 +831,7 @@ pub struct MarkdownEntry {
 #[async_trait::async_trait]
 pub trait CommandPromptDeps: Send + Sync {
     /// Read a file's UTF-8 contents. Returns `None` for ENOENT; `Err` for EACCES or other.
-    async fn read_file(
-        &self,
-        path: &Path,
-    ) -> Result<Option<String>, CommandLoadIoError>;
+    async fn read_file(&self, path: &Path) -> Result<Option<String>, CommandLoadIoError>;
 
     /// Walk `dir` one subfolder deep and return all `.md` files with their derived command names.
     /// Returns `Ok(vec![])` if the directory does not exist (not an error). executor-shared.ts:270.
@@ -928,10 +921,7 @@ pub async fn load_command_prompt(
 
     // Build search path list: repo paths + home path. executor-shared.ts:260-267.
     let relative_folders = get_command_folder_search_paths(configured_folder);
-    let mut search_dirs: Vec<PathBuf> = relative_folders
-        .iter()
-        .map(|f| cwd.join(f))
-        .collect();
+    let mut search_dirs: Vec<PathBuf> = relative_folders.iter().map(|f| cwd.join(f)).collect();
     search_dirs.push(deps.home_commands_path());
 
     // Search repo + home directories. executor-shared.ts:269-307.
@@ -941,9 +931,7 @@ pub async fn load_command_prompt(
             Err(_) => continue, // non-existent or unreadable dirs are silently skipped
         };
 
-        let matched = entries
-            .iter()
-            .find(|e| e.command_name == command_name);
+        let matched = entries.iter().find(|e| e.command_name == command_name);
         let Some(entry) = matched else { continue };
 
         let file_path = dir.join(&entry.relative_path);
@@ -957,39 +945,28 @@ pub async fn load_command_prompt(
                     };
                 }
                 debug!(command_name, file_path = %file_path.display(), "command_loaded");
-                return LoadCommandResult::Success {
-                    content,
-                };
+                return LoadCommandResult::Success { content };
             }
             Ok(None) => {
                 // ENOENT between walk and read — fall through to not-found.
                 error!(command_name, file_path = %file_path.display(), "command_file_read_error");
                 return LoadCommandResult::Failure {
                     reason: har_workflow_schema::LoadCommandFailureReason::ReadError,
-                    message: format!(
-                        "Error reading command {}.md: file not found",
-                        command_name
-                    ),
+                    message: format!("Error reading command {}.md: file not found", command_name),
                 };
             }
             Err(CommandLoadIoError::PermissionDenied { .. }) => {
                 error!(command_name, file_path = %file_path.display(), "command_file_permission_denied");
                 return LoadCommandResult::Failure {
                     reason: har_workflow_schema::LoadCommandFailureReason::PermissionDenied,
-                    message: format!(
-                        "Permission denied reading command: {}.md",
-                        command_name
-                    ),
+                    message: format!("Permission denied reading command: {}.md", command_name),
                 };
             }
             Err(CommandLoadIoError::Io { message, .. }) => {
                 error!(command_name, file_path = %file_path.display(), err = %message, "command_file_read_error");
                 return LoadCommandResult::Failure {
                     reason: har_workflow_schema::LoadCommandFailureReason::ReadError,
-                    message: format!(
-                        "Error reading command {}.md: {}",
-                        command_name, message
-                    ),
+                    message: format!("Error reading command {}.md: {}", command_name, message),
                 };
             }
         }
@@ -1019,7 +996,8 @@ pub async fn load_command_prompt(
                                 if content.trim().is_empty() {
                                     error!(command_name, "command_app_default_empty");
                                     return LoadCommandResult::Failure {
-                                        reason: har_workflow_schema::LoadCommandFailureReason::EmptyFile,
+                                        reason:
+                                            har_workflow_schema::LoadCommandFailureReason::EmptyFile,
                                         message: format!(
                                             "App default command file is empty: {}.md",
                                             command_name
@@ -1115,7 +1093,10 @@ mod tests {
 
     #[test]
     fn unknown_pattern_is_unknown() {
-        assert_eq!(classify_error("something went very wrong"), ErrorType::Unknown);
+        assert_eq!(
+            classify_error("something went very wrong"),
+            ErrorType::Unknown
+        );
     }
 
     #[test]
@@ -1136,7 +1117,10 @@ mod tests {
     #[test]
     fn classify_is_case_insensitive() {
         assert_eq!(classify_error("UNAUTHORIZED request"), ErrorType::Fatal);
-        assert_eq!(classify_error("TIMEOUT while waiting"), ErrorType::Transient);
+        assert_eq!(
+            classify_error("TIMEOUT while waiting"),
+            ErrorType::Transient
+        );
     }
 
     #[test]
@@ -1191,7 +1175,9 @@ mod tests {
     #[test]
     fn strips_command_failed_prefix() {
         let err = RawSubprocessError {
-            message: Some("Command failed: bash -c 'very long script body'\nactual error here".to_string()),
+            message: Some(
+                "Command failed: bash -c 'very long script body'\nactual error here".to_string(),
+            ),
             stderr: None,
             code: Some("2".to_string()),
             ..Default::default()
@@ -1345,7 +1331,7 @@ mod tests {
         .unwrap();
         assert!(result.prompt.contains("run-123"));
         assert!(result.prompt.contains("hello world")); // $USER_MESSAGE
-        // $ARGUMENTS also → "hello world"
+                                                        // $ARGUMENTS also → "hello world"
         assert_eq!(
             result.prompt,
             "run-123 hello world hello world /tmp/artifacts main docs/ user input rejected prev out"
@@ -1426,7 +1412,10 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(result.prompt, "Context: issue text and also issue text and issue text");
+        assert_eq!(
+            result.prompt,
+            "Context: issue text and also issue text and issue text"
+        );
         assert!(result.context_substituted);
     }
 
@@ -1466,17 +1455,7 @@ mod tests {
     fn global_replacement_replaces_all_occurrences() {
         let prompt = "$USER_MESSAGE then $USER_MESSAGE again";
         let result = substitute_workflow_variables(
-            prompt,
-            "r",
-            "X",
-            "/arts",
-            "main",
-            "docs/",
-            None,
-            None,
-            None,
-            None,
-            false,
+            prompt, "r", "X", "/arts", "main", "docs/", None, None, None, None, false,
         )
         .unwrap();
         assert_eq!(result.prompt, "X then X again");
@@ -1523,14 +1502,7 @@ mod tests {
     fn no_context_no_append() {
         let template = "Do the thing";
         let result = build_prompt_with_context(
-            template,
-            "r",
-            "msg",
-            "/arts",
-            "main",
-            "docs/",
-            None,
-            "label",
+            template, "r", "msg", "/arts", "main", "docs/", None, "label",
         )
         .unwrap();
         assert_eq!(result, "Do the thing");
@@ -1572,7 +1544,10 @@ mod tests {
 
     #[test]
     fn detects_plain_signal_on_own_line() {
-        assert!(detect_completion_signal("line1\nCOMPLETE\nline3", "COMPLETE"));
+        assert!(detect_completion_signal(
+            "line1\nCOMPLETE\nline3",
+            "COMPLETE"
+        ));
     }
 
     #[test]
@@ -1713,7 +1688,6 @@ mod tests {
 
     // ── safe_send_message ─────────────────────────────────────────────────────
 
-
     struct FakePlatform {
         should_fail: bool,
         fail_message: String,
@@ -1795,9 +1769,8 @@ mod tests {
             fail_message: "some unknown platform error".to_string(),
         };
         let mut tracker = UnknownErrorTracker { count: 2 }; // already at 2
-        // Third call → count becomes 3 ≥ UNKNOWN_ERROR_THRESHOLD → error.
-        let result =
-            safe_send_message(&platform, "c", "m", None, None, Some(&mut tracker)).await;
+                                                            // Third call → count becomes 3 ≥ UNKNOWN_ERROR_THRESHOLD → error.
+        let result = safe_send_message(&platform, "c", "m", None, None, Some(&mut tracker)).await;
         assert!(matches!(result, Err(SafeSendError::UnknownThreshold(3, _))));
     }
 
@@ -1834,7 +1807,10 @@ mod tests {
             .await
             .unwrap();
         assert!(!r);
-        assert_eq!(tracker.count, 0, "TRANSIENT must reset the consecutive-UNKNOWN counter");
+        assert_eq!(
+            tracker.count, 0,
+            "TRANSIENT must reset the consecutive-UNKNOWN counter"
+        );
 
         // A following UNKNOWN is only the FIRST in a new run → count 1, below threshold, no abort.
         let r2 = safe_send_message(&unknown, "c", "m", None, None, Some(&mut tracker))
@@ -1855,7 +1831,10 @@ mod tests {
         let mut tracker = UnknownErrorTracker { count: 2 };
         let result = safe_send_message(&fatal, "c", "m", None, None, Some(&mut tracker)).await;
         assert!(matches!(result, Err(SafeSendError::Fatal(_))));
-        assert_eq!(tracker.count, 0, "FATAL (non-UNKNOWN) must reset the counter per source:627");
+        assert_eq!(
+            tracker.count, 0,
+            "FATAL (non-UNKNOWN) must reset the counter per source:627"
+        );
     }
 
     // ── load_command_prompt ───────────────────────────────────────────────────
@@ -1958,10 +1937,13 @@ mod tests {
             dir.clone(),
             vec![("review.md".to_string(), "review".to_string())],
         );
-        fs.files.insert(dir.join("review.md"), Some("# Review prompt".to_string()));
+        fs.files
+            .insert(dir.join("review.md"), Some("# Review prompt".to_string()));
 
         let result = load_command_prompt(&fs, &cwd, "review", None).await;
-        assert!(matches!(result, LoadCommandResult::Success { ref content } if content == "# Review prompt"));
+        assert!(
+            matches!(result, LoadCommandResult::Success { ref content } if content == "# Review prompt")
+        );
     }
 
     /// archon-paths.ts:183-196: `.archon/commands` is index 0 (highest repo precedence).
@@ -2013,7 +1995,10 @@ mod tests {
             defaults_dir.clone(),
             vec![("triage.md".to_string(), "triage".to_string())],
         );
-        fs.files.insert(defaults_dir.join("triage.md"), Some("defaults version".to_string()));
+        fs.files.insert(
+            defaults_dir.join("triage.md"),
+            Some("defaults version".to_string()),
+        );
 
         let result = load_command_prompt(&fs, &cwd, "triage", None).await;
         assert!(
@@ -2035,7 +2020,10 @@ mod tests {
             defaults_dir.clone(),
             vec![("cmd.md".to_string(), "cmd".to_string())],
         );
-        fs.files.insert(defaults_dir.join("cmd.md"), Some("defaults version".to_string()));
+        fs.files.insert(
+            defaults_dir.join("cmd.md"),
+            Some("defaults version".to_string()),
+        );
 
         // In configuredFolder (lower precedence).
         let cfg_dir = cwd.join("custom-cmds");
@@ -2043,7 +2031,8 @@ mod tests {
             cfg_dir.clone(),
             vec![("cmd.md".to_string(), "cmd".to_string())],
         );
-        fs.files.insert(cfg_dir.join("cmd.md"), Some("custom version".to_string()));
+        fs.files
+            .insert(cfg_dir.join("cmd.md"), Some("custom version".to_string()));
 
         let result = load_command_prompt(&fs, &cwd, "cmd", Some("custom-cmds")).await;
         assert!(
@@ -2064,7 +2053,8 @@ mod tests {
             cfg_dir.clone(),
             vec![("unique.md".to_string(), "unique".to_string())],
         );
-        fs.files.insert(cfg_dir.join("unique.md"), Some("custom unique".to_string()));
+        fs.files
+            .insert(cfg_dir.join("unique.md"), Some("custom unique".to_string()));
 
         let result = load_command_prompt(&fs, &cwd, "unique", Some("custom-cmds")).await;
         assert!(
@@ -2081,24 +2071,36 @@ mod tests {
     fn configured_folder_dedup_matches_source() {
         assert_eq!(
             get_command_folder_search_paths(None),
-            vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
+            vec![
+                ".archon/commands".to_string(),
+                ".archon/commands/defaults".to_string()
+            ],
         );
         // Equals index 0 → skipped (dedup guard).
         assert_eq!(
             get_command_folder_search_paths(Some(".archon/commands")),
-            vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
+            vec![
+                ".archon/commands".to_string(),
+                ".archon/commands/defaults".to_string()
+            ],
             "configuredFolder == '.archon/commands' must be deduped (archon-paths.ts:189)"
         );
         // Equals index 1 → skipped (dedup guard).
         assert_eq!(
             get_command_folder_search_paths(Some(".archon/commands/defaults")),
-            vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
+            vec![
+                ".archon/commands".to_string(),
+                ".archon/commands/defaults".to_string()
+            ],
             "configuredFolder == '.archon/commands/defaults' must be deduped (archon-paths.ts:190)"
         );
         // Empty string is falsy in TS → skipped.
         assert_eq!(
             get_command_folder_search_paths(Some("")),
-            vec![".archon/commands".to_string(), ".archon/commands/defaults".to_string()],
+            vec![
+                ".archon/commands".to_string(),
+                ".archon/commands/defaults".to_string()
+            ],
             "empty configuredFolder is falsy in source (archon-paths.ts:188) → not appended"
         );
         // Distinct folder → appended LAST (lowest repo precedence).
@@ -2170,7 +2172,8 @@ mod tests {
             dir.clone(),
             vec![("empty.md".to_string(), "empty".to_string())],
         );
-        fs.files.insert(dir.join("empty.md"), Some("   ".to_string())); // whitespace only
+        fs.files
+            .insert(dir.join("empty.md"), Some("   ".to_string())); // whitespace only
 
         let result = load_command_prompt(&fs, &cwd, "empty", None).await;
         assert!(matches!(
@@ -2204,5 +2207,4 @@ mod tests {
             }
         ));
     }
-
 }

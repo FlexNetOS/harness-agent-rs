@@ -1,3 +1,5 @@
+use crate::types::{CreateEnvironmentParams, IsolationEnvironmentRow, IsolationWorkflowType};
+use crate::Result;
 /// Isolation store interface (MAP→hf seam).
 ///
 /// Ports `packages/isolation/src/store.ts`.
@@ -6,10 +8,6 @@
 /// environment state. The concrete impl (MAP→hf) is a separate cycle.
 /// Here we define the Rust trait + the data shapes it passes.
 use async_trait::async_trait;
-use crate::types::{
-    CreateEnvironmentParams, IsolationEnvironmentRow, IsolationWorkflowType,
-};
-use crate::Result;
 
 /// Durable isolation environment store.
 ///
@@ -53,10 +51,10 @@ pub trait IsolationStore: Send + Sync {
 #[cfg(test)]
 pub mod test_support {
     use super::*;
+    use crate::types::{EnvironmentStatus, IsolationProviderType};
+    use chrono::Utc;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
-    use chrono::Utc;
-    use crate::types::{IsolationProviderType, EnvironmentStatus};
 
     /// Simple in-memory store for unit tests.
     #[derive(Default)]
@@ -83,12 +81,15 @@ pub mod test_support {
             workflow_id: &str,
         ) -> Result<Option<IsolationEnvironmentRow>> {
             let rows = self.rows.lock().unwrap();
-            Ok(rows.values().find(|r| {
-                r.codebase_id == codebase_id
-                    && r.workflow_type == workflow_type
-                    && r.workflow_id == workflow_id
-                    && r.status == EnvironmentStatus::Active
-            }).cloned())
+            Ok(rows
+                .values()
+                .find(|r| {
+                    r.codebase_id == codebase_id
+                        && r.workflow_type == workflow_type
+                        && r.workflow_id == workflow_id
+                        && r.status == EnvironmentStatus::Active
+                })
+                .cloned())
         }
 
         async fn create(&self, env: CreateEnvironmentParams) -> Result<IsolationEnvironmentRow> {
@@ -106,7 +107,10 @@ pub mod test_support {
                 created_by_user_id: env.created_by_user_id,
                 metadata: env.metadata.unwrap_or_default(),
             };
-            self.rows.lock().unwrap().insert(row.id.clone(), row.clone());
+            self.rows
+                .lock()
+                .unwrap()
+                .insert(row.id.clone(), row.clone());
             Ok(row)
         }
 
@@ -127,9 +131,10 @@ pub mod test_support {
 
         async fn count_active_by_codebase(&self, codebase_id: &str) -> Result<u32> {
             let rows = self.rows.lock().unwrap();
-            let count = rows.values().filter(|r| {
-                r.codebase_id == codebase_id && r.status == EnvironmentStatus::Active
-            }).count();
+            let count = rows
+                .values()
+                .filter(|r| r.codebase_id == codebase_id && r.status == EnvironmentStatus::Active)
+                .count();
             Ok(count as u32)
         }
     }
@@ -146,8 +151,8 @@ pub mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::test_support::InMemoryIsolationStore;
+    use super::*;
     use crate::types::{CreateEnvironmentParams, IsolationWorkflowType};
 
     fn sample_params() -> CreateEnvironmentParams {

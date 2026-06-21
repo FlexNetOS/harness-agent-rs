@@ -27,12 +27,8 @@ use std::path::Path;
 
 /// The four filenames Bun auto-loads from CWD (in loading order).
 /// strip-cwd-env.ts:27.
-pub const BUN_AUTO_LOADED_ENV_FILES: &[&str] = &[
-    ".env",
-    ".env.local",
-    ".env.development",
-    ".env.production",
-];
+pub const BUN_AUTO_LOADED_ENV_FILES: &[&str] =
+    &[".env", ".env.local", ".env.development", ".env.production"];
 
 /// `CLAUDE_CODE_*` vars that are auth-related and must be KEPT in process.env.
 /// strip-cwd-env.ts:30-34.

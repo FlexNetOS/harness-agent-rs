@@ -115,10 +115,8 @@ pub const TERMINAL_WORKFLOW_STATUSES: &[WorkflowRunStatus] = &[
 
 /// Statuses that allow a user to resume execution.
 /// workflow-run.ts:29-32.
-pub const RESUMABLE_WORKFLOW_STATUSES: &[WorkflowRunStatus] = &[
-    WorkflowRunStatus::Failed,
-    WorkflowRunStatus::Paused,
-];
+pub const RESUMABLE_WORKFLOW_STATUSES: &[WorkflowRunStatus] =
+    &[WorkflowRunStatus::Failed, WorkflowRunStatus::Paused];
 
 // ---------------------------------------------------------------------------
 // WorkflowStepStatus
@@ -266,7 +264,10 @@ impl NodeOutput {
 
     /// Returns `true` if the node is in a terminal state (completed, failed, or skipped).
     pub fn is_terminal(&self) -> bool {
-        matches!(self, NodeOutput::Completed { .. } | NodeOutput::Failed { .. } | NodeOutput::Skipped { .. })
+        matches!(
+            self,
+            NodeOutput::Completed { .. } | NodeOutput::Failed { .. } | NodeOutput::Skipped { .. }
+        )
     }
 }
 
@@ -307,8 +308,12 @@ pub fn assert_node_output_covers_node_state(state: NodeState) -> NodeOutput {
             structured_output: None,
             declared_fields: None,
         },
-        NodeState::Pending => NodeOutput::Pending { output: String::new() },
-        NodeState::Skipped => NodeOutput::Skipped { output: String::new() },
+        NodeState::Pending => NodeOutput::Pending {
+            output: String::new(),
+        },
+        NodeState::Skipped => NodeOutput::Skipped {
+            output: String::new(),
+        },
     }
 }
 
@@ -433,7 +438,10 @@ pub struct ApprovalContext {
 
     /// Max rejection attempts before cancellation (default 3).
     /// `number` in TS (no `.int()`) → `f64`. workflow-run.ts:139.
-    #[serde(skip_serializing_if = "Option::is_none", rename = "onRejectMaxAttempts")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "onRejectMaxAttempts"
+    )]
     pub on_reject_max_attempts: Option<f64>,
 }
 
@@ -467,7 +475,9 @@ pub enum ApprovalContextType {
 ///   - `val["nodeId"]` is a JSON string
 ///   - `val["message"]` is a JSON string
 pub fn is_approval_context(val: &Value) -> bool {
-    let Some(obj) = val.as_object() else { return false };
+    let Some(obj) = val.as_object() else {
+        return false;
+    };
     obj.get("nodeId").and_then(Value::as_str).is_some()
         && obj.get("message").and_then(Value::as_str).is_some()
 }
@@ -508,18 +518,41 @@ mod tests {
 
     #[test]
     fn workflow_run_status_wire_names() {
-        assert_eq!(serde_json::to_value(WorkflowRunStatus::Pending).unwrap(), json!("pending"));
-        assert_eq!(serde_json::to_value(WorkflowRunStatus::Running).unwrap(), json!("running"));
-        assert_eq!(serde_json::to_value(WorkflowRunStatus::Completed).unwrap(), json!("completed"));
-        assert_eq!(serde_json::to_value(WorkflowRunStatus::Failed).unwrap(), json!("failed"));
-        assert_eq!(serde_json::to_value(WorkflowRunStatus::Cancelled).unwrap(), json!("cancelled"));
-        assert_eq!(serde_json::to_value(WorkflowRunStatus::Paused).unwrap(), json!("paused"));
+        assert_eq!(
+            serde_json::to_value(WorkflowRunStatus::Pending).unwrap(),
+            json!("pending")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowRunStatus::Running).unwrap(),
+            json!("running")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowRunStatus::Completed).unwrap(),
+            json!("completed")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowRunStatus::Failed).unwrap(),
+            json!("failed")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowRunStatus::Cancelled).unwrap(),
+            json!("cancelled")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowRunStatus::Paused).unwrap(),
+            json!("paused")
+        );
     }
 
     #[test]
     fn workflow_run_status_round_trip() {
         let all = [
-            "pending", "running", "completed", "failed", "cancelled", "paused",
+            "pending",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "paused",
         ];
         for s in all {
             let status: WorkflowRunStatus = serde_json::from_value(json!(s)).unwrap();
@@ -561,22 +594,52 @@ mod tests {
 
     #[test]
     fn workflow_step_status_wire_names() {
-        assert_eq!(serde_json::to_value(WorkflowStepStatus::Pending).unwrap(), json!("pending"));
-        assert_eq!(serde_json::to_value(WorkflowStepStatus::Running).unwrap(), json!("running"));
-        assert_eq!(serde_json::to_value(WorkflowStepStatus::Completed).unwrap(), json!("completed"));
-        assert_eq!(serde_json::to_value(WorkflowStepStatus::Failed).unwrap(), json!("failed"));
-        assert_eq!(serde_json::to_value(WorkflowStepStatus::Skipped).unwrap(), json!("skipped"));
+        assert_eq!(
+            serde_json::to_value(WorkflowStepStatus::Pending).unwrap(),
+            json!("pending")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowStepStatus::Running).unwrap(),
+            json!("running")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowStepStatus::Completed).unwrap(),
+            json!("completed")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowStepStatus::Failed).unwrap(),
+            json!("failed")
+        );
+        assert_eq!(
+            serde_json::to_value(WorkflowStepStatus::Skipped).unwrap(),
+            json!("skipped")
+        );
     }
 
     // ── NodeState ────────────────────────────────────────────────────────
 
     #[test]
     fn node_state_wire_names() {
-        assert_eq!(serde_json::to_value(NodeState::Pending).unwrap(), json!("pending"));
-        assert_eq!(serde_json::to_value(NodeState::Running).unwrap(), json!("running"));
-        assert_eq!(serde_json::to_value(NodeState::Completed).unwrap(), json!("completed"));
-        assert_eq!(serde_json::to_value(NodeState::Failed).unwrap(), json!("failed"));
-        assert_eq!(serde_json::to_value(NodeState::Skipped).unwrap(), json!("skipped"));
+        assert_eq!(
+            serde_json::to_value(NodeState::Pending).unwrap(),
+            json!("pending")
+        );
+        assert_eq!(
+            serde_json::to_value(NodeState::Running).unwrap(),
+            json!("running")
+        );
+        assert_eq!(
+            serde_json::to_value(NodeState::Completed).unwrap(),
+            json!("completed")
+        );
+        assert_eq!(
+            serde_json::to_value(NodeState::Failed).unwrap(),
+            json!("failed")
+        );
+        assert_eq!(
+            serde_json::to_value(NodeState::Skipped).unwrap(),
+            json!("skipped")
+        );
     }
 
     #[test]
@@ -605,7 +668,13 @@ mod tests {
             "declaredFields": ["foo"]
         });
         let no: NodeOutput = serde_json::from_value(v).unwrap();
-        if let NodeOutput::Completed { session_id, structured_output, declared_fields, .. } = &no {
+        if let NodeOutput::Completed {
+            session_id,
+            structured_output,
+            declared_fields,
+            ..
+        } = &no
+        {
             assert_eq!(session_id.as_deref(), Some("sess-1"));
             assert!(structured_output.is_some());
             assert_eq!(declared_fields.as_ref().unwrap(), &["foo"]);
@@ -745,8 +814,10 @@ mod tests {
             "started_at": "2024-01-01T00:00:00Z"
         });
         // zod v4: absent .nullable() key → REJECT
-        assert!(serde_json::from_value::<WorkflowRun>(v).is_err(),
-            "absent nullable fields must be rejected (zod v4 .nullable() semantics)");
+        assert!(
+            serde_json::from_value::<WorkflowRun>(v).is_err(),
+            "absent nullable fields must be rejected (zod v4 .nullable() semantics)"
+        );
     }
 
     #[test]
@@ -820,8 +891,10 @@ mod tests {
             "working_path": null,
             "user_id": null
         });
-        assert!(serde_json::from_value::<WorkflowRun>(v).is_err(),
-            "non-datetime string for started_at must be rejected");
+        assert!(
+            serde_json::from_value::<WorkflowRun>(v).is_err(),
+            "non-datetime string for started_at must be rejected"
+        );
     }
 
     /// FIX-C round-trip: ISO-8601 timestamps parse to DateTime<Utc> and serialize back
@@ -849,7 +922,10 @@ mod tests {
         assert!(back["started_at"].is_string());
         // Round-trip: the parsed DateTime<Utc> serializes back to a valid ISO-8601 string
         let ts_str = back["started_at"].as_str().unwrap();
-        assert!(ts_str.contains("2024-01-15"), "timestamp must contain the date");
+        assert!(
+            ts_str.contains("2024-01-15"),
+            "timestamp must contain the date"
+        );
     }
 
     /// FIX-A serialize: null fields serialize as explicit `null`, not absent.
@@ -874,18 +950,30 @@ mod tests {
         let run: WorkflowRun = serde_json::from_value(v).unwrap();
         let back = serde_json::to_value(&run).unwrap();
         // Nullable fields with None must serialize as explicit null (not absent)
-        assert!(back["parent_conversation_id"].is_null(),
-            "parent_conversation_id None must serialize as null");
-        assert!(back["codebase_id"].is_null(),
-            "codebase_id None must serialize as null");
-        assert!(back["completed_at"].is_null(),
-            "completed_at None must serialize as null");
-        assert!(back["last_activity_at"].is_null(),
-            "last_activity_at None must serialize as null");
-        assert!(back["working_path"].is_null(),
-            "working_path None must serialize as null");
-        assert!(back["user_id"].is_null(),
-            "user_id None must serialize as null");
+        assert!(
+            back["parent_conversation_id"].is_null(),
+            "parent_conversation_id None must serialize as null"
+        );
+        assert!(
+            back["codebase_id"].is_null(),
+            "codebase_id None must serialize as null"
+        );
+        assert!(
+            back["completed_at"].is_null(),
+            "completed_at None must serialize as null"
+        );
+        assert!(
+            back["last_activity_at"].is_null(),
+            "last_activity_at None must serialize as null"
+        );
+        assert!(
+            back["working_path"].is_null(),
+            "working_path None must serialize as null"
+        );
+        assert!(
+            back["user_id"].is_null(),
+            "user_id None must serialize as null"
+        );
     }
 
     // ── ApprovalContext ───────────────────────────────────────────────────
@@ -924,7 +1012,8 @@ mod tests {
 
     #[test]
     fn approval_context_interactive_loop_type() {
-        let v = json!({ "nodeId": "loop-step", "message": "continue?", "type": "interactive_loop" });
+        let v =
+            json!({ "nodeId": "loop-step", "message": "continue?", "type": "interactive_loop" });
         let ac: ApprovalContext = serde_json::from_value(v).unwrap();
         assert_eq!(ac.approval_type, Some(ApprovalContextType::InteractiveLoop));
     }
@@ -1021,10 +1110,22 @@ mod tests {
     #[test]
     fn artifact_type_wire_names() {
         assert_eq!(serde_json::to_value(ArtifactType::Pr).unwrap(), json!("pr"));
-        assert_eq!(serde_json::to_value(ArtifactType::Commit).unwrap(), json!("commit"));
-        assert_eq!(serde_json::to_value(ArtifactType::FileCreated).unwrap(), json!("file_created"));
-        assert_eq!(serde_json::to_value(ArtifactType::FileModified).unwrap(), json!("file_modified"));
-        assert_eq!(serde_json::to_value(ArtifactType::Branch).unwrap(), json!("branch"));
+        assert_eq!(
+            serde_json::to_value(ArtifactType::Commit).unwrap(),
+            json!("commit")
+        );
+        assert_eq!(
+            serde_json::to_value(ArtifactType::FileCreated).unwrap(),
+            json!("file_created")
+        );
+        assert_eq!(
+            serde_json::to_value(ArtifactType::FileModified).unwrap(),
+            json!("file_modified")
+        );
+        assert_eq!(
+            serde_json::to_value(ArtifactType::Branch).unwrap(),
+            json!("branch")
+        );
     }
 
     #[test]

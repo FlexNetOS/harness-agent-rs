@@ -47,7 +47,9 @@ fn run_rust_fixture(f: &Value) -> Value {
             let node_id = f["nodeId"].as_str().unwrap();
             let field = f["field"].as_str().unwrap();
             match resolve_node_output_field(&node_output, node_id, field) {
-                Ok(FieldResolution::Value(v)) => json!({"id": id, "ok": true, "kind": "value", "value": v}),
+                Ok(FieldResolution::Value(v)) => {
+                    json!({"id": id, "ok": true, "kind": "value", "value": v})
+                }
                 Ok(FieldResolution::Empty) => json!({"id": id, "ok": true, "kind": "empty"}),
                 Err(e) => json!({"id": id, "ok": false, "reason": reason_str(&e.reason)}),
             }
@@ -126,7 +128,11 @@ fn cycle4_main_differential() {
         "tests/golden/cycle4_fixtures.json",
         "tests/golden/cycle4_ts_oracle.json",
     );
-    assert!(f.is_empty(), "WF-12/WF-13 main divergences:\n{}", f.join("\n"));
+    assert!(
+        f.is_empty(),
+        "WF-12/WF-13 main divergences:\n{}",
+        f.join("\n")
+    );
 }
 
 #[test]

@@ -58,9 +58,7 @@ where
 }
 
 use crate::{
-    hooks_schema::WorkflowNodeHooks,
-    loop_schema::LoopNodeConfig,
-    retry_schema::StepRetryConfig,
+    hooks_schema::WorkflowNodeHooks, loop_schema::LoopNodeConfig, retry_schema::StepRetryConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -155,7 +153,9 @@ impl<'de> Deserialize<'de> for ThinkingConfig {
             fn visit_str<E: de::Error>(self, v: &str) -> Result<ThinkingConfig, E> {
                 match v {
                     "adaptive" => Ok(ThinkingConfig::Adaptive),
-                    "enabled" => Ok(ThinkingConfig::Enabled { budget_tokens: None }),
+                    "enabled" => Ok(ThinkingConfig::Enabled {
+                        budget_tokens: None,
+                    }),
                     "disabled" => Ok(ThinkingConfig::Disabled),
                     other => Err(de::Error::unknown_variant(
                         other,
@@ -193,9 +193,7 @@ impl<'de> Deserialize<'de> for ThinkingConfig {
                         let budget_tokens = match budget_tokens_raw {
                             None => None,
                             Some(v) if v <= 0 => {
-                                return Err(de::Error::custom(
-                                    "Number must be greater than 0",
-                                ));
+                                return Err(de::Error::custom("Number must be greater than 0"));
                             }
                             Some(v) => {
                                 // Safe: v > 0 and fits u32 (serde_json i64 range)
@@ -606,16 +604,42 @@ impl<'de> Deserialize<'de> for DagNode {
 
         // Determine which mode-fields are present (following the same logic as superRefine).
         // dag-node.ts:450-466.
-        let has_command = raw.command.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_prompt = raw.prompt.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_bash = raw.bash.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_command = raw
+            .command
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_prompt = raw
+            .prompt
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_bash = raw
+            .bash
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
         let has_loop = raw.loop_config.is_some();
         let has_approval = raw.approval.is_some();
-        let has_cancel = raw.cancel.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-        let has_script = raw.script.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        let has_cancel = raw
+            .cancel
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_script = raw
+            .script
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
 
         let mode_count = [
-            has_command, has_prompt, has_bash, has_loop, has_approval, has_cancel, has_script,
+            has_command,
+            has_prompt,
+            has_bash,
+            has_loop,
+            has_approval,
+            has_cancel,
+            has_script,
         ]
         .iter()
         .filter(|&&b| b)
@@ -875,7 +899,9 @@ pub enum DagNodeValidationError {
     MultipleModes,
 
     /// No mode-field at all. dag-node.ts:501-507.
-    #[error("must have either 'command', 'prompt', 'bash', 'loop', 'approval', 'cancel', or 'script'")]
+    #[error(
+        "must have either 'command', 'prompt', 'bash', 'loop', 'approval', 'cancel', or 'script'"
+    )]
     NoMode,
 
     /// `bash` field present but empty. dag-node.ts:476-481.
@@ -915,7 +941,6 @@ pub enum DagNodeValidationError {
     InvalidAgentId { id: String },
 
     // ── Value-bound constraints (dag-node.ts zod .positive()/.min()/.max()/.nonempty()/.trim()) ──
-
     /// `ThinkingConfig::Enabled.budget_tokens` = 0. `z.number().int().positive()`. dag-node.ts:67.
     #[error("Number must be greater than 0")]
     ThinkingBudgetNotPositive,
@@ -1004,7 +1029,10 @@ pub fn validate_dag_node(node: &DagNode) -> Vec<DagNodeValidationError> {
     // budgetTokens is z.number().int().positive() — 0 is rejected (.positive() means >0).
     // The int constraint is enforced at deserialize (u32 rejects fractional). The positivity
     // check (>0) was missing — u32 accepts 0, but zod does not.
-    if let Some(ThinkingConfig::Enabled { budget_tokens: Some(0) }) = &base.thinking {
+    if let Some(ThinkingConfig::Enabled {
+        budget_tokens: Some(0),
+    }) = &base.thinking
+    {
         errors.push(DagNodeValidationError::ThinkingBudgetNotPositive);
     }
 
@@ -1057,9 +1085,7 @@ pub fn validate_dag_node(node: &DagNode) -> Vec<DagNodeValidationError> {
             }
             // max_turns must be > 0 if set. dag-node.ts:129. u32 so 0 is the only violator.
             if agent.max_turns == Some(0) {
-                errors.push(DagNodeValidationError::AgentMaxTurnsNotPositive {
-                    id: key.clone(),
-                });
+                errors.push(DagNodeValidationError::AgentMaxTurnsNotPositive { id: key.clone() });
             }
         }
     }
@@ -1226,7 +1252,12 @@ mod tests {
     #[test]
     fn thinking_config_string_shorthand_enabled() {
         let v: ThinkingConfig = serde_json::from_str(r#""enabled""#).unwrap();
-        assert_eq!(v, ThinkingConfig::Enabled { budget_tokens: None });
+        assert_eq!(
+            v,
+            ThinkingConfig::Enabled {
+                budget_tokens: None
+            }
+        );
     }
 
     #[test]
@@ -1245,7 +1276,12 @@ mod tests {
     fn thinking_config_object_form_enabled_with_budget() {
         let v: ThinkingConfig =
             serde_json::from_value(json!({"type": "enabled", "budgetTokens": 1024})).unwrap();
-        assert_eq!(v, ThinkingConfig::Enabled { budget_tokens: Some(1024) });
+        assert_eq!(
+            v,
+            ThinkingConfig::Enabled {
+                budget_tokens: Some(1024)
+            }
+        );
     }
 
     #[test]
@@ -1262,7 +1298,9 @@ mod tests {
 
     #[test]
     fn thinking_config_serializes_as_object() {
-        let v = ThinkingConfig::Enabled { budget_tokens: Some(512) };
+        let v = ThinkingConfig::Enabled {
+            budget_tokens: Some(512),
+        };
         let s = serde_json::to_value(&v).unwrap();
         assert_eq!(s["type"], "enabled");
         assert_eq!(s["budgetTokens"], 512);
@@ -1464,8 +1502,7 @@ mod tests {
         assert!(is_bash_node(&bash));
         assert!(!is_loop_node(&bash));
 
-        let cmd: DagNode =
-            serde_json::from_value(minimal_base(json!({"command": "foo"}))).unwrap();
+        let cmd: DagNode = serde_json::from_value(minimal_base(json!({"command": "foo"}))).unwrap();
         assert!(is_persistable_node(&cmd));
         assert!(!is_bash_node(&cmd));
     }
@@ -1476,7 +1513,10 @@ mod tests {
     fn validate_empty_id_fails() {
         // Can only construct via direct struct manipulation since deserialize also rejects empty.
         let node = DagNode::Command(CommandNode {
-            base: DagNodeBase { id: "".to_string(), ..Default::default() },
+            base: DagNodeBase {
+                id: "".to_string(),
+                ..Default::default()
+            },
             command: "foo".to_string(),
         });
         let errors = validate_dag_node(&node);
@@ -1489,7 +1529,10 @@ mod tests {
     #[test]
     fn validate_bash_timeout_not_positive() {
         let node = DagNode::Bash(BashNode {
-            base: DagNodeBase { id: "n1".to_string(), ..Default::default() },
+            base: DagNodeBase {
+                id: "n1".to_string(),
+                ..Default::default()
+            },
             bash: "echo hi".to_string(),
             timeout: Some(-100.0),
         });
@@ -1500,7 +1543,10 @@ mod tests {
     #[test]
     fn validate_bash_timeout_infinite_fails() {
         let node = DagNode::Bash(BashNode {
-            base: DagNodeBase { id: "n1".to_string(), ..Default::default() },
+            base: DagNodeBase {
+                id: "n1".to_string(),
+                ..Default::default()
+            },
             bash: "echo".to_string(),
             timeout: Some(f64::INFINITY),
         });
@@ -1511,7 +1557,10 @@ mod tests {
     #[test]
     fn validate_script_timeout_not_positive() {
         let node = DagNode::Script(ScriptNode {
-            base: DagNodeBase { id: "n1".to_string(), ..Default::default() },
+            base: DagNodeBase {
+                id: "n1".to_string(),
+                ..Default::default()
+            },
             script: "print(1)".to_string(),
             runtime: ScriptRuntime::Uv,
             deps: None,
@@ -1526,7 +1575,11 @@ mod tests {
         let node = DagNode::Loop(LoopNode {
             base: DagNodeBase {
                 id: "n1".to_string(),
-                retry: Some(StepRetryConfig { max_attempts: 2, delay_ms: None, on_error: None }),
+                retry: Some(StepRetryConfig {
+                    max_attempts: 2,
+                    delay_ms: None,
+                    on_error: None,
+                }),
                 ..Default::default()
             },
             loop_config: LoopNodeConfig {
@@ -1569,19 +1622,25 @@ mod tests {
             prompt: "hi".to_string(),
         });
         let errors = validate_dag_node(&node);
-        assert!(errors.is_empty(), "fractional idle_timeout should be valid; got: {errors:?}");
+        assert!(
+            errors.is_empty(),
+            "fractional idle_timeout should be valid; got: {errors:?}"
+        );
     }
 
     #[test]
     fn validate_invalid_command_name() {
         let node = DagNode::Command(CommandNode {
-            base: DagNodeBase { id: "n1".to_string(), ..Default::default() },
+            base: DagNodeBase {
+                id: "n1".to_string(),
+                ..Default::default()
+            },
             command: "../evil".to_string(),
         });
         let errors = validate_dag_node(&node);
-        assert!(
-            errors.iter().any(|e| matches!(e, DagNodeValidationError::InvalidCommandName { .. }))
-        );
+        assert!(errors
+            .iter()
+            .any(|e| matches!(e, DagNodeValidationError::InvalidCommandName { .. })));
     }
 
     #[test]
@@ -1609,7 +1668,9 @@ mod tests {
         });
         let errors = validate_dag_node(&node);
         assert!(
-            errors.iter().any(|e| matches!(e, DagNodeValidationError::InvalidAgentId { .. })),
+            errors
+                .iter()
+                .any(|e| matches!(e, DagNodeValidationError::InvalidAgentId { .. })),
             "got: {errors:?}"
         );
     }
@@ -1618,7 +1679,10 @@ mod tests {
     fn validate_all_errors_collected() {
         // id empty (early return), so only one error.
         let node = DagNode::Command(CommandNode {
-            base: DagNodeBase { id: "  ".to_string(), ..Default::default() },
+            base: DagNodeBase {
+                id: "  ".to_string(),
+                ..Default::default()
+            },
             command: "foo".to_string(),
         });
         let errors = validate_dag_node(&node);
@@ -1729,7 +1793,12 @@ mod tests {
     fn thinking_budget_positive_accepted() {
         let v: ThinkingConfig =
             serde_json::from_value(json!({"type": "enabled", "budgetTokens": 1})).unwrap();
-        assert_eq!(v, ThinkingConfig::Enabled { budget_tokens: Some(1) });
+        assert_eq!(
+            v,
+            ThinkingConfig::Enabled {
+                budget_tokens: Some(1)
+            }
+        );
     }
 
     // ── AgentDefinition maxTurns .positive() ─────────────────────────────────
@@ -1800,7 +1869,10 @@ mod tests {
             }));
             let node: DagNode = serde_json::from_value(input).unwrap();
             let errors = validate_dag_node(&node);
-            assert!(errors.is_empty(), "max_attempts:{v} should pass; got: {errors:?}");
+            assert!(
+                errors.is_empty(),
+                "max_attempts:{v} should pass; got: {errors:?}"
+            );
         }
     }
 
@@ -1834,7 +1906,10 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "betas": []}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::BetasEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::BetasEmpty),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -1843,7 +1918,10 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "betas": [""]}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::BetasElementEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::BetasElementEmpty),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -1862,7 +1940,10 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "skills": []}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::SkillsEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::SkillsEmpty),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -1871,7 +1952,10 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "skills": [""]}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::SkillsElementEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::SkillsElementEmpty),
+            "got: {errors:?}"
+        );
     }
 
     // ── agents non-empty record ───────────────────────────────────────────────
@@ -1882,7 +1966,10 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "agents": {}}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::AgentsEmpty), "got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::AgentsEmpty),
+            "got: {errors:?}"
+        );
     }
 
     // ── provider .trim().min(1) ───────────────────────────────────────────────
@@ -1893,7 +1980,10 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "provider": "   "}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::ProviderBlank), "got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::ProviderBlank),
+            "got: {errors:?}"
+        );
     }
 
     #[test]
@@ -1914,15 +2004,23 @@ mod tests {
         // dag-node.ts:146 — provider uses .trim().
         let v = minimal_base(json!({"prompt": "hi", "provider": "   claude   "}));
         let node: DagNode = serde_json::from_value(v).unwrap();
-        assert_eq!(node.base().provider.as_deref(), Some("claude"),
-            "provider must be stored trimmed (zod .trim() transform)");
+        assert_eq!(
+            node.base().provider.as_deref(),
+            Some("claude"),
+            "provider must be stored trimmed (zod .trim() transform)"
+        );
         // Re-serialization must also produce the trimmed value
         let round_tripped = serde_json::to_value(&node).unwrap();
-        assert_eq!(round_tripped["provider"], "claude",
-            "provider must serialize as trimmed value");
+        assert_eq!(
+            round_tripped["provider"], "claude",
+            "provider must serialize as trimmed value"
+        );
         // Validation must PASS (trimmed value is non-empty)
         let errors = validate_dag_node(&node);
-        assert!(errors.is_empty(), "trimmed non-empty provider should pass; got: {errors:?}");
+        assert!(
+            errors.is_empty(),
+            "trimmed non-empty provider should pass; got: {errors:?}"
+        );
     }
 
     #[test]
@@ -1930,11 +2028,16 @@ mod tests {
         // dag-node.ts:598 — explicit `.trim()` in transform: `mcp: data.mcp.trim()`.
         let v = minimal_base(json!({"prompt": "hi", "mcp": "  /path/to/mcp.json  "}));
         let node: DagNode = serde_json::from_value(v).unwrap();
-        assert_eq!(node.base().mcp.as_deref(), Some("/path/to/mcp.json"),
-            "mcp must be stored trimmed (dag-node.ts:598)");
+        assert_eq!(
+            node.base().mcp.as_deref(),
+            Some("/path/to/mcp.json"),
+            "mcp must be stored trimmed (dag-node.ts:598)"
+        );
         let round_tripped = serde_json::to_value(&node).unwrap();
-        assert_eq!(round_tripped["mcp"], "/path/to/mcp.json",
-            "mcp must serialize as trimmed value");
+        assert_eq!(
+            round_tripped["mcp"], "/path/to/mcp.json",
+            "mcp must serialize as trimmed value"
+        );
     }
 
     #[test]
@@ -1943,8 +2046,11 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "skills": ["  skill-a  ", " skill-b "]}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         let skills = node.base().skills.as_ref().expect("skills should be set");
-        assert_eq!(skills, &["skill-a", "skill-b"],
-            "skills elements must be stored trimmed (dag-node.ts:599)");
+        assert_eq!(
+            skills,
+            &["skill-a", "skill-b"],
+            "skills elements must be stored trimmed (dag-node.ts:599)"
+        );
         let round_tripped = serde_json::to_value(&node).unwrap();
         assert_eq!(round_tripped["skills"][0], "skill-a");
         assert_eq!(round_tripped["skills"][1], "skill-b");
@@ -1956,10 +2062,15 @@ mod tests {
         let v = minimal_base(json!({"prompt": "hi", "provider": "   "}));
         let node: DagNode = serde_json::from_value(v).unwrap();
         // After trim the stored value is "", which is empty → validation must reject.
-        assert_eq!(node.base().provider.as_deref(), Some(""),
-            "whitespace-only provider trims to empty string");
+        assert_eq!(
+            node.base().provider.as_deref(),
+            Some(""),
+            "whitespace-only provider trims to empty string"
+        );
         let errors = validate_dag_node(&node);
-        assert!(errors.contains(&DagNodeValidationError::ProviderBlank),
-            "whitespace-only provider must fail ProviderBlank; got: {errors:?}");
+        assert!(
+            errors.contains(&DagNodeValidationError::ProviderBlank),
+            "whitespace-only provider must fail ProviderBlank; got: {errors:?}"
+        );
     }
 }

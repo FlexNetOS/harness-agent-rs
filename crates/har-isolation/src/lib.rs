@@ -31,29 +31,28 @@ pub mod worktree_copy;
 // ─── Re-exports ──────────────────────────────────────────────────────────────
 
 pub use errors::{
-    IsolationBlockReason, IsolationBlockedError, classify_isolation_error,
-    is_known_isolation_error,
+    classify_isolation_error, is_known_isolation_error, IsolationBlockReason, IsolationBlockedError,
 };
 pub use factory::{
-    configure_isolation, get_configured_loader, get_isolation_provider,
-    reset_isolation_provider, set_isolation_provider,
+    configure_isolation, get_configured_loader, get_isolation_provider, reset_isolation_provider,
+    set_isolation_provider,
 };
-pub use pr_state::{PrState, get_pr_state};
-pub use store::IsolationStore;
-pub use types::{
-    CodebaseSummary, CreateEnvironmentParams, DestroyOptions, DestroyResult, EnvSummary,
-    EnvironmentStatus, GitIdentity, IsolationEnvironmentRow, IsolationHints,
-    IsolationProvider, IsolationProviderType, IsolationRequest, IsolationRequestBase,
-    IsolationResolution, IsolationWorkflowType, RepoConfigLoader, ResolutionMethod,
-    ResolvedPayload, ResolveRequest, StaleEnvSummary, WorktreeCreateConfig,
-    WorktreeEnvironment, WorktreeMetadata, WorktreeStatusBreakdown, is_pr_isolation_request,
-};
-pub use worktree_copy::{
-    CopyFileEntry, copy_worktree_file, copy_worktree_files, is_path_within_root,
-    parse_copy_file_entry,
-};
+pub use pr_state::{get_pr_state, PrState};
 pub use providers::WorktreeProvider;
 pub use resolver::{CleanupFn, IsolationResolver, IsolationResolverDeps};
+pub use store::IsolationStore;
+pub use types::{
+    is_pr_isolation_request, CodebaseSummary, CreateEnvironmentParams, DestroyOptions,
+    DestroyResult, EnvSummary, EnvironmentStatus, GitIdentity, IsolationEnvironmentRow,
+    IsolationHints, IsolationProvider, IsolationProviderType, IsolationRequest,
+    IsolationRequestBase, IsolationResolution, IsolationWorkflowType, RepoConfigLoader,
+    ResolutionMethod, ResolveRequest, ResolvedPayload, StaleEnvSummary, WorktreeCreateConfig,
+    WorktreeEnvironment, WorktreeMetadata, WorktreeStatusBreakdown,
+};
+pub use worktree_copy::{
+    copy_worktree_file, copy_worktree_files, is_path_within_root, parse_copy_file_entry,
+    CopyFileEntry,
+};
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 

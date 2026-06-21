@@ -26,24 +26,23 @@ pub mod types;
 pub mod worktree;
 
 // Convenience re-exports for downstream crates.
-pub use types::{
-    BranchName, GitError, GitErrorCode, GitResult, RepoPath, Result, WorkspaceSyncResult,
-    WorktreeInfo, WorktreePath, to_branch_name, to_repo_path, to_worktree_path,
-};
-pub use exec::{ExecOptions, ExecOutput, exec_file_async, mkdir_async, run_git, run_git_cwd};
 pub use branch::{
     checkout, commit_all_changes, get_default_branch, get_last_commit_date,
     has_uncommitted_changes, is_ancestor_of, is_branch_merged, is_patch_equivalent,
 };
+pub use exec::{exec_file_async, mkdir_async, run_git, run_git_cwd, ExecOptions, ExecOutput};
 pub use repo::{
     add_safe_directory, clone_repository, find_repo_root, get_remote_url, sync_repository,
     sync_workspace,
 };
+pub use types::{
+    to_branch_name, to_repo_path, to_worktree_path, BranchName, GitError, GitErrorCode, GitResult,
+    RepoPath, Result, WorkspaceSyncResult, WorktreeInfo, WorktreePath,
+};
 pub use worktree::{
-    WorktreeBaseOverride, WorktreeLayout, extract_owner_repo, find_worktree_by_branch,
-    get_canonical_repo_path, get_worktree_base, is_project_scoped_worktree_base,
-    is_worktree_path, list_worktrees, remove_worktree, verify_worktree_ownership,
-    worktree_exists,
+    extract_owner_repo, find_worktree_by_branch, get_canonical_repo_path, get_worktree_base,
+    is_project_scoped_worktree_base, is_worktree_path, list_worktrees, remove_worktree,
+    verify_worktree_ownership, worktree_exists, WorktreeBaseOverride, WorktreeLayout,
 };
 
 #[cfg(test)]
@@ -146,8 +145,9 @@ mod tests {
 
     #[test]
     fn git_result_err_is_err() {
-        let r: GitResult<i32> =
-            GitResult::Err(GitErrorCode::NotARepo { path: "/foo".into() });
+        let r: GitResult<i32> = GitResult::Err(GitErrorCode::NotARepo {
+            path: "/foo".into(),
+        });
         assert!(r.is_err());
         assert!(!r.is_ok());
         assert!(r.into_result().is_err());
@@ -155,13 +155,17 @@ mod tests {
 
     #[test]
     fn git_error_code_variants() {
-        let e = GitErrorCode::BranchNotFound { branch: "main".into() };
+        let e = GitErrorCode::BranchNotFound {
+            branch: "main".into(),
+        };
         assert!(matches!(e, GitErrorCode::BranchNotFound { .. }));
         let e = GitErrorCode::PermissionDenied { path: "/x".into() };
         assert!(matches!(e, GitErrorCode::PermissionDenied { .. }));
         let e = GitErrorCode::NoSpace { path: "/x".into() };
         assert!(matches!(e, GitErrorCode::NoSpace { .. }));
-        let e = GitErrorCode::Unknown { message: "oops".into() };
+        let e = GitErrorCode::Unknown {
+            message: "oops".into(),
+        };
         assert!(matches!(e, GitErrorCode::Unknown { .. }));
     }
 
@@ -204,11 +208,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(
-            err.to_string().contains("timed out"),
-            "unexpected: {}",
-            err
-        );
+        assert!(err.to_string().contains("timed out"), "unexpected: {}", err);
     }
 
     #[tokio::test]
@@ -303,7 +303,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let target = to_repo_path(dir.path().join("target").to_string_lossy().to_string()).unwrap();
         // A non-existent path produces a "not found" / 128 exit from git clone.
-        let result = clone_repository("https://github.com/nonexistent_org_xyz/nonexistent_repo_xyz.git", &target, None).await;
+        let result = clone_repository(
+            "https://github.com/nonexistent_org_xyz/nonexistent_repo_xyz.git",
+            &target,
+            None,
+        )
+        .await;
         assert!(result.is_err(), "expected error for bad URL");
     }
 
@@ -415,9 +420,13 @@ mod tests {
         run_git(repo.as_str(), &["checkout", "main"], Some(5_000))
             .await
             .unwrap();
-        run_git(repo.as_str(), &["merge", "feature", "--no-ff", "-m", "merge feature"], Some(5_000))
-            .await
-            .unwrap();
+        run_git(
+            repo.as_str(),
+            &["merge", "feature", "--no-ff", "-m", "merge feature"],
+            Some(5_000),
+        )
+        .await
+        .unwrap();
 
         let main = to_branch_name("main").unwrap();
         let feature = to_branch_name("feature").unwrap();
@@ -481,7 +490,9 @@ mod tests {
         make_commit(dir.path(), "initial").await;
         // HEAD is not its own descendant in --is-ancestor terms when no second commit.
         // Use a branch that doesn't exist — expected error → false.
-        let result = is_ancestor_of(repo.as_str(), "nonexistent-branch-xyz").await.unwrap();
+        let result = is_ancestor_of(repo.as_str(), "nonexistent-branch-xyz")
+            .await
+            .unwrap();
         assert!(!result, "nonexistent ref should return false");
     }
 
@@ -658,7 +669,9 @@ mod tests {
 
         // Remove worktree.
         let wt_path = to_worktree_path(wt_dir.to_string_lossy().to_string()).unwrap();
-        remove_worktree(&repo, &wt_path).await.expect("remove worktree");
+        remove_worktree(&repo, &wt_path)
+            .await
+            .expect("remove worktree");
 
         let wts_after = list_worktrees(&repo).await.unwrap();
         let still_found = wts_after.iter().any(|wt| {
@@ -678,7 +691,13 @@ mod tests {
         let wt_dir = dir.path().parent().unwrap().join("wt-exact");
         run_git(
             repo.as_str(),
-            &["worktree", "add", wt_dir.to_str().unwrap(), "-b", "exact-branch"],
+            &[
+                "worktree",
+                "add",
+                wt_dir.to_str().unwrap(),
+                "-b",
+                "exact-branch",
+            ],
             Some(10_000),
         )
         .await
@@ -703,7 +722,13 @@ mod tests {
         let wt_dir = dir.path().parent().unwrap().join("wt-slug");
         run_git(
             repo.as_str(),
-            &["worktree", "add", wt_dir.to_str().unwrap(), "-b", "feature-auth"],
+            &[
+                "worktree",
+                "add",
+                wt_dir.to_str().unwrap(),
+                "-b",
+                "feature-auth",
+            ],
             Some(10_000),
         )
         .await
@@ -712,7 +737,10 @@ mod tests {
         // Search with slashed form "feature/auth" which slugifies to "feature-auth".
         let branch = to_branch_name("feature/auth").unwrap();
         let found = find_worktree_by_branch(&repo, &branch).await.unwrap();
-        assert!(found.is_some(), "should find worktree by slugified branch name");
+        assert!(
+            found.is_some(),
+            "should find worktree by slugified branch name"
+        );
 
         let wt_path = to_worktree_path(wt_dir.to_string_lossy().to_string()).unwrap();
         let _ = remove_worktree(&repo, &wt_path).await;
@@ -770,7 +798,13 @@ mod tests {
         let wt_dir = dir.path().parent().unwrap().join("wt-ownership");
         run_git(
             repo.as_str(),
-            &["worktree", "add", wt_dir.to_str().unwrap(), "-b", "ownership-branch"],
+            &[
+                "worktree",
+                "add",
+                wt_dir.to_str().unwrap(),
+                "-b",
+                "ownership-branch",
+            ],
             Some(10_000),
         )
         .await
@@ -778,7 +812,11 @@ mod tests {
 
         let wt = to_worktree_path(wt_dir.to_string_lossy().to_string()).unwrap();
         let result = verify_worktree_ownership(&wt, &repo).await;
-        assert!(result.is_ok(), "ownership verification should pass: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "ownership verification should pass: {:?}",
+            result
+        );
 
         let wt_path = to_worktree_path(wt_dir.to_string_lossy().to_string()).unwrap();
         let _ = remove_worktree(&repo, &wt_path).await;

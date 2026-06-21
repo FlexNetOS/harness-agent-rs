@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 
 use har_dag_executor::model_validation::{
-    build_ai_profile, is_literal_spec, resolve_model_spec, route_preset_effort, BuildAiProfileOptions,
-    EffortField, ModelValidationError, RawAliasEntry, RawAliasesConfig, RawTiersConfig,
-    ResolvedAiProfile, ResolvedModelSpec, CLAUDE_EFFORTS, CODEX_REASONING_EFFORTS, TIER_NAMES,
+    build_ai_profile, is_literal_spec, resolve_model_spec, route_preset_effort,
+    BuildAiProfileOptions, EffortField, ModelValidationError, RawAliasEntry, RawAliasesConfig,
+    RawTiersConfig, ResolvedAiProfile, ResolvedModelSpec, CLAUDE_EFFORTS, CODEX_REASONING_EFFORTS,
+    TIER_NAMES,
 };
 use har_workflow_schema::dag_node::ThinkingConfig;
 use serde_json::{json, Value};
@@ -94,7 +95,14 @@ fn main() {
     push_ok(buf, "CODEX_REASONING_EFFORTS", json!(cre));
 
     // ---- profile seed per provider ----
-    for prov in ["claude", "codex", "pi", "copilot", "opencode", "unknown-provider"] {
+    for prov in [
+        "claude",
+        "codex",
+        "pi",
+        "copilot",
+        "opencode",
+        "unknown-provider",
+    ] {
         let p = build_ai_profile(prov, BuildAiProfileOptions::default()).unwrap();
         let mut keys: Vec<&String> = p.aliases.keys().collect();
         keys.sort();
@@ -122,34 +130,95 @@ fn main() {
     // ---- resolve branches ----
     let claude = build_ai_profile("claude", BuildAiProfileOptions::default()).unwrap();
     let codex = build_ai_profile("codex", BuildAiProfileOptions::default()).unwrap();
-    push_ok(buf, "resolve.claude.small", spec_json(&resolve_model_spec(&claude, "small").unwrap()));
-    push_ok(buf, "resolve.claude.medium", spec_json(&resolve_model_spec(&claude, "medium").unwrap()));
-    push_ok(buf, "resolve.claude.large", spec_json(&resolve_model_spec(&claude, "large").unwrap()));
-    push_ok(buf, "resolve.codex.small", spec_json(&resolve_model_spec(&codex, "small").unwrap()));
-    push_ok(buf, "resolve.codex.large", spec_json(&resolve_model_spec(&codex, "large").unwrap()));
+    push_ok(
+        buf,
+        "resolve.claude.small",
+        spec_json(&resolve_model_spec(&claude, "small").unwrap()),
+    );
+    push_ok(
+        buf,
+        "resolve.claude.medium",
+        spec_json(&resolve_model_spec(&claude, "medium").unwrap()),
+    );
+    push_ok(
+        buf,
+        "resolve.claude.large",
+        spec_json(&resolve_model_spec(&claude, "large").unwrap()),
+    );
+    push_ok(
+        buf,
+        "resolve.codex.small",
+        spec_json(&resolve_model_spec(&codex, "small").unwrap()),
+    );
+    push_ok(
+        buf,
+        "resolve.codex.large",
+        spec_json(&resolve_model_spec(&codex, "large").unwrap()),
+    );
     push_ok(
         buf,
         "resolve.literal.modelstring",
         spec_json(&resolve_model_spec(&claude, "claude-opus-4-7-20251101").unwrap()),
     );
-    push_ok(buf, "resolve.literal.empty", spec_json(&resolve_model_spec(&claude, "").unwrap()));
-    push_ok(buf, "resolve.literal.atless-word", spec_json(&resolve_model_spec(&claude, "mymodel").unwrap()));
+    push_ok(
+        buf,
+        "resolve.literal.empty",
+        spec_json(&resolve_model_spec(&claude, "").unwrap()),
+    );
+    push_ok(
+        buf,
+        "resolve.literal.atless-word",
+        spec_json(&resolve_model_spec(&claude, "mymodel").unwrap()),
+    );
 
     // fallback chains
     {
         let t: RawTiersConfig = map1("medium", entry("myprovider", "medium-model"));
-        let p = build_ai_profile("myprovider", BuildAiProfileOptions { repo_tiers: Some(&t), ..Default::default() }).unwrap();
-        push_ok(buf, "resolve.fallback.large_to_medium", spec_json(&resolve_model_spec(&p, "large").unwrap()));
+        let p = build_ai_profile(
+            "myprovider",
+            BuildAiProfileOptions {
+                repo_tiers: Some(&t),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "resolve.fallback.large_to_medium",
+            spec_json(&resolve_model_spec(&p, "large").unwrap()),
+        );
     }
     {
         let t: RawTiersConfig = map1("large", entry("myprovider", "large-model"));
-        let p = build_ai_profile("myprovider", BuildAiProfileOptions { repo_tiers: Some(&t), ..Default::default() }).unwrap();
-        push_ok(buf, "resolve.fallback.medium_to_large", spec_json(&resolve_model_spec(&p, "medium").unwrap()));
+        let p = build_ai_profile(
+            "myprovider",
+            BuildAiProfileOptions {
+                repo_tiers: Some(&t),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "resolve.fallback.medium_to_large",
+            spec_json(&resolve_model_spec(&p, "medium").unwrap()),
+        );
     }
     {
         let t: RawTiersConfig = map1("small", entry("myprovider", "small-only"));
-        let p = build_ai_profile("myprovider", BuildAiProfileOptions { repo_tiers: Some(&t), ..Default::default() }).unwrap();
-        push_ok(buf, "resolve.fallback.medium_to_small", spec_json(&resolve_model_spec(&p, "medium").unwrap()));
+        let p = build_ai_profile(
+            "myprovider",
+            BuildAiProfileOptions {
+                repo_tiers: Some(&t),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "resolve.fallback.medium_to_small",
+            spec_json(&resolve_model_spec(&p, "medium").unwrap()),
+        );
     }
     {
         let p = build_ai_profile("ghost", BuildAiProfileOptions::default()).unwrap();
@@ -160,21 +229,42 @@ fn main() {
     }
     {
         let a: RawAliasesConfig = map1("@fast", entry("claude", "haiku"));
-        let p = build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }).unwrap();
-        push_ok(buf, "resolve.alias.found", spec_json(&resolve_model_spec(&p, "@fast").unwrap()));
+        let p = build_ai_profile(
+            "claude",
+            BuildAiProfileOptions {
+                global_aliases: Some(&a),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "resolve.alias.found",
+            spec_json(&resolve_model_spec(&p, "@fast").unwrap()),
+        );
     }
     {
         let mut a: RawAliasesConfig = HashMap::new();
         a.insert("@zebra".into(), entry("claude", "haiku"));
         a.insert("@alpha".into(), entry("claude", "sonnet"));
-        let p = build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }).unwrap();
+        let p = build_ai_profile(
+            "claude",
+            BuildAiProfileOptions {
+                global_aliases: Some(&a),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         match resolve_model_spec(&p, "@nope") {
             Ok(_) => push_ok(buf, "resolve.alias.unknown_lists_keys", Value::Null),
             Err(e) => push_err(buf, "resolve.alias.unknown_lists_keys", err_msg(&e)),
         }
     }
     {
-        let empty = ResolvedAiProfile { default_provider: "claude".into(), aliases: HashMap::new() };
+        let empty = ResolvedAiProfile {
+            default_provider: "claude".into(),
+            aliases: HashMap::new(),
+        };
         match resolve_model_spec(&empty, "@ghost") {
             Ok(_) => push_ok(buf, "resolve.alias.unknown_none", Value::Null),
             Err(e) => push_err(buf, "resolve.alias.unknown_none", err_msg(&e)),
@@ -185,63 +275,189 @@ fn main() {
     {
         let g: RawTiersConfig = map1("small", entry("g", "gm"));
         let r: RawTiersConfig = map1("small", entry("r", "rm"));
-        let p = build_ai_profile("unknown", BuildAiProfileOptions { global_tiers: Some(&g), repo_tiers: Some(&r), ..Default::default() }).unwrap();
-        push_ok(buf, "layer.repo_tier_beats_global", preset_json(p.aliases.get("small").unwrap()));
+        let p = build_ai_profile(
+            "unknown",
+            BuildAiProfileOptions {
+                global_tiers: Some(&g),
+                repo_tiers: Some(&r),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "layer.repo_tier_beats_global",
+            preset_json(p.aliases.get("small").unwrap()),
+        );
     }
     {
         let g: RawAliasesConfig = map1("@x", entry("claude", "haiku"));
         let r: RawAliasesConfig = map1("@x", entry("claude", "sonnet"));
-        let p = build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&g), repo_aliases: Some(&r), ..Default::default() }).unwrap();
-        push_ok(buf, "layer.repo_alias_beats_global", preset_json(p.aliases.get("@x").unwrap()));
+        let p = build_ai_profile(
+            "claude",
+            BuildAiProfileOptions {
+                global_aliases: Some(&g),
+                repo_aliases: Some(&r),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "layer.repo_alias_beats_global",
+            preset_json(p.aliases.get("@x").unwrap()),
+        );
     }
     {
         let g: RawTiersConfig = map1("small", entry_eff("codex", "gpt-5.5", "minimal"));
-        let p = build_ai_profile("claude", BuildAiProfileOptions { global_tiers: Some(&g), ..Default::default() }).unwrap();
-        push_ok(buf, "layer.global_tier_overrides_default", preset_json(p.aliases.get("small").unwrap()));
+        let p = build_ai_profile(
+            "claude",
+            BuildAiProfileOptions {
+                global_tiers: Some(&g),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "layer.global_tier_overrides_default",
+            preset_json(p.aliases.get("small").unwrap()),
+        );
     }
 
     // ---- rejections ----
-    let reject = |buf: &mut Vec<Value>, case: &str, res: Result<ResolvedAiProfile, ModelValidationError>| {
-        match res {
-            Ok(_) => buf.push(json!({"case":case,"ok":true,"value":"UNEXPECTED_OK"})),
-            Err(e) => buf.push(json!({"case":case,"ok":false,"error":e.to_string()})),
-        }
-    };
+    let reject =
+        |buf: &mut Vec<Value>, case: &str, res: Result<ResolvedAiProfile, ModelValidationError>| {
+            match res {
+                Ok(_) => buf.push(json!({"case":case,"ok":true,"value":"UNEXPECTED_OK"})),
+                Err(e) => buf.push(json!({"case":case,"ok":false,"error":e.to_string()})),
+            }
+        };
     {
         let a: RawAliasesConfig = map1("small", entry("c", "m"));
-        reject(buf, "reject.alias_reserved_small", build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }));
+        reject(
+            buf,
+            "reject.alias_reserved_small",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_aliases: Some(&a),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let a: RawAliasesConfig = map1("medium", entry("c", "m"));
-        reject(buf, "reject.alias_reserved_medium_repo", build_ai_profile("claude", BuildAiProfileOptions { repo_aliases: Some(&a), ..Default::default() }));
+        reject(
+            buf,
+            "reject.alias_reserved_medium_repo",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    repo_aliases: Some(&a),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let a: RawAliasesConfig = map1("large", entry("c", "m"));
-        reject(buf, "reject.alias_reserved_large", build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }));
+        reject(
+            buf,
+            "reject.alias_reserved_large",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_aliases: Some(&a),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let a: RawAliasesConfig = map1("myalias", entry("c", "m"));
-        reject(buf, "reject.alias_missing_at", build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }));
+        reject(
+            buf,
+            "reject.alias_missing_at",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_aliases: Some(&a),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let a: RawAliasesConfig = map1("@test", entry("", "m"));
-        reject(buf, "reject.alias_empty_provider", build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }));
+        reject(
+            buf,
+            "reject.alias_empty_provider",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_aliases: Some(&a),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let a: RawAliasesConfig = map1("@test", entry("c", ""));
-        reject(buf, "reject.alias_empty_model", build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }));
+        reject(
+            buf,
+            "reject.alias_empty_model",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_aliases: Some(&a),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let t: RawTiersConfig = map1("xlarge", entry("c", "m"));
-        reject(buf, "reject.tier_invalid_name", build_ai_profile("claude", BuildAiProfileOptions { global_tiers: Some(&t), ..Default::default() }));
+        reject(
+            buf,
+            "reject.tier_invalid_name",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_tiers: Some(&t),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let t: RawTiersConfig = map1("small", entry("", "m"));
-        reject(buf, "reject.tier_empty_provider", build_ai_profile("claude", BuildAiProfileOptions { global_tiers: Some(&t), ..Default::default() }));
+        reject(
+            buf,
+            "reject.tier_empty_provider",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_tiers: Some(&t),
+                    ..Default::default()
+                },
+            ),
+        );
     }
     {
         let t: RawTiersConfig = map1("small", entry("c", ""));
-        reject(buf, "reject.tier_empty_model", build_ai_profile("claude", BuildAiProfileOptions { global_tiers: Some(&t), ..Default::default() }));
+        reject(
+            buf,
+            "reject.tier_empty_model",
+            build_ai_profile(
+                "claude",
+                BuildAiProfileOptions {
+                    global_tiers: Some(&t),
+                    ..Default::default()
+                },
+            ),
+        );
     }
 
     // ---- routePresetEffort matrix ----
@@ -261,25 +477,46 @@ fn main() {
     }
 
     // ---- isLiteralSpec ----
-    push_ok(buf, "isLiteral.literal", json!(is_literal_spec(&ResolvedModelSpec::Literal { literal: "x".into() })));
+    push_ok(
+        buf,
+        "isLiteral.literal",
+        json!(is_literal_spec(&ResolvedModelSpec::Literal {
+            literal: "x".into()
+        })),
+    );
     push_ok(
         buf,
         "isLiteral.preset",
-        json!(is_literal_spec(&ResolvedModelSpec::Preset(har_dag_executor::model_validation::ModelAliasPreset {
-            provider: "c".into(),
-            model: "m".into(),
-            effort: None,
-            thinking: None,
-        }))),
+        json!(is_literal_spec(&ResolvedModelSpec::Preset(
+            har_dag_executor::model_validation::ModelAliasPreset {
+                provider: "c".into(),
+                model: "m".into(),
+                effort: None,
+                thinking: None,
+            }
+        ))),
     );
 
     // ---- effort/thinking preservation (object form) ----
     {
         let mut e = entry_eff("claude", "opus", "high");
-        e.thinking = Some(ThinkingConfig::Enabled { budget_tokens: Some(1024) });
+        e.thinking = Some(ThinkingConfig::Enabled {
+            budget_tokens: Some(1024),
+        });
         let a: RawAliasesConfig = map1("@deep", e);
-        let p = build_ai_profile("claude", BuildAiProfileOptions { global_aliases: Some(&a), ..Default::default() }).unwrap();
-        push_ok(buf, "preset.preserves_effort_thinking", spec_json(&resolve_model_spec(&p, "@deep").unwrap()));
+        let p = build_ai_profile(
+            "claude",
+            BuildAiProfileOptions {
+                global_aliases: Some(&a),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        push_ok(
+            buf,
+            "preset.preserves_effort_thinking",
+            spec_json(&resolve_model_spec(&p, "@deep").unwrap()),
+        );
     }
 
     print!("{}", serde_json::to_string(&results).unwrap());

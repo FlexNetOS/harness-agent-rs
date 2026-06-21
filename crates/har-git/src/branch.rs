@@ -500,7 +500,10 @@ pub async fn get_last_commit_date(
             }
             error!(working_path, err = %message, "last_commit_date_check_failed");
             Err(GitError::ProcessError {
-                message: format!("Failed to get last commit date for {}: {}", working_path, message),
+                message: format!(
+                    "Failed to get last commit date for {}: {}",
+                    working_path, message
+                ),
             })
         }
         Err(GitError::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),

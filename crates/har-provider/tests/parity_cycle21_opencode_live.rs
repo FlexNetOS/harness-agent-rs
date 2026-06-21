@@ -20,9 +20,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use har_provider::opencode::http_client::OpenCodeClient;
-use har_provider::opencode::runtime::{
-    acquire_embedded_runtime, release_embedded_runtime_for_url,
-};
+use har_provider::opencode::runtime::{acquire_embedded_runtime, release_embedded_runtime_for_url};
 
 /// Locate an `opencode` binary and ensure it is reachable as bare `opencode` on PATH.
 ///

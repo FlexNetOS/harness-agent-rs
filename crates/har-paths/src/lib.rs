@@ -16,40 +16,40 @@ pub mod strip_cwd_env;
 
 // Public re-exports — convenience surface for downstream crates.
 pub use archon_paths::{
-    ArchonPathError,
-    Result as PathResult,
-    // Docker + tilde
-    is_docker,
     expand_tilde,
+    get_archon_config_path,
+    get_archon_env_path,
     // Archon home
     get_archon_home,
     // Global paths
     get_archon_workspaces_path,
     get_archon_worktrees_path,
-    get_archon_config_path,
-    get_home_workflows_path,
-    get_home_commands_path,
-    get_home_scripts_path,
-    get_legacy_home_workflows_path,
-    get_archon_env_path,
-    get_repo_archon_env_path,
     // Command/workflow search paths
     get_command_folder_search_paths,
-    get_workflow_folder_search_paths,
     // App defaults paths
     get_default_commands_path,
     get_default_workflows_path,
-    // Project-centric paths
-    parse_owner_repo,
+    get_home_commands_path,
+    get_home_scripts_path,
+    get_home_workflows_path,
+    get_legacy_home_workflows_path,
+    get_project_artifacts_path,
+    get_project_logs_path,
     get_project_root,
     get_project_source_path,
     get_project_worktrees_path,
-    get_project_artifacts_path,
-    get_project_logs_path,
+    get_repo_archon_env_path,
     get_run_artifacts_path,
     get_run_log_path,
     get_web_dist_dir,
+    get_workflow_folder_search_paths,
+    // Docker + tilde
+    is_docker,
+    // Project-centric paths
+    parse_owner_repo,
     resolve_project_root_from_cwd,
+    ArchonPathError,
+    Result as PathResult,
 };
 pub use env_loader::{is_verbose_boot, load_archon_env, EnvLoadResult};
 pub use strip_cwd_env::{

@@ -51,7 +51,10 @@ pub struct StepRetryConfig {
     /// `f64`, NOT an integer: source is `z.number().min(1000).max(60000)` with **no `.int()`**
     /// (retry.ts:15), so fractional milliseconds like `1500.5` are source-valid and must be
     /// accepted here too (a `u64` would reject them — a behavioral downgrade).
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_js_number")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_js_number"
+    )]
     pub delay_ms: Option<f64>,
 
     /// Which error types trigger a retry. Default: `transient`. retry.ts:20.
@@ -128,35 +131,56 @@ mod tests {
 
     #[test]
     fn max_attempts_boundary_1_passes() {
-        let r = StepRetryConfig { max_attempts: 1, delay_ms: None, on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 1,
+            delay_ms: None,
+            on_error: None,
+        };
         assert!(r.validate().is_empty());
     }
 
     #[test]
     fn max_attempts_boundary_5_passes() {
-        let r = StepRetryConfig { max_attempts: 5, delay_ms: None, on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 5,
+            delay_ms: None,
+            on_error: None,
+        };
         assert!(r.validate().is_empty());
     }
 
     #[test]
     fn delay_ms_boundary_1000_passes() {
-        let r = StepRetryConfig { max_attempts: 1, delay_ms: Some(1000.0), on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 1,
+            delay_ms: Some(1000.0),
+            on_error: None,
+        };
         assert!(r.validate().is_empty());
     }
 
     #[test]
     fn delay_ms_boundary_60000_passes() {
-        let r = StepRetryConfig { max_attempts: 1, delay_ms: Some(60_000.0), on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 1,
+            delay_ms: Some(60_000.0),
+            on_error: None,
+        };
         assert!(r.validate().is_empty());
     }
 
     #[test]
     fn delay_ms_fractional_passes() {
         // Source `z.number()` (retry.ts:15) has no `.int()`, so fractional ms is valid.
-        let r = StepRetryConfig { max_attempts: 1, delay_ms: Some(1500.5), on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 1,
+            delay_ms: Some(1500.5),
+            on_error: None,
+        };
         assert!(r.validate().is_empty());
         // Deserialize path: a fractional ms must parse (the WF-04 parity defect that was fixed).
-        let parsed = StepRetryConfig::parse(json!({ "max_attempts": 1, "delay_ms": 1500.5 })).unwrap();
+        let parsed =
+            StepRetryConfig::parse(json!({ "max_attempts": 1, "delay_ms": 1500.5 })).unwrap();
         assert_eq!(parsed.delay_ms, Some(1500.5));
         // Wire shape: a fractional value keeps its decimal.
         assert_eq!(serde_json::to_value(&parsed).unwrap()["delay_ms"], 1500.5);
@@ -194,7 +218,11 @@ mod tests {
 
     #[test]
     fn max_attempts_0_is_rejected() {
-        let r = StepRetryConfig { max_attempts: 0, delay_ms: None, on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 0,
+            delay_ms: None,
+            on_error: None,
+        };
         let errors = r.validate();
         assert!(
             errors.contains(&StepRetryValidationError::MaxAttemptsOutOfRange),
@@ -204,21 +232,33 @@ mod tests {
 
     #[test]
     fn max_attempts_6_is_rejected() {
-        let r = StepRetryConfig { max_attempts: 6, delay_ms: None, on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 6,
+            delay_ms: None,
+            on_error: None,
+        };
         let errors = r.validate();
         assert!(errors.contains(&StepRetryValidationError::MaxAttemptsOutOfRange));
     }
 
     #[test]
     fn delay_ms_999_is_rejected() {
-        let r = StepRetryConfig { max_attempts: 1, delay_ms: Some(999.0), on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 1,
+            delay_ms: Some(999.0),
+            on_error: None,
+        };
         let errors = r.validate();
         assert!(errors.contains(&StepRetryValidationError::DelayMsOutOfRange));
     }
 
     #[test]
     fn delay_ms_60001_is_rejected() {
-        let r = StepRetryConfig { max_attempts: 1, delay_ms: Some(60_001.0), on_error: None };
+        let r = StepRetryConfig {
+            max_attempts: 1,
+            delay_ms: Some(60_001.0),
+            on_error: None,
+        };
         let errors = r.validate();
         assert!(errors.contains(&StepRetryValidationError::DelayMsOutOfRange));
     }

@@ -28,16 +28,29 @@ fn base(codebase_name: Option<&str>) -> IsolationRequestBase {
 }
 
 fn issue(id: &str) -> IsolationRequest {
-    IsolationRequest::Issue { base: base(Some("owner/repo")), identifier: id.into() }
+    IsolationRequest::Issue {
+        base: base(Some("owner/repo")),
+        identifier: id.into(),
+    }
 }
 fn review(id: &str) -> IsolationRequest {
-    IsolationRequest::Review { base: base(Some("owner/repo")), identifier: id.into() }
+    IsolationRequest::Review {
+        base: base(Some("owner/repo")),
+        identifier: id.into(),
+    }
 }
 fn thread(id: &str) -> IsolationRequest {
-    IsolationRequest::Thread { base: base(Some("owner/repo")), identifier: id.into() }
+    IsolationRequest::Thread {
+        base: base(Some("owner/repo")),
+        identifier: id.into(),
+    }
 }
 fn task(id: &str) -> IsolationRequest {
-    IsolationRequest::Task { base: base(Some("owner/repo")), identifier: id.into(), from_branch: None }
+    IsolationRequest::Task {
+        base: base(Some("owner/repo")),
+        identifier: id.into(),
+        from_branch: None,
+    }
 }
 fn pr(id: &str, pr_branch: &str, is_fork: bool) -> IsolationRequest {
     IsolationRequest::Pr {
@@ -67,11 +80,17 @@ fn branch_naming_matches_ts_oracle() {
         (thread("héllo-世界"), "archon/thread-3e4ff432"),
         (task("Add New Feature!!"), "archon/task-add-new-feature"),
         (task("---Foo Bar---"), "archon/task-foo-bar"),
-        (task(&"a".repeat(80)), "archon/task-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        (
+            task(&"a".repeat(80)),
+            "archon/task-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ),
         (task("Café Münchën 2024"), "archon/task-caf-m-nch-n-2024"),
         (task("!!!@@@###"), "archon/task-"),
         (task("foo___bar...baz"), "archon/task-foo-bar-baz"),
-        (task(&("x".repeat(50) + "YZ")), "archon/task-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+        (
+            task(&("x".repeat(50) + "YZ")),
+            "archon/task-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        ),
     ];
     for (req, expected) in cases {
         let got = p.generate_branch_name(&req);
@@ -97,12 +116,27 @@ fn worktree_path_precedence_matches_ts_oracle() {
     );
 
     // empty override → same as default (TS: empty-after-trim → undefined)
-    let empty_cfg = WorktreeCreateConfig { base_branch: None, copy_files: None, init_submodules: None, path: Some("".into()) };
-    let empty_path = p.get_worktree_path(&req, &branch, Some(&empty_cfg)).unwrap();
-    assert_eq!(empty_path, default_path, "empty override should equal default");
+    let empty_cfg = WorktreeCreateConfig {
+        base_branch: None,
+        copy_files: None,
+        init_submodules: None,
+        path: Some("".into()),
+    };
+    let empty_path = p
+        .get_worktree_path(&req, &branch, Some(&empty_cfg))
+        .unwrap();
+    assert_eq!(
+        empty_path, default_path,
+        "empty override should equal default"
+    );
 
     // repo-local override → <repoRoot>/.worktrees/<branch>
-    let rl_cfg = WorktreeCreateConfig { base_branch: None, copy_files: None, init_submodules: None, path: Some(".worktrees".into()) };
+    let rl_cfg = WorktreeCreateConfig {
+        base_branch: None,
+        copy_files: None,
+        init_submodules: None,
+        path: Some(".worktrees".into()),
+    };
     let rl_path = p.get_worktree_path(&req, &branch, Some(&rl_cfg)).unwrap();
     assert_eq!(
         rl_path,
@@ -111,15 +145,26 @@ fn worktree_path_precedence_matches_ts_oracle() {
     );
 
     // nested repo-local override
-    let nested_cfg = WorktreeCreateConfig { base_branch: None, copy_files: None, init_submodules: None, path: Some("a/b/c".into()) };
-    let nested_path = p.get_worktree_path(&req, &branch, Some(&nested_cfg)).unwrap();
+    let nested_cfg = WorktreeCreateConfig {
+        base_branch: None,
+        copy_files: None,
+        init_submodules: None,
+        path: Some("a/b/c".into()),
+    };
+    let nested_path = p
+        .get_worktree_path(&req, &branch, Some(&nested_cfg))
+        .unwrap();
     assert_eq!(nested_path, format!("{REPO}/a/b/c/archon/issue-1"));
 
     // no codebaseName → owner/repo derived from last 2 path segments
-    let req_noname = IsolationRequest::Issue { base: base(None), identifier: "1".into() };
+    let req_noname = IsolationRequest::Issue {
+        base: base(None),
+        identifier: "1".into(),
+    };
     let noname_path = p.get_worktree_path(&req_noname, &branch, None).unwrap();
     assert!(
-        noname_path.ends_with("/.archon/workspaces/__tmp_repo_owner/myrepo/worktrees/archon/issue-1"),
+        noname_path
+            .ends_with("/.archon/workspaces/__tmp_repo_owner/myrepo/worktrees/archon/issue-1"),
         "no-codebasename path: {noname_path}"
     );
 }
@@ -133,23 +178,44 @@ fn worktree_path_errors_match_ts_oracle() {
     let branch = p.generate_branch_name(&req);
 
     // absolute path → Err with exact message
-    let abs_cfg = WorktreeCreateConfig { base_branch: None, copy_files: None, init_submodules: None, path: Some("/abs/path".into()) };
-    let abs_err = p.get_worktree_path(&req, &branch, Some(&abs_cfg)).unwrap_err().to_string();
+    let abs_cfg = WorktreeCreateConfig {
+        base_branch: None,
+        copy_files: None,
+        init_submodules: None,
+        path: Some("/abs/path".into()),
+    };
+    let abs_err = p
+        .get_worktree_path(&req, &branch, Some(&abs_cfg))
+        .unwrap_err()
+        .to_string();
     assert!(
         abs_err.contains("must be relative to the repo root (got absolute: /abs/path)"),
         "absolute err: {abs_err}"
     );
 
     // `..` segment → Err
-    let dd_cfg = WorktreeCreateConfig { base_branch: None, copy_files: None, init_submodules: None, path: Some("../escape".into()) };
-    let dd_err = p.get_worktree_path(&req, &branch, Some(&dd_cfg)).unwrap_err().to_string();
+    let dd_cfg = WorktreeCreateConfig {
+        base_branch: None,
+        copy_files: None,
+        init_submodules: None,
+        path: Some("../escape".into()),
+    };
+    let dd_err = p
+        .get_worktree_path(&req, &branch, Some(&dd_cfg))
+        .unwrap_err()
+        .to_string();
     assert!(
         dd_err.contains("must stay within the repo (got: ../escape)"),
         "dotdot err: {dd_err}"
     );
 
     // nested `..` that escapes after normalization → Err
-    let nd_cfg = WorktreeCreateConfig { base_branch: None, copy_files: None, init_submodules: None, path: Some("a/../../escape".into()) };
+    let nd_cfg = WorktreeCreateConfig {
+        base_branch: None,
+        copy_files: None,
+        init_submodules: None,
+        path: Some("a/../../escape".into()),
+    };
     let nd_err = p.get_worktree_path(&req, &branch, Some(&nd_cfg));
     assert!(nd_err.is_err(), "nested dotdot must error: {nd_err:?}");
 }

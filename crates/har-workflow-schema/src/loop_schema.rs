@@ -286,7 +286,7 @@ mod tests {
         let l = LoopNodeConfig {
             prompt: String::new(), // error
             until: String::new(),  // error
-            max_iterations: 0,    // error
+            max_iterations: 0,     // error
             fresh_context: false,
             until_bash: None,
             interactive: Some(true), // error: no gate_message
