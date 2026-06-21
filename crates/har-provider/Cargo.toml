@@ -15,12 +15,16 @@ serde.workspace = true
 serde_json.workspace = true
 futures.workspace = true
 futures-core = "0.3"
+futures-util.workspace = true
 async-stream.workspace = true
 tracing.workspace = true
 indexmap.workspace = true
 bytes.workspace = true
 tempfile = "3"
 jsonrepair-rs.workspace = true
+rand.workspace = true
+url.workspace = true
+hex.workspace = true
 
 directories.workspace = true
 axum.workspace = true

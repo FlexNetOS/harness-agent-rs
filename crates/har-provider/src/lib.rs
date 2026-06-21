@@ -24,6 +24,7 @@ pub mod cli_stream;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
+pub mod opencode;
 pub mod shared;
 
 use har_contract::{
@@ -401,7 +402,7 @@ pub fn register_copilot_provider() {
 /// Register the OpenCode community provider. Idempotent.
 ///
 /// Source: `packages/providers/src/community/opencode/registration.ts`.
-/// Factory seam: `UnimplementedProvider` until PR-11 lands.
+/// PR-11 WIRED (cycle 19): `OpencodeProvider` now wired — replaces `UnimplementedProvider`.
 pub fn register_opencode_provider() {
     if is_registered_provider("opencode") {
         return;
@@ -410,10 +411,7 @@ pub fn register_opencode_provider() {
         id: "opencode".to_owned(),
         display_name: "OpenCode (community)".to_owned(),
         factory: Box::new(|| {
-            Arc::new(UnimplementedProvider {
-                provider_type: "opencode",
-                capabilities: &OPENCODE_CAPABILITIES,
-            })
+            Arc::new(opencode::provider::OpencodeProvider::new()) as Arc<dyn AgentProvider>
         }),
         capabilities: OPENCODE_CAPABILITIES,
         built_in: false,

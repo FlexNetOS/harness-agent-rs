@@ -62,7 +62,13 @@ capability downgrade. The seam is exactly isolated to the SDK session lifecycle 
 hides behind it). `COPILOT_CAPABILITIES` flags mirror the source exactly (do NOT edit them; the gap is
 the seam, not the flags).
 
-**The owner decision (3 options):**
+**OWNER RULING (2026-06-21): option (b).** Ship the documented honest seam; port every other surface
+of each Node-SDK community provider (copilot/pi/opencode) now with full no-downgrade parity; leave the
+SDK session binding unbound behind the honest `copilot_sdk_not_bound`-class error; bind all three SDKs
+in a single later pass (or fold into UP-1's pure-Rust backend). Provider rows stay `- [~]` until that
+binding pass. Capability flags stay source-exact (the gap is the seam, not the flags). Applies to all 3.
+
+**The 3 options that were on the table:**
 - **(a) Node sidecar running @github/copilot-sdk** that the Rust shells out to (analogous to the Claude
   R8 loopback band-aid). **Preserves the feature; most consistent with the R8 precedent. Recommended.**
   Cost: introduces a Node runtime + the SDK as a bundled subprocess dependency (the tension: it's not

@@ -8,31 +8,36 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2    # resume 2026-06-21 (fresh session); baseline re-verified PASS. cycles 17+18 done.
-cycles_total: 18
-ledger: parity **36/79 units** verified + **PR-10 Copilot ported-surface verified, provider `- [~]` blocked on
-        ONE owner-wall** (the @github/copilot-sdk Node-SDK session binding — UP-2, NEEDS-HUMAN). PR-10 is NOT a
-        full `- [x]` unit until the owner picks the SDK-seam option. (Full units: PR-01..08; WF-01..08, WF-11..14;
-        PA-01/06/07; GI-01..05; IS-01..08.) native_tools/no-downgrade preserved end-to-end.
-last_item: cycle 18 — **Copilot community provider** (PR-10). Ported crates/har-provider/src/copilot/
-           (binary_resolver, config, event_bridge, provider) + crates/har-provider/src/shared/ (structured_output,
-           skills). Copilot wraps the @github/copilot-sdk NODE SDK (not a CLI) → cli_stream/ does NOT apply. ALL
-           surrounding logic ported + differential-verified vs live bun (event-bridge 8 events, binary-resolver,
-           config, token/env, error-class, structured-output, skills). SDK session binding = isolated NEEDS-HUMAN
-           seam → send_query returns clean `copilot_sdk_not_bound` (honest, no stub/downgrade). Gate FAILed first
-           (3 structured-output downgrades: jsonrepair `[≠]` REFUTED→ported jsonrepair-rs crate + object-gate;
-           non-deterministic schema key order → order-preserving serde_json::Map [touched har-contract
-           OutputFormat.schema, blast-radius verified clean on claude+codex --output-schema]; absent tool args
-           →`{}`). All fixed + RE-VERIFIED PASS. Found+recorded 2 bounded `[≠]` (jsonrepair-rs vs npm on
-           NaN/Infinity/+N pathological inputs). Fixed a REAL env-race flake (codex provider tests leaked
-           BUNDLED_IS_BINARY/CODEX_BIN_PATH → #[serial], 5/5 green). New dep: jsonrepair-rs 0.2.1. Harness:
-           tests/parity_cycle18_copilot.rs (8 live, 0 ignores). Workspace 1266→1392 tests. Findings: parity-cycle18.md.
-status: cycle 18 DONE (2/3 this session). **OWNER DECISION PENDING: PR-10 Copilot SDK-seam (UP-2, 3 options,
-        rec=(a) Node sidecar per R8 precedent)** — blocks PR-10 `- [x]`. NEXT (no-wall) = cycle 19: **PR-09 Pi
-        (2038 LOC) or PR-11 OpenCode (1680 LOC) community provider** — both ALSO wrap Node SDKs (not CLIs); expect
-        the SAME SDK-binding seam (decide UP-2 once, applies to all 3). Then PR-12 loadMcpConfig (closes carried
-        `- [≈]`, rewires codex/claude/copilot send_query MCP) → har-ledger (CO db MAP→hf, WF-19) → WF-09 dag-executor.
-last_update: 2026-06-21T12:00:00Z
+cycles_this_session: 3    # resume 2026-06-21; cycles 17+18+19 done. AT BUDGET → wrap up.
+cycles_total: 19
+ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
+        `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
+        units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+last_item: cycle 19 — **OpenCode community provider** (PR-11). Ported crates/har-provider/src/opencode/ (config,
+           errors, tokens, agent_config, agent_fs, runtime, session, multi_agent, provider — 12 source files).
+           OpenCode wraps the @opencode-ai/sdk NODE SDK → cli_stream/ N/A; per UP-2(b) the live SDK session
+           (`createOpencode` + client.session.*) is the honest seam → send_query returns `opencode_sdk_not_bound`;
+           materialize_agents FS side-effect fires BEFORE the seam (verified). ALL else ported + differential-verified
+           vs live bun (34/34 harness). Gate FAILed first on 3 wire-shape divergences (D1 empty `description` must
+           omit; D2 tools must keep INSERTION order not alphabetical; D3 empty `system` must omit). Porter fixed,
+           but the RE-VERIFY caught the D3 fix INTRODUCED a regression — porter made `Multi([])`→omit, yet JS `[]`
+           is TRUTHY → must INCLUDE as `[]`; verifier corrected (session.rs `Multi(_)=>false`). `[≠]`: Windows kill
+           path (untestable-Linux, faithful), abortableStream→CancellationToken, init-once→OnceLock, warn→AtomicBool
+           (all behavior-preserving). New deps: rand, url, hex, futures-util. Harness: tests/parity_cycle19_opencode.rs
+           (34 live, 0 ignores). Workspace 1392→1548 tests, clippy clean. Findings: parity-cycle19.md.
+status: cycle 19 DONE (3/3 this session — AT BUDGET, wrap up). **OWNER RULING UP-2 = option b** (ship the honest
+        Node-SDK seam, port surfaces now, bind the SDKs in a later pass; docs/POST-PORT-UPGRADES.md UP-2). NEXT =
+        cycle 20: **PR-09 Pi community provider** (2038 LOC, biggest; ALSO Node-SDK → same UP-2(b) honest seam; reuse
+        shared/ + the copilot/opencode seam pattern). Then **the SDK-binding pass** (bind copilot+opencode+pi SDKs →
+        flips their provider rows `- [~]`→`- [x]`). Then PR-12 loadMcpConfig (closes carried `- [≈]`, rewires
+        claude/codex/copilot/opencode send_query MCP) → har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09
+        dag-executor (keystone) → WF-10/15/16.. → server (axum) → cli.
+session_summary_2026-06-21: resumed at 34/79; baseline re-verified PASS; ran cycles 17(Codex PR-07/08, full `- [x]`),
+        18(Copilot PR-10, surface+seam), 19(OpenCode PR-11, surface+seam). Every gate FAILed first then fixed+re-verified
+        (re-verify caught a porter D3-fix regression in c19). Fixed a real env-race flake (#[serial]). New deps:
+        jsonrepair-rs, rand, url, hex, futures-util. Workspace 1117→1548 tests, clippy clean. Commits: bb89035 (c17),
+        8050671 (c18), +c19 (this). Held on main, NOT pushed (owner: defer push).
+last_update: 2026-06-21T18:00:00Z
 
 ## Open follow-ups (tracked — not downgrades, owed by not-yet-ported sibling units)
 - **loadMcpConfig full wiring into send_query** (owes two items surfaced cycles 15-16):

@@ -723,18 +723,20 @@ LEDGER CORRECTIONS:
 - [ ] Provider hardening: retry on transient errors (provider-hardening.test.ts) — folded into the SDK-seam binding (retry wraps the session call); completes when the seam is bound
 
 ### UNIT PR-11: Community OpenCode Provider
-**Source:** `packages/providers/src/community/opencode/` (9 files)
-**Rust target:** `crates/providers/src/community/opencode/`
+**Source:** `packages/providers/src/community/opencode/` (12 files)
+**Rust target:** `crates/har-provider/src/opencode/`
+**Status (cycle 19):** ported surface parity-verified vs live bun (34/34 harness); provider `send_query` `- [~]` blocked on the accepted UP-2(b) Node-SDK seam (`@opencode-ai/sdk` `createOpencode` + `client.session.*`). NOT a `- [x]` provider until the SDK-binding pass.
 
-- [ ] `OpenCodeProvider` implementing `IAgentProvider` (provider.ts)
-- [ ] `OPENCODE_CAPABILITIES: ProviderCapabilities` (capabilities.ts)
-- [ ] `parseOpencodeConfig(raw) -> OpencodeProviderDefaults` (config.ts)
-- [ ] Agent config + agent filesystem ops (agent-config.ts, agent-fs.ts)
-- [ ] Multi-agent dispatch (multi-agent.ts)
-- [ ] Runtime management: start/stop OpenCode server (runtime.ts)
-- [ ] Session lifecycle (session.ts)
-- [ ] Token management (tokens.ts)
-- [ ] Error types (errors.ts)
+- [~] `OpencodeProvider` `send_query` (provider.ts) — orchestration ported; live SDK session call = honest seam → `Result{is_error:true, error_subtype:"opencode_sdk_not_bound"}` (UP-2 option b). `materialize_agents` FS side-effect fires BEFORE the seam (verified).
+- [x] `OPENCODE_CAPABILITIES` (capabilities.ts) — exact (PR-02, re-verified cycle 19); `OpencodeProviderDefaults` (PR-01) reused
+- [x] `parse_opencode_config` + `parse_model_ref` (config.ts) — cycle 19 PASS
+- [x] Agent config + agent-fs (agent-config.ts, agent-fs.ts) — get_ordered_agents/select_single_agent/adapt/to_kebab_case/build_tools_permissions_map; build_agent_file_content (empty-desc omit + tools INSERTION order) + materialize_agents (stale archon-* cleanup, parallel writes). cycle 19 PASS
+- [x] Multi-agent dispatch (multi-agent.ts) — with_agent_node_config/format_buffered_assistant_output/collect_tool_chunks_for_emission/aggregate_tokens. cycle 19 PASS (event loop behind seam)
+- [x] Runtime management (runtime.ts) — generate_random_password/build_embedded_server_config(preserve_order)/extract_port_from_url/find+kill process/is_port_bind_conflict/pick_random_startup_port/ref-count release. cycle 19 PASS. `- [≠]` Windows kill path (untestable on Linux, faithful); init-once→OnceLock, warn-once→AtomicBool (behavior-preserving)
+- [x] Session lifecycle (session.ts) — create_session_prompt_body (ALL fields, preserve_order, JS-truthy omit for empty `system`; `Multi([])` INCLUDED as `[]` per JS `[]`-truthy), read_structured_output, resolve_session_id logic, message-event→chunk mapping. cycle 19 PASS. `- [≠]` abortableStream→tokio CancellationToken (observable behavior identical)
+- [x] Token management (tokens.ts) — normalize_tokens (input+output+reasoning→total, cost). cycle 19 PASS
+- [x] Error types (errors.ts) — classify_opencode_error (aborted-first + 4 pattern sets), enrich, error_message string/value paths. cycle 19 PASS
+- [≈] provider-wide: TS `throw` → Rust error-as-`Result{is_error:true}` chunk (carried)
 
 ### UNIT PR-12: MCP Config Loader
 **Source:** `packages/providers/src/mcp/config.ts`
