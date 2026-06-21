@@ -22,6 +22,7 @@
 // ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06) ──────────────────────────────
 pub mod cli_stream;
 pub mod claude;
+pub mod codex;
 
 use har_contract::{
     AgentProvider, MessageChunk, ProviderCapabilities, ProviderInfo, ProviderRegistration,
@@ -324,7 +325,7 @@ pub fn is_registered_provider(id: &str) -> bool {
 /// Must be called at process entrypoints before any provider lookups.
 ///
 /// PR-03 cycle-14: `ClaudeProvider` now wired — replaces `UnimplementedProvider` for "claude".
-/// PR-07 (codex) still uses `UnimplementedProvider` until its cycle lands.
+/// PR-07 cycle-17: `CodexProvider` now wired — replaces `UnimplementedProvider` for "codex".
 pub fn register_builtin_providers() {
     let mut guard = registry().lock().unwrap();
 
@@ -356,7 +357,7 @@ pub fn register_builtin_providers() {
         tracing::debug!(provider = "claude", "builtin_provider.registered");
     }
 
-    // Codex (OpenAI) — PR-07 (not yet ported)
+    // Codex (OpenAI) — PR-07 WIRED (cycle 17)
     if !guard.contains_key("codex") {
         guard.insert(
             "codex".to_owned(),
@@ -364,10 +365,7 @@ pub fn register_builtin_providers() {
                 id: "codex".to_owned(),
                 display_name: "Codex (OpenAI)".to_owned(),
                 factory: Box::new(|| {
-                    Arc::new(UnimplementedProvider {
-                        provider_type: "codex",
-                        capabilities: &CODEX_CAPABILITIES,
-                    })
+                    Arc::new(codex::provider::CodexProvider::new()) as Arc<dyn AgentProvider>
                 }),
                 capabilities: CODEX_CAPABILITIES,
                 built_in: true,

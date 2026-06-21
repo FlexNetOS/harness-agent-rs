@@ -677,18 +677,18 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-07: Codex Provider
 **Source:** `packages/providers/src/codex/provider.ts`
-**Rust target:** `crates/providers/src/codex/provider.rs`
+**Rust target:** `crates/har-provider/src/codex/provider.rs`
 
-- [ ] `CodexProvider` implementing `IAgentProvider`: subprocess-based; `modelReasoningEffort`, `webSearchMode`, `additionalDirectories`, `codexBinaryPath` (provider.ts)
-- [ ] Output parsing: parses Codex CLI output to `MessageChunk` stream (provider.ts)
+- [x] `CodexProvider` implementing `IAgentProvider`: subprocess-based; `modelReasoningEffort`, `webSearchMode`, `additionalDirectories`, `codexBinaryPath` (provider.ts) — cycle 17, parity-verified vs live @openai/codex-sdk@0.125.0 + bun. Reuses `cli_stream/` substrate. Includes ported `normalize_json_schema_for_openai_strict` (shared/structured-output.ts:147-233) for `--output-schema`. `- [≠]` D3: structured-output warn preview uses `.chars().take(200)` (scalar values) vs TS `slice(0,200)` (UTF-16 units) — log-cosmetic only, Rust strictly more correct (no lone surrogate). `- [≈]` MCP: `send_query` uses inline stopgap `load_mcp_config`; rewire when PR-12 `loadMcpConfig` lands.
+- [x] Output parsing: parses Codex CLI output (`thread.started`/`item.completed`/`error`/`turn.failed`/`turn.completed`) to `MessageChunk` stream (provider.ts) — cycle 17, parity PASS.
 
 ### UNIT PR-08: Codex Binary Resolver + Capabilities + Config
 **Source:** `packages/providers/src/codex/{binary-resolver.ts, capabilities.ts, config.ts}`
-**Rust target:** `crates/providers/src/codex/`
+**Rust target:** `crates/har-provider/src/codex/`
 
-- [ ] `CODEX_CAPABILITIES: ProviderCapabilities` (capabilities.ts)
-- [ ] `resolveCodexBinaryPath(config)` — env `CODEX_BIN_PATH` > config > PATH (binary-resolver.ts)
-- [ ] `parseCodexConfig(raw) -> CodexProviderDefaults` (config.ts)
+- [x] `CODEX_CAPABILITIES: ProviderCapabilities` (capabilities.ts) — 14/14 flags exact (ported PR-02, re-verified cycle 17)
+- [x] `resolveCodexBinaryPath(config)` — env `CODEX_BIN_PATH` > config > vendor > PATH autodetect > throw (binary-resolver.ts) — cycle 17, error texts byte-exact
+- [x] `parseCodexConfig(raw) -> CodexProviderDefaults` (config.ts) — cycle 17, defensive-parse matrix PASS
 
 ### UNIT PR-09: Community Pi Provider
 **Source:** `packages/providers/src/community/pi/` (10 files)

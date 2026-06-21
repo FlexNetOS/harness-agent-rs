@@ -8,23 +8,26 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 2
-cycles_total: 16
-ledger: parity **34/79 units** — PR-03 Claude Provider is now a FULL VERIFIED UNIT (native-tools
-        loopback-MCP band-aid landed cycles 15-16, R8). (PR-01/02/03/04/05/06; WF-01..08, WF-11..14;
-        PA-01/06/07; GI-01..05; IS-01..08.) native_tools cap stays true end-to-end — no downgrade.
-last_item: cycle 16 — native-tools loopback HTTP transport + mcp-config write/MERGE + send_query wiring.
-           PASS (verifier's own 10/10 adversarial harness: transport byte-identical to the verified core;
-           merge = SDK `{...existing, archon}` spread with ALL nodeConfig servers preserved, none dropped;
-           single --mcp-config; RAII teardown no-leak; native_tools=true preserved). Live-CLI smoke
-           SKIPPED — env-gated (claude 2.1.177 present, no auth). Deleted inert DEFERRED warnings
-           (argv.rs + provider.rs:463-475). New: start_loopback/McpHttpServer/write_mcp_config_merged in
-           cli_stream/mcp_sidecar.rs; provider.rs step-6b. Harness: tests/parity_cycle16_loopback_transport.rs.
-status: cycle 16 DONE (2/3 this session). NEXT = cycle 17: **PR-07 CodexProvider** — reuses the cli_stream/
-        substrate (Spawner/NdjsonStream/retry/cancel) + the deterministic argv+parser differential strategy
-        (codex is already a CLI in source: packages/providers/src/codex/). Then PR-09/10/11 community
-        (copilot/opencode/pi) → har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09 dag-executor (keystone).
-last_update: 2026-06-14T20:00:00Z
+cycles_this_session: 1    # reset on resume 2026-06-21 (fresh session); baseline re-verified PASS (clippy clean, 1117 tests). cycle 17 done.
+cycles_total: 17
+ledger: parity **36/79 units** — PR-07 CodexProvider + PR-08 (binary-resolver/config) now FULL VERIFIED UNITS
+        (cycle 17, differential PASS vs live @openai/codex-sdk@0.125.0 + bun). (PR-01/02/03/04/05/06/07/08;
+        WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) Codex reuses the cli_stream/ substrate
+        (Spawner/NdjsonStream/retry/cancel/stderr) — no duplication. native_tools/no-downgrade preserved.
+last_item: cycle 17 — **Codex provider** (PR-07 + PR-08). Ported crates/har-provider/src/codex/ (binary_resolver,
+           config, argv, parser, provider) mirroring claude/, reusing cli_stream/. Wired CodexProvider into
+           register_builtin_providers (replaced UnimplementedProvider for "codex"). Differential gate FAILed
+           first (3 downgrades the porter's green tests hid): D1 to_toml_value control-char escaping (→ serde_json
+           JSON.stringify), D2 missing normalize_json_schema_for_openai_strict for --output-schema (ported from
+           shared/structured-output.ts:147-233 + hasOpen warn), D3 byte-slice panic preview (→ char-safe). All
+           fixed + RE-VERIFIED PASS (0 diffs across 256 codepoints / 18-schema matrix). D3 recorded `- [≠]`
+           (log-cosmetic). Live model call SKIPPED — env-gated (no auth). Harness: tests/parity_cycle17_codex.rs
+           (30 live tests, 0 ignores). Workspace 1117→1266 tests. Findings: findings/parity-cycle17.md.
+status: cycle 17 DONE (1/3 this session). NEXT = cycle 18: **PR-09/10/11 community providers** (pi/opencode/copilot
+        — packages/providers/src/{pi,opencode,copilot}/) reusing the same cli_stream/ substrate + deterministic
+        argv+parser differential strategy. Then PR-12 loadMcpConfig (closes the carried `- [≈]` + rewires codex/
+        claude send_query MCP) → har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09 dag-executor (keystone).
+last_update: 2026-06-21T00:00:00Z
 
 ## Open follow-ups (tracked — not downgrades, owed by not-yet-ported sibling units)
 - **loadMcpConfig full wiring into send_query** (owes two items surfaced cycles 15-16):
