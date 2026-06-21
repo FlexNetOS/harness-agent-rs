@@ -19,12 +19,13 @@
 //! panics on `send_query` — this is correct: the CAPABILITIES (the consumer-facing contract)
 //! are the real source values, and will remain unchanged when PR-03+ land.
 
-// ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06, PR-11) ───────────────────────
+// ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06, PR-09, PR-11) ────────────────
 pub mod cli_stream;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
 pub mod opencode;
+pub mod pi;
 pub mod shared;
 
 use har_contract::{
@@ -421,7 +422,7 @@ pub fn register_opencode_provider() {
 /// Register the Pi community provider. Idempotent.
 ///
 /// Source: `packages/providers/src/community/pi/registration.ts`.
-/// Factory seam: `UnimplementedProvider` until PR-09 lands.
+/// PR-09 WIRED (cycle 20): `PiProvider` now wired — replaces `UnimplementedProvider`.
 pub fn register_pi_provider() {
     if is_registered_provider("pi") {
         return;
@@ -430,10 +431,7 @@ pub fn register_pi_provider() {
         id: "pi".to_owned(),
         display_name: "Pi (community)".to_owned(),
         factory: Box::new(|| {
-            Arc::new(UnimplementedProvider {
-                provider_type: "pi",
-                capabilities: &PI_CAPABILITIES,
-            })
+            Arc::new(pi::provider::PiProvider::new()) as Arc<dyn AgentProvider>
         }),
         capabilities: PI_CAPABILITIES,
         built_in: false,

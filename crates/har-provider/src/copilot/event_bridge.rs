@@ -286,12 +286,13 @@ pub fn map_copilot_event(event: CopilotEvent, ctx: &mut EventMapperContext) -> V
         CopilotEvent::ToolExecutionStart(data) => {
             ctx.tool_call_id_to_name
                 .insert(data.tool_call_id.clone(), data.tool_name.clone());
-            // Convert JSON Value to HashMap<String, Value> for MessageChunk::Tool.
-            // Source: event-bridge.ts:183 — `toolInput: args ?? {}` — absent args becomes
-            // an empty object `{}` on the wire, never omitted. Match that shape exactly.
-            let tool_input: HashMap<String, Value> = match data.arguments {
-                Some(Value::Object(map)) => map.into_iter().collect(),
-                _ => HashMap::new(),
+            // Source: event-bridge.ts:183 — `toolInput: args ?? {}`
+            // JS `?? {}` replaces only null/undefined (absent) with `{}`.
+            // Any other non-null value — objects, arrays, scalars — passes through as-is.
+            // e.g. `[1,2] ?? {}` === `[1,2]`; `5 ?? {}` === `5`.
+            let tool_input: Value = match data.arguments {
+                Some(Value::Null) | None => Value::Object(serde_json::Map::new()),
+                Some(v) => v,
             };
             vec![MessageChunk::Tool {
                 tool_name: data.tool_name,
@@ -523,10 +524,10 @@ mod tests {
         });
         let out = map_copilot_event(event, &mut ctx);
         assert_eq!(out.len(), 1);
-        // Must be Some(empty map), NOT None.
+        // Must be Some(empty object), NOT None.
         assert!(
-            matches!(&out[0], MessageChunk::Tool { tool_input: Some(m), .. } if m.is_empty()),
-            "absent arguments must produce Some(empty HashMap), not None"
+            matches!(&out[0], MessageChunk::Tool { tool_input: Some(Value::Object(m)), .. } if m.is_empty()),
+            "absent arguments must produce Some(empty object {{}}), not None"
         );
     }
 

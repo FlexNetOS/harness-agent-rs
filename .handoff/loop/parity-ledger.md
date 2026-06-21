@@ -691,21 +691,24 @@ LEDGER CORRECTIONS:
 - [x] `parseCodexConfig(raw) -> CodexProviderDefaults` (config.ts) — cycle 17, defensive-parse matrix PASS
 
 ### UNIT PR-09: Community Pi Provider
-**Source:** `packages/providers/src/community/pi/` (10 files)
-**Rust target:** `crates/providers/src/community/pi/`
+**Source:** `packages/providers/src/community/pi/` (12 files)
+**Rust target:** `crates/har-provider/src/pi/`
+**Status (cycle 20):** ported surface parity-verified vs live bun (18/18 harness + 11/11 contract-blast); provider `send_query` `- [~]` blocked on the accepted UP-2(b) Node-SDK seam (`pi_sdk_not_bound`). NOT a `- [x]` provider until the SDK-binding pass.
 
-- [ ] `PiProvider` implementing `IAgentProvider` (provider.ts)
-- [ ] `PI_CAPABILITIES: ProviderCapabilities` — best-effort structuredOutput, no hooks/mcp/sandbox (capabilities.ts)
-- [ ] `parsePiConfig(raw) -> PiProviderDefaults` (config.ts)
-- [ ] `PiEventBridge` — maps Pi SDK events to `MessageChunk` (event-bridge.ts)
-- [ ] `resolveModelRef(model: String) -> PiModelRef` — `'<provider>/<model>'` format (model-ref.ts)
-- [ ] `PiNativeTools` — `customTools` integration (native-tools.ts)
-- [ ] `translateOptions(opts) -> PiRequestOptions` (options-translator.ts)
-- [ ] `resolveSession(model, cwd, sessionId?) -> PiSession` (session-resolver.ts)
-- [ ] `PiResourceLoader` — loads Pi-specific resources (resource-loader.ts)
-- [ ] `PiUiContextStub` — stub for `ctx.ui.notify()` → flush chunks (ui-context-stub.ts)
-- [ ] Lazy-load pattern: Pi SDK imports deferred until first use (provider-lazy-load.test.ts confirms)
-- [ ] `maxConcurrent` semaphore for Pi API rate limits (types.ts:141)
+- [~] `PiProvider` `send_query` (provider.ts) — pre-seam steps 0-16 ported (shim ensure_pi_package_dir_shim, PI_PROVIDER_ENV_VARS[9], maxConcurrent tokio::Semaphore, auth/thinking/tools/skills/session/settings/resource-loader/structured-output-augment); live SDK session = honest seam → `Result{is_error:true, error_subtype:"pi_sdk_not_bound"}` (UP-2 b). Observable side-effects fire BEFORE the seam (shim write proven on disk).
+- [x] `PI_CAPABILITIES` (capabilities.ts) — exact (PR-02, re-verified cycle 20)
+- [x] `parse_pi_config` (config.ts) — cycle 20, defensive-parse 6 fields PASS
+- [x] `PiEventBridge` / `map_pi_event` / `usage_to_tokens` / `serialize_tool_result` / `build_result_chunk` / `AsyncQueue` (event-bridge.ts) — cycle 20 PASS; `toolInput`: object/array passthrough, null/scalar/absent→`{}` (typeof-object&&!null rule, byte-exact)
+- [x] `parse_pi_model_ref` (model-ref.ts) — `<provider>/<model>` split + `^[a-z][a-z0-9-]*$` validation. cycle 20 PASS
+- [x] `PiNativeTools` validate_and_normalize_schema + build_pi_native_tool_definitions (native-tools.ts) — cycle 20 PASS
+- [x] `translateOptions` (options-translator.ts) — thinking-level, tool restrictions, skill resolution. cycle 20 PASS
+- [x] `resolve_pi_session` logic + is_missing_session_dir_error (session-resolver.ts) — cycle 20 PASS
+- [x] `PiResourceLoader` (resource-loader.ts) — noop + get_or_create_reloaded_extension_loader single-reload-per-key cache. cycle 20 PASS. `- [≠]` OnceCell/OnceLock swap (behavior-preserving)
+- [x] `ArchonUiContextSpec::notify` (ui-context-stub.ts) — icon dispatch + flush:true → chunk. cycle 20 PASS
+- [x] Lazy-load pattern (provider-lazy-load.test.ts) — SDK import deferred (the seam); pre-seam steps run without SDK
+- [x] `maxConcurrent` semaphore (types.ts:141) — tokio::sync::Semaphore. `- [≠]` (behavior-preserving: limit + acquire/release/order match)
+- [≈] MCP/loadMcpConfig carried (out-of-unit, PR-12)
+- NOTE (cycle 20 contract change, no-downgrade-verified): har-contract `MessageChunk::Tool.tool_input` `HashMap`→`Option<Value>` (Pi needs JS array-passthrough). Re-verified ALL providers vs their OWN source — claude `?? {}`(null/absent→{}), copilot `?? {}`(passthrough incl array), opencode `isRecord`(omit null/scalar), pi(typeof→{}), codex(never emits) — 4 distinct behaviors preserved, NOT homogenized. Permanent coverage: tests/parity_cycle20_contract_blast.rs.
 
 ### UNIT PR-10: Community Copilot Provider
 **Source:** `packages/providers/src/community/copilot/` (7 files)

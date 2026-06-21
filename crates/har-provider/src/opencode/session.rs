@@ -306,10 +306,16 @@ pub fn process_message_part_updated(
                 .unwrap_or("unknown")
                 .to_owned();
             let state = part.get("state").and_then(|v| v.as_object());
-            let tool_input = state
+            // Source: session.ts:200  `isRecord(state?.input) ? state.input : undefined`
+            // where `isRecord = typeof v === 'object' && v !== null`
+            // In JS, arrays satisfy isRecord (typeof [] === 'object'). Scalars and null do not.
+            // So: object or array → include; null / string / number / bool → OMIT.
+            let tool_input: Option<Value> = state
                 .and_then(|s| s.get("input"))
-                .and_then(|v| v.as_object())
-                .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>());
+                .and_then(|v| match v {
+                    Value::Object(_) | Value::Array(_) => Some(v.clone()),
+                    _ => None,
+                });
             let status = state.and_then(|s| s.get("status")).and_then(Value::as_str);
 
             // Emit tool chunk (deduped by callId)

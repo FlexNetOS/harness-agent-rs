@@ -187,10 +187,16 @@ pub fn parse_claude_stream_json(obj: &Map<String, Value>) -> Vec<MessageChunk> {
                     }
                     "tool_use" => {
                         if let Some(name) = block.get("name").and_then(|v| v.as_str()) {
-                            let tool_input: Option<HashMap<String, Value>> = block
-                                .get("input")
-                                .and_then(|v| v.as_object())
-                                .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                            // Source: provider.ts:664  `toolInput: block.input ?? {}`
+                            // JS `?? {}` replaces null AND undefined (absent) with `{}`.
+                            // Objects pass through as-is.
+                            // provider.test.ts:460-475 pins the absent-input → `{}` case.
+                            let tool_input: Option<Value> = Some(
+                                match block.get("input") {
+                                    Some(Value::Null) | None => Value::Object(serde_json::Map::new()),
+                                    Some(v) => v.clone(),
+                                }
+                            );
                             let tool_call_id =
                                 block.get("id").and_then(|v| v.as_str()).map(str::to_owned);
                             chunks.push(MessageChunk::Tool {
@@ -439,7 +445,11 @@ mod tests {
         if let MessageChunk::Tool { tool_name, tool_call_id, tool_input } = &chunks[0] {
             assert_eq!(tool_name, "bash");
             assert_eq!(tool_call_id.as_deref(), Some("tu-001"));
-            assert!(tool_input.as_ref().map(|m| m.contains_key("command")).unwrap_or(false));
+            assert!(tool_input
+                .as_ref()
+                .and_then(|v| v.as_object())
+                .map(|m| m.contains_key("command"))
+                .unwrap_or(false));
         } else {
             panic!("expected Tool chunk");
         }

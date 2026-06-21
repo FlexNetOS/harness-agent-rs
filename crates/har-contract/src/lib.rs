@@ -291,11 +291,16 @@ pub enum MessageChunk {
     },
 
     /// Tool invocation chunk. types.ts:205-214.
+    ///
+    /// `tool_input` is `Option<Value>` (not `Option<HashMap>`) because Pi's
+    /// `tool_execution_start` passes arrays through unchanged (`typeof [] === 'object'`),
+    /// and non-object scalars/null are coerced to `{}`.  `Value` represents all
+    /// those shapes faithfully; `HashMap` cannot hold an array.
     Tool {
         #[serde(rename = "toolName")]
         tool_name: String,
         #[serde(rename = "toolInput", skip_serializing_if = "Option::is_none")]
-        tool_input: Option<HashMap<String, Value>>,
+        tool_input: Option<Value>,
         /// Stable per-call ID from the underlying SDK. types.ts:213.
         #[serde(rename = "toolCallId", skip_serializing_if = "Option::is_none")]
         tool_call_id: Option<String>,

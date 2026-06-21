@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 3    # resume 2026-06-21; cycles 17+18+19 done. AT BUDGET → wrap up.
-cycles_total: 19
+cycles_this_session: 4    # resume 2026-06-21; cycles 17-20 done (owner extended past budget to do cycle 20).
+cycles_total: 20
 ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
         `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
         units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
@@ -25,13 +25,15 @@ last_item: cycle 19 — **OpenCode community provider** (PR-11). Ported crates/h
            path (untestable-Linux, faithful), abortableStream→CancellationToken, init-once→OnceLock, warn→AtomicBool
            (all behavior-preserving). New deps: rand, url, hex, futures-util. Harness: tests/parity_cycle19_opencode.rs
            (34 live, 0 ignores). Workspace 1392→1548 tests, clippy clean. Findings: parity-cycle19.md.
-status: cycle 19 DONE (3/3 this session — AT BUDGET, wrap up). **OWNER RULING UP-2 = option b** (ship the honest
-        Node-SDK seam, port surfaces now, bind the SDKs in a later pass; docs/POST-PORT-UPGRADES.md UP-2). NEXT =
-        cycle 20: **PR-09 Pi community provider** (2038 LOC, biggest; ALSO Node-SDK → same UP-2(b) honest seam; reuse
-        shared/ + the copilot/opencode seam pattern). Then **the SDK-binding pass** (bind copilot+opencode+pi SDKs →
-        flips their provider rows `- [~]`→`- [x]`). Then PR-12 loadMcpConfig (closes carried `- [≈]`, rewires
-        claude/codex/copilot/opencode send_query MCP) → har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09
-        dag-executor (keystone) → WF-10/15/16.. → server (axum) → cli.
+status: cycle 20 DONE (PR-09 Pi). **ALL 3 community-provider surfaces now ported+verified** (copilot/opencode/pi);
+        their provider send_query rows `- [~]` on the accepted UP-2(b) Node-SDK seam. cycle 20 also changed
+        har-contract `MessageChunk::Tool.tool_input` HashMap→Option<Value> (Pi array-passthrough); the gate caught
+        it regressing claude/copilot/opencode toolInput (5 wire-shapes, 4 DISTINCT per-provider rules) — all fixed +
+        re-verified vs each provider's OWN source; permanent coverage tests/parity_cycle20_contract_blast.rs.
+        NEXT = **the SDK-binding pass** (bind copilot+opencode+pi Node SDKs → flips their provider rows
+        `- [~]`→`- [x]`; decide binding mechanism — sidecar vs other) OR **PR-12 loadMcpConfig** (closes carried
+        `- [≈]`, rewires claude/codex/copilot/opencode/pi send_query MCP). Then har-ledger (CO db MAP→hf, WF-19
+        IWorkflowStore) → WF-09 dag-executor (keystone) → WF-10/15/16.. → server (axum) → cli.
 session_summary_2026-06-21: resumed at 34/79; baseline re-verified PASS; ran cycles 17(Codex PR-07/08, full `- [x]`),
         18(Copilot PR-10, surface+seam), 19(OpenCode PR-11, surface+seam). Every gate FAILed first then fixed+re-verified
         (re-verify caught a porter D3-fix regression in c19). Fixed a real env-race flake (#[serial]). New deps:
