@@ -4,25 +4,34 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-21
-branch: main (commit a325096) — held LOCAL, NOT pushed (owner deferred push this session)
-mode: ITERATE — stopped at cycle budget (cycles_total=19, this session 3/3: cycles 17,18,19)
+branch: main (commit 0d7b728) — PUSHED to origin/main
+mode: ITERATE — stopped after cycle 20 (cycles_total=20, this session 4: cycles 17,18,19,20)
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 36/79 full units + the 3 community providers' ported-surfaces verified
+## Where we are: 36/79 full units + ALL 3 community providers' ported-surfaces verified
 
-This session (2026-06-21) resumed from 34/79 and ran 3 cycles, each differentially parity-verified vs
-live source (bun 1.3.14). Every gate FAILed on first pass and was fixed + re-verified:
+This session (2026-06-21) resumed from 34/79 and ran 4 cycles, each differentially parity-verified vs
+live source (bun 1.3.14). Every gate FAILed on first pass and was fixed + re-verified (the re-verify
+caught a porter fix regressing siblings TWICE — cycle 19 D3, cycle 20 contract change):
 
 | Cycle | Unit | Result |
 |------|------|--------|
 | 17 | **PR-07/08 Codex provider** | FULL `- [x]` — verified vs live @openai/codex-sdk@0.125.0. Reuses `cli_stream/`. |
 | 18 | **PR-10 Copilot provider** | ported-surface `- [x]`; provider `send_query` `- [~]` (UP-2 seam). |
 | 19 | **PR-11 OpenCode provider** | ported-surface `- [x]`; provider `send_query` `- [~]` (UP-2 seam). |
+| 20 | **PR-09 Pi provider** | ported-surface `- [x]`; provider `send_query` `- [~]` (UP-2 seam). + tool_input contract fix. |
 
 Full verified units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.
-Build green: `cargo clippy --all-targets -- -D warnings` clean + `cargo test` **1548 passed, 2 ignored**
-(51 suites). Each cycle ships a durable differential harness as a regression gate
-(`tests/parity_cycle{17,18,19}_*.rs`). Source repo (Archon) kept pristine.
+Build green: `cargo clippy --all-targets -- -D warnings` clean + `cargo test` **1705 passed, 2 ignored**
+(53 suites). Each cycle ships a durable differential harness as a regression gate
+(`tests/parity_cycle{17,18,19,20}_*.rs` + `parity_cycle20_contract_blast.rs`). Source repo (Archon) kept pristine.
+
+## cycle-20 cross-cutting note (no-downgrade-verified)
+Pi forced `har-contract` `MessageChunk::Tool.tool_input` `HashMap`→`Option<Value>` (JS array-passthrough).
+The gate caught this regressing claude/copilot/opencode toolInput — each provider has a DISTINCT rule
+(claude/copilot `?? {}`, opencode `isRecord`-or-omit, pi typeof→`{}`, codex never-emits). All re-verified
+vs each provider's OWN source; 4 distinct behaviors preserved. **Lesson: a shared-contract change must be
+re-verified per-consumer against each consumer's own source — never homogenize.** Coverage: `parity_cycle20_contract_blast.rs`.
 
 ## KEY DECISION — UP-2: Node-SDK community providers (OWNER RULING = option b)
 The 3 community providers (copilot/pi/opencode) wrap **Node SDKs** (`@github/copilot-sdk`,
@@ -36,20 +45,17 @@ UP-2. The seam is verified isolated each cycle (nothing portable hides behind it
 like agent-materialization fire BEFORE the seam).
 
 ## Resume — next units (dependency order toward WF-09 dag-executor)
-1. **Cycle 20 (NEXT): PR-09 Pi community provider** (`packages/providers/src/community/pi/`, 2038 LOC,
-   the biggest community provider). ALSO Node-SDK → apply UP-2(b): port the full surface (event-bridge,
-   options-translator, resource-loader, session-resolver, native-tools, ui-context-stub, model-ref,
-   config, capabilities[already PR-02]) with the honest `pi_sdk_not_bound` seam. REUSE `crate::shared/`
-   (structured_output, skills), `jsonrepair-rs`, and the copilot/opencode seam pattern. Differential-verify
-   vs live bun; expect the gate to FAIL first (it always has) — build your OWN oracle, never trust porter fixtures.
-2. **The SDK-binding pass** (after PR-09): bind copilot+opencode+pi Node SDKs (owner chose defer-and-bind-later)
-   → flips their provider `send_query` rows `- [~]`→`- [x]`. Decide the binding mechanism then (sidecar vs other).
-3. **PR-12 loadMcpConfig** (`packages/providers/src/mcp/config.ts`): port fully + rewire into
-   claude/codex/copilot/opencode `send_query` — closes the carried `- [≈]` (the inline stopgap `load_mcp_config`)
-   and the `&[]` mcp_server_names gap. See loop_state "Open follow-ups".
-4. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
+ALL provider ports (PR-01..11) are now done as ported-surfaces. The 3 community providers (copilot/opencode/pi)
+have `- [~]` send_query rows pending ONE deferred task: the SDK-binding pass. Pick the next unit:
+1. **The SDK-binding pass** (binds copilot+opencode+pi Node SDKs → flips their 3 provider `send_query` rows
+   `- [~]`→`- [x]`; owner chose defer-and-bind-later, UP-2 b). Decide the binding mechanism (Node sidecar vs
+   other) — this is an OWNER decision when it's tackled. Until then the 3 seams are honest+isolated (no downgrade).
+2. **PR-12 loadMcpConfig** (`packages/providers/src/mcp/config.ts`): port fully + rewire into
+   claude/codex/copilot/opencode/pi `send_query` — closes the carried `- [≈]` (the inline stopgap `load_mcp_config`)
+   and the `&[]` mcp_server_names gap. See loop_state "Open follow-ups". Pure-logic, good differential target.
+3. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
    coord→`weave`/`grit`, memory→`icm` — integrate substrates, don't reimplement a DB.
-5. **WF-09 dag-executor** (keystone state machine), then WF-10/15/16.. workflows → server (axum) → cli.
+4. **WF-09 dag-executor** (keystone state machine), then WF-10/15/16.. workflows → server (axum) → cli.
 
 ## Method that works (proven over 19 cycles — KEEP DOING)
 - One cohesive unit/cycle: porter (sonnet) → `cargo clippy --all-targets` + test → **differential**
