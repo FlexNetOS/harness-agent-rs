@@ -88,16 +88,17 @@ pub fn is_executable_file(path: &Path) -> bool {
 /// Source: `fileExists(path)` — `existsSync` in Node.js follows symlinks.
 /// Exported for testability (matches TS `export function fileExists`).
 pub fn file_exists(path: &Path) -> bool {
-    std::fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+    std::fs::metadata(path)
+        .map(|m| m.is_file())
+        .unwrap_or(false)
 }
 
 /// Returns the vendor binary filename for the current platform, or `None` if unsupported.
 ///
 /// Source: `getVendorBinaryName()` (binary-resolver.ts:90-94).
 fn get_vendor_binary_name() -> Option<&'static str> {
-    let is_supported_platform = cfg!(target_os = "macos")
-        || cfg!(target_os = "linux")
-        || cfg!(target_os = "windows");
+    let is_supported_platform =
+        cfg!(target_os = "macos") || cfg!(target_os = "linux") || cfg!(target_os = "windows");
     let is_supported_arch = cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64");
     if !is_supported_platform || !is_supported_arch {
         return None;

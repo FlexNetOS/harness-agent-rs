@@ -112,7 +112,9 @@ pub fn get_ordered_agents(node_config: Option<&NodeConfig>) -> Vec<NamedAgentCon
 ///
 /// Logs a warning (once) if more than one agent is configured and returns the first.
 /// Returns `None` if no agents configured.
-pub fn select_single_agent(agents: Option<&HashMap<String, AgentConfig>>) -> Option<NamedAgentConfig> {
+pub fn select_single_agent(
+    agents: Option<&HashMap<String, AgentConfig>>,
+) -> Option<NamedAgentConfig> {
     let named_agents = list_named_agents(agents);
     if named_agents.is_empty() {
         return None;
@@ -447,7 +449,10 @@ mod tests {
             key: k,
             config: v,
         };
-        assert_eq!(resolve_prompt_for_agent(Some(&named), "node prompt"), "node prompt");
+        assert_eq!(
+            resolve_prompt_for_agent(Some(&named), "node prompt"),
+            "node prompt"
+        );
         assert_eq!(resolve_prompt_for_agent(None, "node prompt"), "node prompt");
     }
 

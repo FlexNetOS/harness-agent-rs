@@ -58,13 +58,19 @@ fn mk_config(
 fn area1_parse_model_ref_matches_oracle() {
     // (input, Some((provider, model)) | None) — golden from bun oracle.
     let cases: &[(&str, Option<(&str, &str)>)] = &[
-        ("anthropic/claude-3-5-sonnet", Some(("anthropic", "claude-3-5-sonnet"))),
+        (
+            "anthropic/claude-3-5-sonnet",
+            Some(("anthropic", "claude-3-5-sonnet")),
+        ),
         ("test/mock-model", Some(("test", "mock-model"))),
         ("noSlashModel", None),
         ("/model", None),
         ("provider/", None),
         ("", None),
-        (" anthropic / claude-3-5-sonnet ", Some(("anthropic", "claude-3-5-sonnet"))),
+        (
+            " anthropic / claude-3-5-sonnet ",
+            Some(("anthropic", "claude-3-5-sonnet")),
+        ),
         ("  /  ", None),
         ("a/b/c", Some(("a", "b/c"))),
         ("provider//", Some(("provider", "/"))),
@@ -106,7 +112,9 @@ fn area1_parse_opencode_config_defensive_matrix() {
     let r = parse_opencode_config(&m(json!({ "model": 42, "baseUrl": true })));
     assert!(r.model.is_none() && r.base_url.is_none());
     // all three
-    let r = parse_opencode_config(&m(json!({ "model": "m", "baseUrl": "b", "opencode": { "agent": "a" } })));
+    let r = parse_opencode_config(&m(
+        json!({ "model": "m", "baseUrl": "b", "opencode": { "agent": "a" } }),
+    ));
     assert_eq!(r.model.as_deref(), Some("m"));
     assert_eq!(r.base_url.as_deref(), Some("b"));
     assert_eq!(r.agent.as_deref(), Some("a"));
@@ -150,13 +158,25 @@ fn area2_classify_full_corpus() {
         ("agent not found", false, RetryableErrorClass::AgentNotFound),
         ("unknown agent", false, RetryableErrorClass::AgentNotFound),
         ("invalid agent", false, RetryableErrorClass::AgentNotFound),
-        ("no agent named foo", false, RetryableErrorClass::AgentNotFound),
+        (
+            "no agent named foo",
+            false,
+            RetryableErrorClass::AgentNotFound,
+        ),
         ("totally unexpected", false, RetryableErrorClass::Unknown),
         ("rate limit", true, RetryableErrorClass::Aborted), // aborted wins
         ("", false, RetryableErrorClass::Unknown),
         // precedence: rate_limit checked before auth
-        ("rate limit and unauthorized", false, RetryableErrorClass::RateLimit),
-        ("unauthorized and overloaded", false, RetryableErrorClass::RateLimit),
+        (
+            "rate limit and unauthorized",
+            false,
+            RetryableErrorClass::RateLimit,
+        ),
+        (
+            "unauthorized and overloaded",
+            false,
+            RetryableErrorClass::RateLimit,
+        ),
     ];
     for (msg, aborted, expected) in cases {
         assert_eq!(
@@ -171,11 +191,20 @@ fn area2_classify_full_corpus() {
 fn area2_enrich_byte_exact() {
     // golden from oracle — `OpenCode <class>: <msg>` except aborted.
     let classes = [
-        (RetryableErrorClass::RateLimit, "OpenCode rate_limit: boom detail"),
+        (
+            RetryableErrorClass::RateLimit,
+            "OpenCode rate_limit: boom detail",
+        ),
         (RetryableErrorClass::Auth, "OpenCode auth: boom detail"),
         (RetryableErrorClass::Crash, "OpenCode crash: boom detail"),
-        (RetryableErrorClass::AgentNotFound, "OpenCode agent_not_found: boom detail"),
-        (RetryableErrorClass::Unknown, "OpenCode unknown: boom detail"),
+        (
+            RetryableErrorClass::AgentNotFound,
+            "OpenCode agent_not_found: boom detail",
+        ),
+        (
+            RetryableErrorClass::Unknown,
+            "OpenCode unknown: boom detail",
+        ),
         (RetryableErrorClass::Aborted, "OpenCode query aborted"),
     ];
     for (cls, expected) in classes {
@@ -199,11 +228,23 @@ fn area3_normalize_tokens_matches_oracle() {
     let t = normalize_tokens(Some(&json!({ "tokens": {} }))).unwrap();
     assert_eq!((t.input, t.output, t.total, t.cost), (0, 0, None, None));
 
-    let t = normalize_tokens(Some(&json!({ "tokens": { "input": 11, "output": 7, "reasoning": 3 } }))).unwrap();
-    assert_eq!((t.input, t.output, t.total, t.cost), (11, 7, Some(21), None));
+    let t = normalize_tokens(Some(
+        &json!({ "tokens": { "input": 11, "output": 7, "reasoning": 3 } }),
+    ))
+    .unwrap();
+    assert_eq!(
+        (t.input, t.output, t.total, t.cost),
+        (11, 7, Some(21), None)
+    );
 
-    let t = normalize_tokens(Some(&json!({ "tokens": { "input": 11, "output": 7, "reasoning": 3 }, "cost": 0.42 }))).unwrap();
-    assert_eq!((t.input, t.output, t.total, t.cost), (11, 7, Some(21), Some(0.42)));
+    let t = normalize_tokens(Some(
+        &json!({ "tokens": { "input": 11, "output": 7, "reasoning": 3 }, "cost": 0.42 }),
+    ))
+    .unwrap();
+    assert_eq!(
+        (t.input, t.output, t.total, t.cost),
+        (11, 7, Some(21), Some(0.42))
+    );
 
     let t = normalize_tokens(Some(&json!({ "tokens": { "input": 5 } }))).unwrap();
     assert_eq!((t.input, t.output, t.total), (5, 0, Some(5)));
@@ -211,14 +252,23 @@ fn area3_normalize_tokens_matches_oracle() {
     let t = normalize_tokens(Some(&json!({ "tokens": { "reasoning": 4 } }))).unwrap();
     assert_eq!((t.input, t.output, t.total), (0, 0, Some(4)));
 
-    let t = normalize_tokens(Some(&json!({ "tokens": { "input": 0, "output": 0, "reasoning": 0 } }))).unwrap();
+    let t = normalize_tokens(Some(
+        &json!({ "tokens": { "input": 0, "output": 0, "reasoning": 0 } }),
+    ))
+    .unwrap();
     assert_eq!((t.input, t.output, t.total), (0, 0, None));
 
     // non-number input → 0 (TS `typeof === 'number'` guard); non-number cost → omitted.
     let t = normalize_tokens(Some(&json!({ "tokens": { "input": "5", "output": 3 } }))).unwrap();
     assert_eq!((t.input, t.output, t.total), (0, 3, Some(3)));
-    let t = normalize_tokens(Some(&json!({ "tokens": { "input": 11, "output": 7 }, "cost": "free" }))).unwrap();
-    assert_eq!((t.input, t.output, t.total, t.cost), (11, 7, Some(18), None));
+    let t = normalize_tokens(Some(
+        &json!({ "tokens": { "input": 11, "output": 7 }, "cost": "free" }),
+    ))
+    .unwrap();
+    assert_eq!(
+        (t.input, t.output, t.total, t.cost),
+        (11, 7, Some(18), None)
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,8 +306,11 @@ fn area4_kebab_full_corpus() {
 
 #[test]
 fn area4_list_named_and_has_multiple() {
-    let single: HashMap<String, InlineAgentDefinition> =
-        [("My Agent".to_owned(), mk_config("d", "p", None, None, None, None, None))].into();
+    let single: HashMap<String, InlineAgentDefinition> = [(
+        "My Agent".to_owned(),
+        mk_config("d", "p", None, None, None, None, None),
+    )]
+    .into();
     let named = list_named_agents(Some(&single));
     assert_eq!(named.len(), 1);
     assert_eq!(named[0].key, "My Agent");
@@ -268,15 +321,21 @@ fn area4_list_named_and_has_multiple() {
     assert!(!has_multiple_agents(Some(&single)));
 
     let mut multi = single.clone();
-    multi.insert("Reviewer Two".to_owned(), mk_config("d2", "p2", None, None, None, None, None));
+    multi.insert(
+        "Reviewer Two".to_owned(),
+        mk_config("d2", "p2", None, None, None, None, None),
+    );
     assert!(has_multiple_agents(Some(&multi)));
 }
 
 #[test]
 fn area4_get_ordered_agents() {
     let mut nc = NodeConfig::default();
-    let agents: HashMap<String, InlineAgentDefinition> =
-        [("reviewer".to_owned(), mk_config("d", "p", None, None, None, None, None))].into();
+    let agents: HashMap<String, InlineAgentDefinition> = [(
+        "reviewer".to_owned(),
+        mk_config("d", "p", None, None, None, None, None),
+    )]
+    .into();
     nc.agents = Some(agents);
     let ordered = get_ordered_agents(Some(&nc));
     assert_eq!(ordered.len(), 1);
@@ -304,7 +363,10 @@ fn area4_adapt_named_agent() {
     assert_eq!(a.agent, "archon-reviewer-two");
     assert_eq!(
         a.model,
-        Some(ProviderModel { provider_id: "anthropic".into(), model_id: "claude-3-5-sonnet".into() })
+        Some(ProviderModel {
+            provider_id: "anthropic".into(),
+            model_id: "claude-3-5-sonnet".into()
+        })
     );
     let tools = a.tools.unwrap();
     assert_eq!(tools.get("read"), Some(&true));
@@ -356,7 +418,10 @@ fn area4_resolve_prompt_returns_node_prompt() {
         opencode_agent_name: "archon-k".to_owned(),
         config: mk_config("d", "p", None, None, None, None, None),
     };
-    assert_eq!(resolve_prompt_for_agent(Some(&agent), "NODE PROMPT"), "NODE PROMPT");
+    assert_eq!(
+        resolve_prompt_for_agent(Some(&agent), "NODE PROMPT"),
+        "NODE PROMPT"
+    );
     assert_eq!(resolve_prompt_for_agent(None, "NP2"), "NP2");
 }
 
@@ -367,7 +432,15 @@ fn area4_resolve_prompt_returns_node_prompt() {
 #[test]
 fn area5_build_agent_file_content_minimal() {
     // oracle 'minimal': '---\nmode: subagent\ndescription: "A minimal agent"\n---\n\nDo the thing'
-    let c = mk_config("A minimal agent", "Do the thing", None, None, None, None, None);
+    let c = mk_config(
+        "A minimal agent",
+        "Do the thing",
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     assert_eq!(
         build_agent_file_content(&c),
         "---\nmode: subagent\ndescription: \"A minimal agent\"\n---\n\nDo the thing"
@@ -377,7 +450,15 @@ fn area5_build_agent_file_content_minimal() {
 #[test]
 fn area5_build_agent_file_content_quoted_desc() {
     // oracle 'quotedDesc' — JSON.stringify escaping of quotes + newline.
-    let c = mk_config("has \"quotes\" and\nnewline", "p", None, None, None, None, None);
+    let c = mk_config(
+        "has \"quotes\" and\nnewline",
+        "p",
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     assert_eq!(
         build_agent_file_content(&c),
         "---\nmode: subagent\ndescription: \"has \\\"quotes\\\" and\\nnewline\"\n---\n\np"
@@ -437,7 +518,10 @@ fn area6_generate_random_password_64_hex() {
 #[test]
 fn area6_extract_port_from_url() {
     assert_eq!(extract_port_from_url("http://127.0.0.1:4096"), Some(4096));
-    assert_eq!(extract_port_from_url("http://mock-opencode.local:8080"), Some(8080));
+    assert_eq!(
+        extract_port_from_url("http://mock-opencode.local:8080"),
+        Some(8080)
+    );
     assert_eq!(extract_port_from_url("not-a-url"), None);
     // default port not exposed
     assert_eq!(extract_port_from_url("http://example.com"), None);
@@ -493,26 +577,36 @@ fn area8_aggregate_tokens_reduce_semantics() {
     assert!(aggregate_tokens(&[&s0, &s0b]).is_none());
 
     // single, no cost → cost None (oracle 'singleNoCost': {input:5,output:3,total:8} no cost)
-    let s = state(Some(json!({ "tokens": { "input": 5, "output": 3, "reasoning": 0 } })));
+    let s = state(Some(
+        json!({ "tokens": { "input": 5, "output": 3, "reasoning": 0 } }),
+    ));
     let t = aggregate_tokens(&[&s]).unwrap();
     assert_eq!((t.input, t.output, t.total, t.cost), (5, 3, Some(8), None));
 
     // two both cost (oracle 'twoBothCost': 15/7/23/0.3)
-    let a = state(Some(json!({ "tokens": { "input": 5, "output": 3, "reasoning": 0 }, "cost": 0.1 })));
-    let b = state(Some(json!({ "tokens": { "input": 10, "output": 4, "reasoning": 1 }, "cost": 0.2 })));
+    let a = state(Some(
+        json!({ "tokens": { "input": 5, "output": 3, "reasoning": 0 }, "cost": 0.1 }),
+    ));
+    let b = state(Some(
+        json!({ "tokens": { "input": 10, "output": 4, "reasoning": 1 }, "cost": 0.2 }),
+    ));
     let t = aggregate_tokens(&[&a, &b]).unwrap();
     assert_eq!((t.input, t.output, t.total), (15, 7, Some(23)));
     assert!((t.cost.unwrap() - 0.3).abs() < 1e-9);
 
     // first no cost, second cost (oracle 'firstNoCostSecondCost': 15/7/22/0.2)
     let a = state(Some(json!({ "tokens": { "input": 5, "output": 3 } })));
-    let b = state(Some(json!({ "tokens": { "input": 10, "output": 4 }, "cost": 0.2 })));
+    let b = state(Some(
+        json!({ "tokens": { "input": 10, "output": 4 }, "cost": 0.2 }),
+    ));
     let t = aggregate_tokens(&[&a, &b]).unwrap();
     assert_eq!((t.input, t.output, t.total), (15, 7, Some(22)));
     assert!((t.cost.unwrap() - 0.2).abs() < 1e-9);
 
     // zero-totals first + real second (oracle 'zeroTotalsMixed': 10/4/14/0)
-    let a = state(Some(json!({ "tokens": { "input": 0, "output": 0, "reasoning": 0 } })));
+    let a = state(Some(
+        json!({ "tokens": { "input": 0, "output": 0, "reasoning": 0 } }),
+    ));
     let b = state(Some(json!({ "tokens": { "input": 10, "output": 4 } })));
     let t = aggregate_tokens(&[&a, &b]).unwrap();
     assert_eq!((t.input, t.output, t.total), (10, 4, Some(14)));
@@ -523,8 +617,14 @@ fn area8_aggregate_tokens_reduce_semantics() {
 // AREA 9 — seam isolation + materialize-before-seam side effect
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// PR-21: the `opencode_sdk_not_bound` seam was replaced by a real embedded runtime
+/// (`acquire_embedded_runtime` spawns `opencode serve`). Without the binary on PATH,
+/// `send_query` now surfaces `opencode_binary_not_found` (and, since agent
+/// materialization runs AFTER acquire, the FS side-effect no longer fires when the
+/// binary is absent). The "materialize-before-stream" side-effect is covered by the
+/// `#[ignore]`d binary-gated provider test `agent_materialization_runs_before_stream`.
 #[tokio::test]
-async fn area9_send_query_materializes_before_seam() {
+async fn area9_send_query_real_runtime_yields_binary_error() {
     use futures_util::StreamExt;
     use har_contract::{AgentProvider, CancelToken};
     use har_provider::opencode::OpencodeProvider;
@@ -543,35 +643,61 @@ async fn area9_send_query_materializes_before_seam() {
 
     let agents: HashMap<String, InlineAgentDefinition> = [(
         "Reviewer".to_owned(),
-        mk_config("Code review specialist", "Review the patch carefully", None, None, None, None, None),
+        mk_config(
+            "Code review specialist",
+            "Review the patch carefully",
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
     )]
     .into();
     let mut config = HashMap::new();
-    config.insert("model".to_owned(), serde_json::Value::String("test/mock-model".to_owned()));
+    config.insert(
+        "model".to_owned(),
+        serde_json::Value::String("test/mock-model".to_owned()),
+    );
     let opts = SendQueryOptions {
         assistant_config: Some(config),
-        node_config: Some(NodeConfig { agents: Some(agents), ..Default::default() }),
+        node_config: Some(NodeConfig {
+            agents: Some(agents),
+            ..Default::default()
+        }),
         ..Default::default()
     };
 
     let chunks: Vec<MessageChunk> = provider
-        .send_query("hi".to_owned(), cwd.clone(), None, Some(opts), Arc::new(NeverCancel))
+        .send_query(
+            "hi".to_owned(),
+            cwd.clone(),
+            None,
+            Some(opts),
+            Arc::new(NeverCancel),
+        )
         .collect()
         .await;
 
-    // seam result emitted
-    let seam = chunks.iter().find_map(|c| match c {
-        MessageChunk::Result { is_error: Some(true), error_subtype, .. } => error_subtype.clone(),
+    // An error result is emitted. When the opencode binary is absent (CI), the subtype
+    // is `opencode_binary_not_found`; if a binary IS present it may be a later-stage error.
+    let subtype = chunks.iter().find_map(|c| match c {
+        MessageChunk::Result {
+            is_error: Some(true),
+            error_subtype,
+            ..
+        } => error_subtype.clone(),
         _ => None,
     });
-    assert_eq!(seam.as_deref(), Some("opencode_sdk_not_bound"));
-
-    // FS side effect fired BEFORE the seam
-    let agent_path = std::path::Path::new(&cwd)
-        .join(".opencode")
-        .join("agents")
-        .join("archon-reviewer.md");
-    assert!(agent_path.exists(), "materialize_agents must run before the SDK seam");
+    assert!(
+        subtype.is_some(),
+        "expected an error result from send_query"
+    );
+    assert_ne!(
+        subtype.as_deref(),
+        Some("opencode_sdk_not_bound"),
+        "the SDK seam has been replaced by a real embedded runtime"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -613,7 +739,10 @@ mod divergences {
     fn d3_empty_system_prompt_must_be_omitted() {
         use har_contract::SystemPromptInput;
         use har_provider::opencode::session::create_session_prompt_body;
-        let model = ProviderModel { provider_id: "test".into(), model_id: "mock-model".into() };
+        let model = ProviderModel {
+            provider_id: "test".into(),
+            model_id: "mock-model".into(),
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Single(String::new())),
             ..Default::default()
@@ -632,7 +761,10 @@ mod divergences {
     fn d3b_whitespace_single_is_truthy_included() {
         use har_contract::SystemPromptInput;
         use har_provider::opencode::session::create_session_prompt_body;
-        let model = ProviderModel { provider_id: "test".into(), model_id: "mock-model".into() };
+        let model = ProviderModel {
+            provider_id: "test".into(),
+            model_id: "mock-model".into(),
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Single(" ".into())),
             ..Default::default()
@@ -654,7 +786,10 @@ mod divergences {
     fn d3c_empty_array_multi_is_truthy_must_be_included() {
         use har_contract::SystemPromptInput;
         use har_provider::opencode::session::create_session_prompt_body;
-        let model = ProviderModel { provider_id: "test".into(), model_id: "mock-model".into() };
+        let model = ProviderModel {
+            provider_id: "test".into(),
+            model_id: "mock-model".into(),
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Multi(vec![])),
             ..Default::default()
@@ -675,7 +810,10 @@ mod divergences {
     fn d3d_nonempty_array_multi_included() {
         use har_contract::SystemPromptInput;
         use har_provider::opencode::session::create_session_prompt_body;
-        let model = ProviderModel { provider_id: "test".into(), model_id: "mock-model".into() };
+        let model = ProviderModel {
+            provider_id: "test".into(),
+            model_id: "mock-model".into(),
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Multi(vec!["a".into()])),
             ..Default::default()
@@ -696,7 +834,10 @@ mod divergences {
             SystemPromptInput, SystemPromptPreset, SystemPromptPresetName, SystemPromptPresetType,
         };
         use har_provider::opencode::session::create_session_prompt_body;
-        let model = ProviderModel { provider_id: "test".into(), model_id: "mock-model".into() };
+        let model = ProviderModel {
+            provider_id: "test".into(),
+            model_id: "mock-model".into(),
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
                 kind: SystemPromptPresetType::Preset,

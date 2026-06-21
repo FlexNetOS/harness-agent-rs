@@ -100,9 +100,9 @@ impl ArchonUiContextSpec {
     /// `flush: true` forces batch-mode adapters to surface this immediately.
     pub fn notify(&self, message: &str, notify_type: NotifyType) {
         let icon = match notify_type {
-            NotifyType::Error => "\u{274C}",   // ❌
+            NotifyType::Error => "\u{274C}",           // ❌
             NotifyType::Warning => "\u{26A0}\u{FE0F}", // ⚠️
-            NotifyType::Info => "\u{2139}\u{FE0F}", // ℹ️
+            NotifyType::Info => "\u{2139}\u{FE0F}",    // ℹ️
         };
         self.bridge.emit(MessageChunk::Assistant {
             content: format!("\n[pi extension {icon}] {message}\n"),

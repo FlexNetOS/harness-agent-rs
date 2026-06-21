@@ -132,18 +132,27 @@ pub fn create_session_prompt_body(
     let model_value = if let Some(ref adapted) = adapted {
         if let Some(ref m) = adapted.model {
             let mut mv = serde_json::Map::new();
-            mv.insert("providerID".to_owned(), Value::String(m.provider_id.clone()));
+            mv.insert(
+                "providerID".to_owned(),
+                Value::String(m.provider_id.clone()),
+            );
             mv.insert("modelID".to_owned(), Value::String(m.model_id.clone()));
             Value::Object(mv)
         } else {
             let mut mv = serde_json::Map::new();
-            mv.insert("providerID".to_owned(), Value::String(model.provider_id.clone()));
+            mv.insert(
+                "providerID".to_owned(),
+                Value::String(model.provider_id.clone()),
+            );
             mv.insert("modelID".to_owned(), Value::String(model.model_id.clone()));
             Value::Object(mv)
         }
     } else {
         let mut mv = serde_json::Map::new();
-        mv.insert("providerID".to_owned(), Value::String(model.provider_id.clone()));
+        mv.insert(
+            "providerID".to_owned(),
+            Value::String(model.provider_id.clone()),
+        );
         mv.insert("modelID".to_owned(), Value::String(model.model_id.clone()));
         Value::Object(mv)
     };
@@ -194,7 +203,10 @@ pub fn create_session_prompt_body(
         if let Some(ref output_format) = opts.output_format {
             let mut format_obj = serde_json::Map::new();
             format_obj.insert("type".to_owned(), Value::String("json_schema".to_owned()));
-            format_obj.insert("schema".to_owned(), Value::Object(output_format.schema.clone()));
+            format_obj.insert(
+                "schema".to_owned(),
+                Value::Object(output_format.schema.clone()),
+            );
             body.insert("format".to_owned(), Value::Object(format_obj));
         }
     }
@@ -299,7 +311,10 @@ pub fn process_message_part_updated(
             }
         }
         "tool" => {
-            let call_id = part.get("callID").and_then(Value::as_str).map(str::to_owned);
+            let call_id = part
+                .get("callID")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             let tool_name = part
                 .get("tool")
                 .and_then(Value::as_str)
@@ -310,9 +325,8 @@ pub fn process_message_part_updated(
             // where `isRecord = typeof v === 'object' && v !== null`
             // In JS, arrays satisfy isRecord (typeof [] === 'object'). Scalars and null do not.
             // So: object or array → include; null / string / number / bool → OMIT.
-            let tool_input: Option<Value> = state
-                .and_then(|s| s.get("input"))
-                .and_then(|v| match v {
+            let tool_input: Option<Value> =
+                state.and_then(|s| s.get("input")).and_then(|v| match v {
                     Value::Object(_) | Value::Array(_) => Some(v.clone()),
                     _ => None,
                 });
@@ -430,6 +444,176 @@ pub fn build_result_chunk(
         stop_reason,
         num_turns: None,
         model_usage,
+    }
+}
+
+// ─── resolve_session_id (HTTP client version) ──────────────────────────────────
+
+/// Resolve (or create) a session using the HTTP client.
+///
+/// PORT of `resolveSessionId(client, cwd, resumeSessionId?)` (session.ts:26-53).
+pub async fn resolve_session_id(
+    client: &crate::opencode::http_client::OpenCodeClient,
+    resume_session_id: Option<&str>,
+) -> Result<ResolvedSession, String> {
+    if let Some(resume_id) = resume_session_id {
+        match client.get_session(resume_id).await {
+            Ok(session_data) => {
+                let session_id = session_data
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                if !session_id.is_empty() {
+                    return Ok(ResolvedSession {
+                        session_id,
+                        resumed: true,
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!(err = %e, "opencode.resume_session_not_found");
+            }
+        }
+    }
+    match client.create_session(None, None).await {
+        Ok(session_data) => {
+            let session_id = session_data
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            if session_id.is_empty() {
+                return Err("Server returned empty session ID".to_owned());
+            }
+            Ok(ResolvedSession {
+                session_id,
+                resumed: false,
+            })
+        }
+        Err(e) => Err(format!("Failed to create session: {}", e)),
+    }
+}
+
+// ─── stream_opencode_session ──────────────────────────────────────────────────
+
+/// Stream an OpenCode session over SSE.
+///
+/// PORT of `streamOpencodeSession` (session.ts:119-303).
+///
+/// Subscribes to events FIRST, then submits the prompt, then demuxes the event
+/// stream into `MessageChunk`s until `session.idle` (terminal) or `session.error`.
+pub async fn stream_opencode_session(
+    client: &crate::opencode::http_client::OpenCodeClient,
+    session_id: &str,
+    prompt_body: &serde_json::Map<String, Value>,
+    cancel: &std::sync::Arc<dyn har_contract::CancelToken>,
+) -> Result<Vec<MessageChunk>, String> {
+    use futures_util::StreamExt;
+
+    let mut chunks: Vec<MessageChunk> = Vec::new();
+    let mut latest_assistant_info: Option<serde_json::Map<String, Value>> = None;
+    let mut last_assistant_message_id: Option<String> = None;
+    let mut seen_tool_calls = HashSet::new();
+    let mut completed_tool_calls = HashSet::new();
+
+    // Subscribe to events FIRST, then send prompt.
+    let event_stream = client
+        .subscribe_events()
+        .await
+        .map_err(|e| format!("SSE subscribe failed: {}", e))?;
+    tokio::pin!(event_stream);
+
+    let body_val = Value::Object(prompt_body.clone());
+    client
+        .prompt_async(session_id, &body_val)
+        .await
+        .map_err(|e| format!("prompt_async failed: {}", e))?;
+
+    loop {
+        if cancel.is_cancelled() {
+            let _ = client.abort_session(session_id).await;
+            return Err("aborted".to_owned());
+        }
+
+        match event_stream.next().await {
+            None => return Err("SSE stream ended without session.idle".to_owned()),
+            Some(Err(e)) => return Err(format!("SSE stream error: {}", e)),
+            Some(Ok(event)) => match event.event_type.as_str() {
+                "message.updated" => {
+                    process_message_updated(
+                        &event.properties,
+                        session_id,
+                        &mut latest_assistant_info,
+                        &mut last_assistant_message_id,
+                    );
+                }
+                "message.part.updated" => {
+                    let new_chunks = process_message_part_updated(
+                        &event.properties,
+                        session_id,
+                        &mut seen_tool_calls,
+                        &mut completed_tool_calls,
+                    );
+                    chunks.extend(new_chunks);
+                }
+                "session.error" => {
+                    // PARITY (session.ts:237-239): skip session.error events for a DIFFERENT
+                    // session — the embedded server is shared across directories/sessions.
+                    let event_session_id =
+                        event.properties.get("sessionID").and_then(Value::as_str);
+                    if let Some(esid) = event_session_id {
+                        if esid != session_id {
+                            continue;
+                        }
+                    }
+                    // PARITY (session.ts:241-242): the `error` payload is an OBJECT
+                    // (`{ name, data: { message } }`) on the live server, not a string.
+                    // TS runs `errorMessage(isRecord(error) ? error : properties)`, which
+                    // extracts the nested `data.message`. Mirror that via the ported
+                    // `errors::error_message_from_value` rather than `.as_str()` (which
+                    // silently drops the structured message).
+                    let raw_error: Value = match event.properties.get("error") {
+                        Some(err @ Value::Object(_)) => err.clone(),
+                        _ => Value::Object(event.properties.clone()),
+                    };
+                    let error_msg = crate::opencode::errors::error_message_from_value(&raw_error);
+                    return Err(format!("session.error: {}", error_msg));
+                }
+                "session.idle" => {
+                    // PARITY (session.ts:248): skip idle events for a different session.
+                    let event_session_id =
+                        event.properties.get("sessionID").and_then(Value::as_str);
+                    if let Some(esid) = event_session_id {
+                        if esid != session_id {
+                            continue;
+                        }
+                    }
+                    let structured_output = if let Some(ref msg_id) = last_assistant_message_id {
+                        match client.get_message(session_id, msg_id).await {
+                            Ok(msg_data) => {
+                                let info = msg_data.get("info").unwrap_or(&Value::Null);
+                                read_structured_output_from_info(info)
+                            }
+                            Err(e) => {
+                                tracing::warn!(err = %e, "opencode.get_message_failed");
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    let result_chunk = build_result_chunk(
+                        session_id,
+                        latest_assistant_info.as_ref(),
+                        structured_output,
+                    );
+                    chunks.push(result_chunk);
+                    return Ok(chunks);
+                }
+                _ => {}
+            },
+        }
     }
 }
 
@@ -557,8 +741,14 @@ mod tests {
         };
         let result = create_session_prompt_body("hi", &model, None, Some(&agent)).unwrap();
         let m = result.body.get("model").and_then(Value::as_object).unwrap();
-        assert_eq!(m.get("providerID").and_then(Value::as_str), Some("anthropic"));
-        assert_eq!(m.get("modelID").and_then(Value::as_str), Some("claude-3-5-sonnet"));
+        assert_eq!(
+            m.get("providerID").and_then(Value::as_str),
+            Some("anthropic")
+        );
+        assert_eq!(
+            m.get("modelID").and_then(Value::as_str),
+            Some("claude-3-5-sonnet")
+        );
     }
 
     #[test]
@@ -602,8 +792,15 @@ mod tests {
             ..Default::default()
         };
         let result = create_session_prompt_body("hi", &model, Some(&opts), None).unwrap();
-        let format = result.body.get("format").and_then(Value::as_object).unwrap();
-        assert_eq!(format.get("type").and_then(Value::as_str), Some("json_schema"));
+        let format = result
+            .body
+            .get("format")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            format.get("type").and_then(Value::as_str),
+            Some("json_schema")
+        );
         assert!(format.get("schema").is_some());
     }
 
@@ -714,7 +911,9 @@ mod tests {
         let mut completed = HashSet::new();
         let chunks = process_message_part_updated(&props, "s1", &mut seen, &mut completed);
         assert_eq!(chunks.len(), 1);
-        assert!(matches!(&chunks[0], MessageChunk::Thinking { content } if content == "thinking..."));
+        assert!(
+            matches!(&chunks[0], MessageChunk::Thinking { content } if content == "thinking...")
+        );
     }
 
     #[test]
@@ -737,8 +936,10 @@ mod tests {
         .clone();
         let chunks1 = process_message_part_updated(&pending, "s1", &mut seen, &mut completed);
         assert_eq!(chunks1.len(), 1);
-        assert!(matches!(&chunks1[0], MessageChunk::Tool { tool_name, tool_call_id, .. }
-            if tool_name == "read" && tool_call_id.as_deref() == Some("tool-1")));
+        assert!(
+            matches!(&chunks1[0], MessageChunk::Tool { tool_name, tool_call_id, .. }
+            if tool_name == "read" && tool_call_id.as_deref() == Some("tool-1"))
+        );
 
         // Completed tool event
         let done: serde_json::Map<String, Value> = json!({
@@ -756,8 +957,10 @@ mod tests {
         let chunks2 = process_message_part_updated(&done, "s1", &mut seen, &mut completed);
         // No tool chunk (already seen), only result
         assert_eq!(chunks2.len(), 1);
-        assert!(matches!(&chunks2[0], MessageChunk::ToolResult { tool_name, tool_output, tool_call_id }
-            if tool_name == "read" && tool_output == "file contents" && tool_call_id.as_deref() == Some("tool-1")));
+        assert!(
+            matches!(&chunks2[0], MessageChunk::ToolResult { tool_name, tool_output, tool_call_id }
+            if tool_name == "read" && tool_output == "file contents" && tool_call_id.as_deref() == Some("tool-1"))
+        );
     }
 
     #[test]
@@ -780,8 +983,10 @@ mod tests {
         let chunks = process_message_part_updated(&error_event, "s1", &mut seen, &mut completed);
         // tool + tool_result
         assert_eq!(chunks.len(), 2);
-        assert!(matches!(&chunks[1], MessageChunk::ToolResult { tool_output, .. }
-            if tool_output == "command failed"));
+        assert!(
+            matches!(&chunks[1], MessageChunk::ToolResult { tool_output, .. }
+            if tool_output == "command failed")
+        );
     }
 
     #[test]

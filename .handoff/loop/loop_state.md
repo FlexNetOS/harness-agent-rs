@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 4    # resume 2026-06-21; cycles 17-20 done (owner extended past budget to do cycle 20).
-cycles_total: 20
+cycles_this_session: 5    # resume 2026-06-21; cycles 17-21 done. Owner: bind ALL provider SDKs now (do it right, no band-aid).
+cycles_total: 21
 ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
         `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
         units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
@@ -25,6 +25,15 @@ last_item: cycle 19 — **OpenCode community provider** (PR-11). Ported crates/h
            path (untestable-Linux, faithful), abortableStream→CancellationToken, init-once→OnceLock, warn→AtomicBool
            (all behavior-preserving). New deps: rand, url, hex, futures-util. Harness: tests/parity_cycle19_opencode.rs
            (34 live, 0 ignores). Workspace 1392→1548 tests, clippy clean. Findings: parity-cycle19.md.
+status_cycle21: cycle 21 DONE — **OWNER DIRECTIVE: bind ALL provider SDKs now, pure-Rust, no band-aid (do it right, never look back).**
+        Research mapped all 3 Node SDKs (decision-grade): opencode=spawn `opencode serve` + HTTP/SSE (pure Rust, widest
+        offline verify); copilot=spawn `@github/copilot` CLI + JSON-RPC/stdio (LSP framing; same CLI the SDK wraps, no Node);
+        pi=spawn `pi --mode rpc` + JSONL/stdio + RPC extension-UI for ctx.ui — EXCEPT pi customTools(native-tools) has no
+        documented RPC dispatch-back (the one wrinkle; needs a thin extension or no-downgrade decision). **OpenCode BOUND +
+        verified E2E vs live server (cycle 21, PR-11 provider `- [x]`).** NEXT = cycle 22 **bind Copilot** (JSON-RPC subprocess
+        client to the copilot CLI; ping/handshake/framing verifiable without auth), then cycle 23 **bind Pi** (RPC JSONL +
+        ctx.ui + resolve the customTools callback no-downgrade). Researcher agents: opencode a24cb0882282bf083,
+        copilot a86aaaf13ec9e69e2, pi adf3f133529e357a7 (full transport reports — continue via SendMessage).
 status: cycle 20 DONE (PR-09 Pi). **ALL 3 community-provider surfaces now ported+verified** (copilot/opencode/pi);
         their provider send_query rows `- [~]` on the accepted UP-2(b) Node-SDK seam. cycle 20 also changed
         har-contract `MessageChunk::Tool.tool_input` HashMap→Option<Value> (Pi array-passthrough); the gate caught

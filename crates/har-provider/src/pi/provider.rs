@@ -47,10 +47,11 @@ use serde_json::Value;
 use crate::pi::config::parse_pi_config;
 use crate::pi::model_ref::parse_pi_model_ref;
 use crate::pi::native_tools::build_pi_native_tool_definitions;
-use crate::pi::options_translator::{resolve_pi_skills, resolve_pi_thinking_level, resolve_pi_tools};
+use crate::pi::options_translator::{
+    resolve_pi_skills, resolve_pi_thinking_level, resolve_pi_tools,
+};
 use crate::pi::resource_loader::{
-    create_noop_resource_loader, get_or_create_reloaded_extension_loader,
-    NoopResourceLoaderOptions,
+    create_noop_resource_loader, get_or_create_reloaded_extension_loader, NoopResourceLoaderOptions,
 };
 use crate::pi::session_resolver::resolve_pi_session;
 use crate::shared::structured_output::augment_prompt_for_json_schema;
@@ -131,9 +132,8 @@ pub fn ensure_pi_package_dir_shim() -> Result<(), String> {
     let shim_pkg = shim_dir.join("package.json");
 
     if !shim_pkg.exists() {
-        std::fs::create_dir_all(&shim_dir).map_err(|e| {
-            format!("Pi shim setup failed at {}: {}", shim_dir.display(), e)
-        })?;
+        std::fs::create_dir_all(&shim_dir)
+            .map_err(|e| format!("Pi shim setup failed at {}: {}", shim_dir.display(), e))?;
         let content = serde_json::to_string(&serde_json::json!({
             "name": "archon-pi-shim",
             "version": "0.0.0",
@@ -593,7 +593,10 @@ mod tests {
         assert!(caps.skills);
         assert!(!caps.agents);
         assert!(caps.tool_restrictions);
-        assert_eq!(caps.structured_output, StructuredOutputCapability::BestEffort);
+        assert_eq!(
+            caps.structured_output,
+            StructuredOutputCapability::BestEffort
+        );
         assert!(caps.env_injection);
         assert!(!caps.cost_control);
         assert!(caps.effort_control);
@@ -614,8 +617,14 @@ mod tests {
         assert_eq!(pi_provider_env_var("mistral"), Some("MISTRAL_API_KEY"));
         assert_eq!(pi_provider_env_var("cerebras"), Some("CEREBRAS_API_KEY"));
         assert_eq!(pi_provider_env_var("xai"), Some("XAI_API_KEY"));
-        assert_eq!(pi_provider_env_var("openrouter"), Some("OPENROUTER_API_KEY"));
-        assert_eq!(pi_provider_env_var("huggingface"), Some("HUGGINGFACE_API_KEY"));
+        assert_eq!(
+            pi_provider_env_var("openrouter"),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(
+            pi_provider_env_var("huggingface"),
+            Some("HUGGINGFACE_API_KEY")
+        );
     }
 
     #[test]
@@ -660,7 +669,11 @@ mod tests {
             .find(|c| matches!(c, MessageChunk::Result { .. }))
             .expect("should have a result chunk");
         match result {
-            MessageChunk::Result { is_error, error_subtype, .. } => {
+            MessageChunk::Result {
+                is_error,
+                error_subtype,
+                ..
+            } => {
                 assert_eq!(*is_error, Some(true));
                 assert_eq!(error_subtype.as_deref(), Some("pi_sdk_not_bound"));
             }
@@ -677,16 +690,13 @@ mod tests {
         let provider = PiProvider::new();
         let cancel = Arc::new(NoopCancel);
         // No model set — should get pi_model_missing
-        let stream = provider.send_query(
-            "hello".to_owned(),
-            "/tmp".to_owned(),
-            None,
-            None,
-            cancel,
-        );
+        let stream = provider.send_query("hello".to_owned(), "/tmp".to_owned(), None, None, cancel);
 
         let chunks: Vec<_> = stream.collect().await;
-        let result = chunks.iter().find(|c| matches!(c, MessageChunk::Result { .. })).unwrap();
+        let result = chunks
+            .iter()
+            .find(|c| matches!(c, MessageChunk::Result { .. }))
+            .unwrap();
         match result {
             MessageChunk::Result { error_subtype, .. } => {
                 assert_eq!(error_subtype.as_deref(), Some("pi_model_missing"));
@@ -717,7 +727,10 @@ mod tests {
             )
             .collect()
             .await;
-        let result = chunks.iter().find(|c| matches!(c, MessageChunk::Result { .. })).unwrap();
+        let result = chunks
+            .iter()
+            .find(|c| matches!(c, MessageChunk::Result { .. }))
+            .unwrap();
         match result {
             MessageChunk::Result { error_subtype, .. } => {
                 assert_eq!(error_subtype.as_deref(), Some("pi_invalid_model_ref"));
@@ -792,9 +805,11 @@ mod tests {
             )
             .collect()
             .await;
-        let has_thinking_warning = chunks.iter().any(|c| matches!(c,
-            MessageChunk::System { content } if content.contains("Claude-specific")
-        ));
+        let has_thinking_warning = chunks.iter().any(|c| {
+            matches!(c,
+                MessageChunk::System { content } if content.contains("Claude-specific")
+            )
+        });
         assert!(has_thinking_warning, "expected thinking-object warning");
     }
 
@@ -821,9 +836,11 @@ mod tests {
             )
             .collect()
             .await;
-        let has_resume_warning = chunks.iter().any(|c| matches!(c,
-            MessageChunk::System { content } if content.contains("Could not resume Pi session")
-        ));
+        let has_resume_warning = chunks.iter().any(|c| {
+            matches!(c,
+                MessageChunk::System { content } if content.contains("Could not resume Pi session")
+            )
+        });
         assert!(has_resume_warning, "expected resume_failed warning");
     }
 
@@ -874,7 +891,7 @@ mod tests {
         reset_pi_semaphore();
         let sem1 = get_or_init_semaphore(5);
         let sem2 = get_or_init_semaphore(5); // should reuse, not re-init
-        // Both point to the same underlying semaphore (same available_permits)
+                                             // Both point to the same underlying semaphore (same available_permits)
         assert_eq!(sem1.available_permits(), sem2.available_permits());
         reset_pi_semaphore();
     }

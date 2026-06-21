@@ -55,8 +55,8 @@ pub fn path_kind(path: &Path) -> PathKind {
         Err(e) => {
             // Log non-ENOENT / non-ENOTDIR errors as a triage breadcrumb.
             let kind = e.kind();
-            if kind != io::ErrorKind::NotFound
-                && !matches!(e.raw_os_error(), Some(20)) // ENOTDIR on Unix
+            if kind != io::ErrorKind::NotFound && !matches!(e.raw_os_error(), Some(20))
+            // ENOTDIR on Unix
             {
                 // Non-ENOENT, non-ENOTDIR: log warn and collapse to missing.
                 tracing::warn!(
@@ -179,10 +179,8 @@ pub fn resolve_claude_binary_path(
     // 2. Config file override (binary mode only).
     if let Some(config_path) = config_claude_binary_path {
         if !config_path.is_empty() {
-            let resolved = validate_and_expand(
-                Path::new(config_path),
-                "assistants.claude.claudeBinaryPath",
-            )?;
+            let resolved =
+                validate_and_expand(Path::new(config_path), "assistants.claude.claudeBinaryPath")?;
             tracing::info!(
                 binary_path = %resolved.display(),
                 source = "config",
@@ -338,8 +336,7 @@ mod tests {
         let (_dir1, env_file) = mk_tmp_file();
         let (_dir2, config_file) = mk_tmp_file();
         env::set_var("CLAUDE_BIN_PATH", env_file.to_str().unwrap());
-        let result =
-            resolve_claude_binary_path(Some(config_file.to_str().unwrap()), true).unwrap();
+        let result = resolve_claude_binary_path(Some(config_file.to_str().unwrap()), true).unwrap();
         env::remove_var("CLAUDE_BIN_PATH");
         assert_eq!(result, Some(env_file));
     }
@@ -434,7 +431,10 @@ mod tests {
         let result = resolve_claude_binary_path(Some(dir.path().to_str().unwrap()), true);
         let err = result.unwrap_err();
         assert!(err.contains("which is a directory"), "error: {err}");
-        assert!(err.contains("assistants.claude.claudeBinaryPath"), "error: {err}");
+        assert!(
+            err.contains("assistants.claude.claudeBinaryPath"),
+            "error: {err}"
+        );
     }
 
     // ── install instructions (binary mode, nothing configured) ───────────────

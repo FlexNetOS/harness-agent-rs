@@ -17,15 +17,16 @@
 //! # Architecture
 //!
 //! The TypeScript source wraps `@opencode-ai/sdk`, a Node.js SDK that starts an embedded
-//! HTTP server (`createOpencode(…)`) and exposes a typed client. The Rust port implements
-//! all surrounding logic faithfully. The SDK invocation layer is the isolated NEEDS-HUMAN
-//! seam (see `runtime.rs`): `send_query` surfaces a `MessageChunk::Result` with
-//! `is_error: true, error_subtype: "opencode_sdk_not_bound"` — it does NOT panic.
+//! HTTP server (`createOpencode(…)`) and exposes a typed client. The Rust port replaces that
+//! SDK with a native embedded runtime (`runtime::acquire_embedded_runtime` spawns the
+//! `opencode serve` binary) plus a native HTTP/SSE client (`http_client::OpenCodeClient`).
+//! All surrounding logic is implemented faithfully; there is no SDK seam.
 
 pub mod agent_config;
 pub mod agent_fs;
 pub mod config;
 pub mod errors;
+pub mod http_client;
 pub mod multi_agent;
 pub mod provider;
 pub mod runtime;
@@ -40,8 +41,11 @@ pub use agent_config::{
 };
 pub use agent_fs::materialize_agents;
 pub use config::{parse_model_ref, parse_opencode_config, ProviderModel};
-pub use errors::{classify_opencode_error, enrich_opencode_error, error_message, RetryableErrorClass};
+pub use errors::{
+    classify_opencode_error, enrich_opencode_error, error_message, RetryableErrorClass,
+};
+pub use http_client::{HttpClientError, OpenCodeClient, SseEvent};
 pub use provider::OpencodeProvider;
-pub use runtime::{reset_embedded_runtime, OpencodeClientLike};
+pub use runtime::{reset_embedded_runtime, OpencodeClientLike, RuntimeError};
 pub use session::{create_session_prompt_body, resolve_session_id_logic};
 pub use tokens::normalize_tokens;

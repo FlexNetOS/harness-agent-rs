@@ -15,10 +15,10 @@
 //!
 //! See `.handoff/loop/findings/parity-cycle13.md`.
 
-use har_provider::cli_stream::stderr::{classify_stderr_line, StderrClass};
 use har_provider::cli_stream::retry::{
     classify_and_enrich_error, classify_subprocess_error, ErrorClass,
 };
+use har_provider::cli_stream::stderr::{classify_stderr_line, StderrClass};
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
@@ -61,9 +61,15 @@ fn classify_and_enrich_error_message_and_retry_match_ts() {
         let msg = case["input"]["errorMessage"].as_str().unwrap();
         let stderr_lines: Vec<String> = case["input"]["stderrLines"]
             .as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect()
+            })
             .unwrap_or_default();
-        let aborted = case["input"]["controllerAborted"].as_bool().unwrap_or(false);
+        let aborted = case["input"]["controllerAborted"]
+            .as_bool()
+            .unwrap_or(false);
 
         let got = classify_and_enrich_error(msg, &stderr_lines, aborted);
 
@@ -72,8 +78,14 @@ fn classify_and_enrich_error_message_and_retry_match_ts() {
         let want_class = case["result"]["errorClass"].as_str().unwrap();
 
         // Load-bearing: message + should_retry MUST match exactly.
-        assert_eq!(got.message, want_msg, "enrich message divergence for msg={msg:?}");
-        assert_eq!(got.should_retry, want_retry, "enrich should_retry divergence for msg={msg:?}");
+        assert_eq!(
+            got.message, want_msg,
+            "enrich message divergence for msg={msg:?}"
+        );
+        assert_eq!(
+            got.should_retry, want_retry,
+            "enrich should_retry divergence for msg={msg:?}"
+        );
 
         // error_class: matches for the non-abort classes; the abort paths (timeout/aborted in TS)
         // map to Unknown in Rust (logging-label-only, QUALIFIED).
@@ -110,6 +122,9 @@ fn classify_stderr_line_matches_ts() {
             StderrClass::InfoBanner => "info_banner",
             StderrClass::Info => "info",
         };
-        assert_eq!(got_str, want, "stderr classification divergence for line={line:?}");
+        assert_eq!(
+            got_str, want,
+            "stderr classification divergence for line={line:?}"
+        );
     }
 }

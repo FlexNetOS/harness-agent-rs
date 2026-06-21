@@ -82,27 +82,42 @@ mod tests {
 
     #[test]
     fn error_keyword_is_error() {
-        assert_eq!(classify_stderr_line("error: something went wrong"), StderrClass::Error);
+        assert_eq!(
+            classify_stderr_line("error: something went wrong"),
+            StderrClass::Error
+        );
     }
 
     #[test]
     fn fatal_keyword_is_error() {
-        assert_eq!(classify_stderr_line("fatal: cannot read config"), StderrClass::Error);
+        assert_eq!(
+            classify_stderr_line("fatal: cannot read config"),
+            StderrClass::Error
+        );
     }
 
     #[test]
     fn failed_keyword_is_error() {
-        assert_eq!(classify_stderr_line("failed to connect"), StderrClass::Error);
+        assert_eq!(
+            classify_stderr_line("failed to connect"),
+            StderrClass::Error
+        );
     }
 
     #[test]
     fn exception_keyword_is_error() {
-        assert_eq!(classify_stderr_line("uncaught exception in worker"), StderrClass::Error);
+        assert_eq!(
+            classify_stderr_line("uncaught exception in worker"),
+            StderrClass::Error
+        );
     }
 
     #[test]
     fn at_stack_trace_is_error() {
-        assert_eq!(classify_stderr_line("    at Object.main (/app/index.js:42)"), StderrClass::Error);
+        assert_eq!(
+            classify_stderr_line("    at Object.main (/app/index.js:42)"),
+            StderrClass::Error
+        );
     }
 
     #[test]
@@ -122,7 +137,10 @@ mod tests {
 
     #[test]
     fn plain_info_line_is_info() {
-        assert_eq!(classify_stderr_line("Loading configuration..."), StderrClass::Info);
+        assert_eq!(
+            classify_stderr_line("Loading configuration..."),
+            StderrClass::Info
+        );
     }
 
     #[test]

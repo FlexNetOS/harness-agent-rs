@@ -62,7 +62,10 @@ pub fn normalize_claude_usage(usage: Option<&RawUsage>) -> Option<TokenUsage> {
     Some(TokenUsage {
         input: input as u64,
         output: output as u64,
-        total: usage.total_tokens.filter(|t| t.is_finite()).map(|t| t as u64),
+        total: usage
+            .total_tokens
+            .filter(|t| t.is_finite())
+            .map(|t| t as u64),
         cost: None, // cost is on the result chunk, not usage field
     })
 }
@@ -100,24 +103,25 @@ fn parse_user_tool_result(obj: &Map<String, Value>) -> Option<ToolResultEntry> {
     if first.get("type")?.as_str()? != "tool_result" {
         return None;
     }
-    let tool_use_id = first.get("tool_use_id").and_then(|v| v.as_str()).map(str::to_owned);
+    let tool_use_id = first
+        .get("tool_use_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
     // Content can be a string or array of content blocks
     let raw_output: String = match first.get("content") {
         Some(Value::String(s)) => s.clone(),
-        Some(Value::Array(blocks)) => {
-            blocks
-                .iter()
-                .filter_map(|b| {
-                    let o = b.as_object()?;
-                    if o.get("type")?.as_str()? == "text" {
-                        o.get("text")?.as_str().map(str::to_owned)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        }
+        Some(Value::Array(blocks)) => blocks
+            .iter()
+            .filter_map(|b| {
+                let o = b.as_object()?;
+                if o.get("type")?.as_str()? == "text" {
+                    o.get("text")?.as_str().map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(""),
         Some(v) => v.to_string(),
         None => String::new(),
     };
@@ -191,12 +195,10 @@ pub fn parse_claude_stream_json(obj: &Map<String, Value>) -> Vec<MessageChunk> {
                             // JS `?? {}` replaces null AND undefined (absent) with `{}`.
                             // Objects pass through as-is.
                             // provider.test.ts:460-475 pins the absent-input → `{}` case.
-                            let tool_input: Option<Value> = Some(
-                                match block.get("input") {
-                                    Some(Value::Null) | None => Value::Object(serde_json::Map::new()),
-                                    Some(v) => v.clone(),
-                                }
-                            );
+                            let tool_input: Option<Value> = Some(match block.get("input") {
+                                Some(Value::Null) | None => Value::Object(serde_json::Map::new()),
+                                Some(v) => v.clone(),
+                            });
                             let tool_call_id =
                                 block.get("id").and_then(|v| v.as_str()).map(str::to_owned);
                             chunks.push(MessageChunk::Tool {
@@ -268,7 +270,10 @@ pub fn parse_claude_stream_json(obj: &Map<String, Value>) -> Vec<MessageChunk> {
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
             let tokens = normalize_claude_usage(usage.as_ref());
 
-            let session_id = obj.get("session_id").and_then(|v| v.as_str()).map(str::to_owned);
+            let session_id = obj
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
             let is_error_raw = obj.get("is_error").and_then(|v| v.as_bool());
             let subtype = obj.get("subtype").and_then(|v| v.as_str());
 
@@ -303,8 +308,14 @@ pub fn parse_claude_stream_json(obj: &Map<String, Value>) -> Vec<MessageChunk> {
 
             let structured_output = obj.get("structured_output").cloned();
             let total_cost_usd = obj.get("total_cost_usd").and_then(|v| v.as_f64());
-            let stop_reason = obj.get("stop_reason").and_then(|v| v.as_str()).map(str::to_owned);
-            let num_turns = obj.get("num_turns").and_then(|v| v.as_u64()).map(|n| n as u32);
+            let stop_reason = obj
+                .get("stop_reason")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+            let num_turns = obj
+                .get("num_turns")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
 
             let model_usage: Option<HashMap<String, Value>> = obj
                 .get("model_usage")
@@ -316,7 +327,11 @@ pub fn parse_claude_stream_json(obj: &Map<String, Value>) -> Vec<MessageChunk> {
                 tokens,
                 structured_output,
                 is_error: if is_real_error { Some(true) } else { None },
-                error_subtype: if is_real_error { subtype.map(str::to_owned) } else { None },
+                error_subtype: if is_real_error {
+                    subtype.map(str::to_owned)
+                } else {
+                    None
+                },
                 errors: if is_real_error { errors } else { None },
                 cost: total_cost_usd,
                 stop_reason,
@@ -375,7 +390,11 @@ mod tests {
 
     #[test]
     fn normalize_usage_both_present() {
-        let raw = RawUsage { input_tokens: Some(100.0), output_tokens: Some(50.0), total_tokens: None };
+        let raw = RawUsage {
+            input_tokens: Some(100.0),
+            output_tokens: Some(50.0),
+            total_tokens: None,
+        };
         let result = normalize_claude_usage(Some(&raw)).unwrap();
         assert_eq!(result.input, 100);
         assert_eq!(result.output, 50);
@@ -384,20 +403,32 @@ mod tests {
 
     #[test]
     fn normalize_usage_with_total() {
-        let raw = RawUsage { input_tokens: Some(100.0), output_tokens: Some(50.0), total_tokens: Some(150.0) };
+        let raw = RawUsage {
+            input_tokens: Some(100.0),
+            output_tokens: Some(50.0),
+            total_tokens: Some(150.0),
+        };
         let result = normalize_claude_usage(Some(&raw)).unwrap();
         assert_eq!(result.total, Some(150));
     }
 
     #[test]
     fn normalize_usage_missing_input_returns_none() {
-        let raw = RawUsage { input_tokens: None, output_tokens: Some(50.0), total_tokens: None };
+        let raw = RawUsage {
+            input_tokens: None,
+            output_tokens: Some(50.0),
+            total_tokens: None,
+        };
         assert!(normalize_claude_usage(Some(&raw)).is_none());
     }
 
     #[test]
     fn normalize_usage_missing_output_returns_none() {
-        let raw = RawUsage { input_tokens: Some(100.0), output_tokens: None, total_tokens: None };
+        let raw = RawUsage {
+            input_tokens: Some(100.0),
+            output_tokens: None,
+            total_tokens: None,
+        };
         assert!(normalize_claude_usage(Some(&raw)).is_none());
     }
 
@@ -416,7 +447,9 @@ mod tests {
         });
         let chunks = parse(v);
         assert_eq!(chunks.len(), 1);
-        assert!(matches!(&chunks[0], MessageChunk::Assistant { content, .. } if content == "Hello, world!"));
+        assert!(
+            matches!(&chunks[0], MessageChunk::Assistant { content, .. } if content == "Hello, world!")
+        );
     }
 
     #[test]
@@ -442,7 +475,12 @@ mod tests {
         });
         let chunks = parse(v);
         assert_eq!(chunks.len(), 1);
-        if let MessageChunk::Tool { tool_name, tool_call_id, tool_input } = &chunks[0] {
+        if let MessageChunk::Tool {
+            tool_name,
+            tool_call_id,
+            tool_input,
+        } = &chunks[0]
+        {
             assert_eq!(tool_name, "bash");
             assert_eq!(tool_call_id.as_deref(), Some("tu-001"));
             assert!(tool_input
@@ -489,7 +527,10 @@ mod tests {
         if let MessageChunk::System { content } = &chunks[0] {
             assert!(content.contains("my-server"), "content: {}", content);
             assert!(content.contains("failed"), "content: {}", content);
-            assert!(!content.contains("ok-server"), "ok-server should not appear");
+            assert!(
+                !content.contains("ok-server"),
+                "ok-server should not appear"
+            );
         } else {
             panic!("expected System chunk");
         }
@@ -541,7 +582,9 @@ mod tests {
         let v = json!({ "type": "rate_limit_event" });
         let chunks = parse(v);
         assert_eq!(chunks.len(), 1);
-        assert!(matches!(&chunks[0], MessageChunk::RateLimit { rate_limit_info } if rate_limit_info.is_empty()));
+        assert!(
+            matches!(&chunks[0], MessageChunk::RateLimit { rate_limit_info } if rate_limit_info.is_empty())
+        );
     }
 
     // ── result ────────────────────────────────────────────────────────────────
@@ -596,8 +639,18 @@ mod tests {
         });
         let chunks = parse(v);
         assert_eq!(chunks.len(), 1);
-        if let MessageChunk::Result { is_error, error_subtype, errors, .. } = &chunks[0] {
-            assert!(is_error.is_none(), "is_error must be None for stop_sequence case; got: {:?}", is_error);
+        if let MessageChunk::Result {
+            is_error,
+            error_subtype,
+            errors,
+            ..
+        } = &chunks[0]
+        {
+            assert!(
+                is_error.is_none(),
+                "is_error must be None for stop_sequence case; got: {:?}",
+                is_error
+            );
             assert!(error_subtype.is_none(), "error_subtype must be None");
             assert!(errors.is_none(), "errors must be None");
         } else {
@@ -616,7 +669,13 @@ mod tests {
         });
         let chunks = parse(v);
         assert_eq!(chunks.len(), 1);
-        if let MessageChunk::Result { is_error, error_subtype, errors, .. } = &chunks[0] {
+        if let MessageChunk::Result {
+            is_error,
+            error_subtype,
+            errors,
+            ..
+        } = &chunks[0]
+        {
             assert_eq!(*is_error, Some(true));
             assert_eq!(error_subtype.as_deref(), Some("error_max_budget_usd"));
             assert_eq!(errors.as_ref().map(|e| e.len()), Some(1));
@@ -647,7 +706,10 @@ mod tests {
             "structured_output": { "answer": 42 }
         });
         let chunks = parse(v);
-        if let MessageChunk::Result { structured_output, .. } = &chunks[0] {
+        if let MessageChunk::Result {
+            structured_output, ..
+        } = &chunks[0]
+        {
             assert_eq!(structured_output.as_ref().unwrap()["answer"], 42);
         } else {
             panic!("expected Result");
@@ -688,7 +750,12 @@ mod tests {
         });
         let chunks = parse(v);
         assert_eq!(chunks.len(), 1);
-        if let MessageChunk::ToolResult { tool_output, tool_call_id, .. } = &chunks[0] {
+        if let MessageChunk::ToolResult {
+            tool_output,
+            tool_call_id,
+            ..
+        } = &chunks[0]
+        {
             assert_eq!(tool_output, "file.txt\ndir/");
             assert_eq!(tool_call_id.as_deref(), Some("tu-001"));
         } else {
@@ -765,15 +832,14 @@ mod tests {
             json!({"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}),
             json!({"type":"result","is_error":false,"session_id":"s1","usage":{"input_tokens":10,"output_tokens":5},"stop_reason":"end_turn","num_turns":1}),
         ];
-        let all_chunks: Vec<MessageChunk> = lines
-            .iter()
-            .flat_map(|v| parse(v.clone()))
-            .collect();
+        let all_chunks: Vec<MessageChunk> = lines.iter().flat_map(|v| parse(v.clone())).collect();
         // system init with no servers → 0 chunks
         // assistant → 1 chunk
         // result → 1 chunk
         assert_eq!(all_chunks.len(), 2);
-        assert!(matches!(&all_chunks[0], MessageChunk::Assistant { content, .. } if content == "Hello"));
+        assert!(
+            matches!(&all_chunks[0], MessageChunk::Assistant { content, .. } if content == "Hello")
+        );
         assert!(matches!(&all_chunks[1], MessageChunk::Result { .. }));
     }
 
@@ -787,7 +853,12 @@ mod tests {
         let all_chunks: Vec<MessageChunk> = lines.iter().flat_map(|v| parse(v.clone())).collect();
         assert_eq!(all_chunks.len(), 2);
         // Second chunk is a clean success
-        if let MessageChunk::Result { is_error, stop_reason, .. } = &all_chunks[1] {
+        if let MessageChunk::Result {
+            is_error,
+            stop_reason,
+            ..
+        } = &all_chunks[1]
+        {
             assert!(is_error.is_none(), "stop_sequence must be clean success");
             assert_eq!(stop_reason.as_deref(), Some("stop_sequence"));
         } else {

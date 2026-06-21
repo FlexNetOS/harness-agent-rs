@@ -127,9 +127,8 @@ static EXTENSION_LOADER_CACHE: OnceLock<
     Mutex<HashMap<String, Arc<tokio::sync::OnceCell<ResourceLoaderStub>>>>,
 > = OnceLock::new();
 
-fn extension_loader_cache()
-    -> &'static Mutex<HashMap<String, Arc<tokio::sync::OnceCell<ResourceLoaderStub>>>>
-{
+fn extension_loader_cache(
+) -> &'static Mutex<HashMap<String, Arc<tokio::sync::OnceCell<ResourceLoaderStub>>>> {
     EXTENSION_LOADER_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -290,8 +289,7 @@ mod tests {
             system_prompt: Some("test".to_owned()),
             ..Default::default()
         };
-        let r1 =
-            get_or_create_reloaded_extension_loader("/tmp/cache-test", opts.clone()).await;
+        let r1 = get_or_create_reloaded_extension_loader("/tmp/cache-test", opts.clone()).await;
         let r2 = get_or_create_reloaded_extension_loader("/tmp/cache-test", opts).await;
         assert!(r1.is_ok());
         assert!(r2.is_ok());

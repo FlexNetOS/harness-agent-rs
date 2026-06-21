@@ -25,8 +25,8 @@ pub use mcp_sidecar::{
     McpHttpServer, McpSidecar,
 };
 pub use retry::{
-    classify_and_enrich_error, classify_subprocess_error, with_first_message_timeout, EnrichedError,
-    ErrorClass, FirstEventError, RetryConfig, RetryError,
+    classify_and_enrich_error, classify_subprocess_error, with_first_message_timeout,
+    EnrichedError, ErrorClass, FirstEventError, RetryConfig, RetryError,
 };
 pub use spawner::{
     FakeChildOutput, FakeSpawnScript, FakeSpawner, RealSpawner, SpawnOutcome, Spawner,

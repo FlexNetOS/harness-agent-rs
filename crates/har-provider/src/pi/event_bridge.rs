@@ -97,9 +97,7 @@ impl<T: Send + 'static> AsyncQueue<T> {
     /// Register a waiter (returns a receiver for the next item or None on close).
     ///
     /// Returns `None` if the queue is already closed.
-    pub fn register_waiter(
-        &mut self,
-    ) -> Option<tokio::sync::oneshot::Receiver<Option<T>>> {
+    pub fn register_waiter(&mut self) -> Option<tokio::sync::oneshot::Receiver<Option<T>>> {
         if self.closed {
             return None;
         }
@@ -270,10 +268,7 @@ pub fn build_result_chunk(last_assistant: Option<&PiAssistantMessage>) -> Messag
     };
 
     let tokens = usage_to_tokens(&last.usage);
-    let is_error = matches!(
-        last.stop_reason.as_deref(),
-        Some("error") | Some("aborted")
-    );
+    let is_error = matches!(last.stop_reason.as_deref(), Some("error") | Some("aborted"));
 
     let cost = tokens.cost;
 
@@ -453,7 +448,10 @@ mod tests {
 
     #[test]
     fn serialize_object_to_json() {
-        assert_eq!(serialize_tool_result(&json!({"a": 1, "b": "x"})), r#"{"a":1,"b":"x"}"#);
+        assert_eq!(
+            serialize_tool_result(&json!({"a": 1, "b": "x"})),
+            r#"{"a":1,"b":"x"}"#
+        );
     }
 
     #[test]
@@ -500,7 +498,12 @@ mod tests {
         };
         let chunk = build_result_chunk(Some(&msg));
         match chunk {
-            MessageChunk::Result { is_error, stop_reason, tokens, .. } => {
+            MessageChunk::Result {
+                is_error,
+                stop_reason,
+                tokens,
+                ..
+            } => {
                 assert!(is_error.is_none() || is_error == Some(false));
                 assert_eq!(stop_reason, Some("end_turn".to_owned()));
                 assert!(tokens.is_some());
@@ -524,7 +527,12 @@ mod tests {
         };
         let chunk = build_result_chunk(Some(&msg));
         match chunk {
-            MessageChunk::Result { is_error, error_subtype, errors, .. } => {
+            MessageChunk::Result {
+                is_error,
+                error_subtype,
+                errors,
+                ..
+            } => {
                 assert_eq!(is_error, Some(true));
                 assert_eq!(error_subtype, Some("error".to_owned()));
                 assert_eq!(errors, Some(vec!["Pi API failed".to_owned()]));
@@ -559,7 +567,11 @@ mod tests {
     fn result_chunk_missing_assistant_message() {
         let chunk = build_result_chunk(None);
         match chunk {
-            MessageChunk::Result { is_error, error_subtype, .. } => {
+            MessageChunk::Result {
+                is_error,
+                error_subtype,
+                ..
+            } => {
                 assert_eq!(is_error, Some(true));
                 assert_eq!(error_subtype, Some("missing_assistant_message".to_owned()));
             }
@@ -575,7 +587,9 @@ mod tests {
             delta: "hello".to_owned(),
         });
         assert_eq!(chunks.len(), 1);
-        assert!(matches!(&chunks[0], MessageChunk::Assistant { content, .. } if content == "hello"));
+        assert!(
+            matches!(&chunks[0], MessageChunk::Assistant { content, .. } if content == "hello")
+        );
     }
 
     #[test]
@@ -700,9 +714,13 @@ mod tests {
             });
             match &chunks[0] {
                 MessageChunk::Tool { tool_input, .. } => {
-                    let wire = serde_json::to_value(tool_input.as_ref().unwrap())
-                        .expect("serializes");
-                    assert_eq!(wire, json!({}), "non-object args {args} must emit toolInput:{{}}");
+                    let wire =
+                        serde_json::to_value(tool_input.as_ref().unwrap()).expect("serializes");
+                    assert_eq!(
+                        wire,
+                        json!({}),
+                        "non-object args {args} must emit toolInput:{{}}"
+                    );
                 }
                 _ => panic!("expected Tool chunk"),
             }
@@ -719,9 +737,12 @@ mod tests {
         });
         match &chunks[0] {
             MessageChunk::Tool { tool_input, .. } => {
-                let wire = serde_json::to_value(tool_input.as_ref().unwrap())
-                    .expect("serializes");
-                assert_eq!(wire, json!([1, 2]), "array args must pass through as toolInput");
+                let wire = serde_json::to_value(tool_input.as_ref().unwrap()).expect("serializes");
+                assert_eq!(
+                    wire,
+                    json!([1, 2]),
+                    "array args must pass through as toolInput"
+                );
             }
             _ => panic!("expected Tool chunk"),
         }

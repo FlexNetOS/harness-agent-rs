@@ -168,10 +168,13 @@ pub fn to_toml_value(value: &Value, path: &str) -> Result<String, String> {
             // serde_json::to_string produces JSON.stringify-compatible output:
             // control chars are escaped (\n → \\n, \t → \\t, etc.), which
             // matches the SDK's toTomlValue string branch exactly.
-            serde_json::to_string(s).map_err(|e| format!("string serialization failed at {}: {}", path, e))
+            serde_json::to_string(s)
+                .map_err(|e| format!("string serialization failed at {}: {}", path, e))
         }
         Value::Number(n) => {
-            let f = n.as_f64().ok_or_else(|| format!("non-finite number at {}", path))?;
+            let f = n
+                .as_f64()
+                .ok_or_else(|| format!("non-finite number at {}", path))?;
             if !f.is_finite() {
                 return Err(format!(
                     "Codex config override at {} must be a finite number",
@@ -272,35 +275,69 @@ mod tests {
 
     #[test]
     fn argv_starts_with_exec_experimental_json() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         assert_eq!(argv[0], "exec");
         assert_eq!(argv[1], "--experimental-json");
     }
 
     #[test]
     fn argv_includes_hardcoded_sandbox() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         let idx = argv.iter().position(|a| a == "--sandbox").unwrap();
         assert_eq!(argv[idx + 1], "danger-full-access");
     }
 
     #[test]
     fn argv_includes_working_directory() {
-        let argv =
-            build_codex_argv(None, &default_codex_config(), None, None, "/my/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/my/workspace",
+            None,
+        );
         let idx = argv.iter().position(|a| a == "--cd").unwrap();
         assert_eq!(argv[idx + 1], "/my/workspace");
     }
 
     #[test]
     fn argv_includes_skip_git_repo_check() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         assert!(argv.contains(&"--skip-git-repo-check".to_owned()));
     }
 
     #[test]
     fn argv_includes_network_access_config() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         let idx = argv
             .iter()
             .position(|a| a == "sandbox_workspace_write.network_access=true")
@@ -310,7 +347,14 @@ mod tests {
 
     #[test]
     fn argv_includes_approval_policy() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         assert!(argv.contains(&"approval_policy=\"never\"".to_owned()));
     }
 
@@ -357,7 +401,14 @@ mod tests {
 
     #[test]
     fn argv_no_model_flag_when_absent() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         assert!(!argv.contains(&"--model".to_owned()));
     }
 
@@ -381,7 +432,14 @@ mod tests {
 
     #[test]
     fn argv_no_resume_when_none() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         assert!(!argv.contains(&"resume".to_owned()));
     }
 
@@ -403,7 +461,14 @@ mod tests {
 
     #[test]
     fn argv_no_output_schema_when_none() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         assert!(!argv.contains(&"--output-schema".to_owned()));
     }
 
@@ -419,7 +484,14 @@ mod tests {
 
     #[test]
     fn argv_no_reasoning_effort_when_absent() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         let has_effort = argv.iter().any(|a| a.contains("model_reasoning_effort"));
         assert!(!has_effort);
     }
@@ -436,7 +508,14 @@ mod tests {
 
     #[test]
     fn argv_no_web_search_when_absent() {
-        let argv = build_codex_argv(None, &default_codex_config(), None, None, "/workspace", None);
+        let argv = build_codex_argv(
+            None,
+            &default_codex_config(),
+            None,
+            None,
+            "/workspace",
+            None,
+        );
         let has_web_search = argv
             .iter()
             .any(|a| a.starts_with("web_search=") && !a.contains("network_access"));

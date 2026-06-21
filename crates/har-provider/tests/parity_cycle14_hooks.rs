@@ -17,7 +17,11 @@ fn decode_rust(node_hooks: &Value) -> (bool, Value) {
     match build_hooks_settings_json(node_hooks) {
         None => (false, json!({})),
         Some(settings) => {
-            let hooks_block = settings.get("hooks").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+            let hooks_block = settings
+                .get("hooks")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
             let mut out = serde_json::Map::new();
             for (event, entries_v) in &hooks_block {
                 let mut decoded_entries = Vec::new();
@@ -31,7 +35,10 @@ fn decode_rust(node_hooks: &Value) -> (bool, Value) {
                     }
                     // Extract the echo'd response JSON from hooks[0].command = "echo '<json>'"
                     let cmd = entry["hooks"][0]["command"].as_str().unwrap();
-                    let inner = cmd.strip_prefix("echo '").and_then(|s| s.strip_suffix("'")).unwrap_or(cmd);
+                    let inner = cmd
+                        .strip_prefix("echo '")
+                        .and_then(|s| s.strip_suffix("'"))
+                        .unwrap_or(cmd);
                     // reverse the single-quote-safe encoding '\'' -> '
                     let unescaped = inner.replace("'\\''", "'");
                     let response: Value = serde_json::from_str(&unescaped).unwrap_or(Value::Null);
@@ -59,7 +66,12 @@ fn canon(v: &Value) -> Value {
         Value::Object(map) => {
             let mut sorted: Vec<(&String, &Value)> = map.iter().collect();
             sorted.sort_by(|a, b| a.0.cmp(b.0));
-            Value::Object(sorted.into_iter().map(|(k, v)| (k.clone(), canon(v))).collect())
+            Value::Object(
+                sorted
+                    .into_iter()
+                    .map(|(k, v)| (k.clone(), canon(v)))
+                    .collect(),
+            )
         }
         Value::Array(arr) => Value::Array(arr.iter().map(canon).collect()),
         Value::Number(n) => {
@@ -76,16 +88,31 @@ fn canon(v: &Value) -> Value {
 
 fn cases() -> Vec<(&'static str, Value)> {
     vec![
-        ("basic_matcher_timeout", json!({"PostToolUse":[{"matcher":"Bash","response":{"type":"continue"},"timeout":5000}]})),
-        ("matcher_optional", json!({"PreToolUse":[{"response":{"action":"block"}}]})),
-        ("response_object", json!({"PostToolUse":[{"response":{"continue":true}}]})),
+        (
+            "basic_matcher_timeout",
+            json!({"PostToolUse":[{"matcher":"Bash","response":{"type":"continue"},"timeout":5000}]}),
+        ),
+        (
+            "matcher_optional",
+            json!({"PreToolUse":[{"response":{"action":"block"}}]}),
+        ),
+        (
+            "response_object",
+            json!({"PostToolUse":[{"response":{"continue":true}}]}),
+        ),
         ("empty_map", json!({})),
-        ("multi_event_multi_matcher", json!({
-            "PreToolUse":[{"matcher":"Edit","response":{"decision":"approve"},"timeout":1000}],
-            "PostToolUse":[{"matcher":"Bash","response":"string-response"},{"response":{"nested":{"a":[1,2,3]}}}]
-        })),
+        (
+            "multi_event_multi_matcher",
+            json!({
+                "PreToolUse":[{"matcher":"Edit","response":{"decision":"approve"},"timeout":1000}],
+                "PostToolUse":[{"matcher":"Bash","response":"string-response"},{"response":{"nested":{"a":[1,2,3]}}}]
+            }),
+        ),
         ("empty_matchers_array", json!({"PostToolUse":[]})),
-        ("response_with_quote", json!({"PreToolUse":[{"response":{"msg":"it's a test"}}]})),
+        (
+            "response_with_quote",
+            json!({"PreToolUse":[{"response":{"msg":"it's a test"}}]}),
+        ),
     ]
 }
 
@@ -140,9 +167,15 @@ fn hooks_differential_vs_source_oracle() {
         if src_is_some && rust_is_some && canon(&rust_decoded) != canon(src_serialized) {
             mismatches.push(format!(
                 "[{}] payload mismatch:\n  rust  = {}\n  source= {}",
-                name, canon(&rust_decoded), canon(src_serialized)
+                name,
+                canon(&rust_decoded),
+                canon(src_serialized)
             ));
         }
     }
-    assert!(mismatches.is_empty(), "DIVERGENCES:\n{}", mismatches.join("\n"));
+    assert!(
+        mismatches.is_empty(),
+        "DIVERGENCES:\n{}",
+        mismatches.join("\n")
+    );
 }

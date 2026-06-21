@@ -9,9 +9,7 @@
 //! See `.handoff/loop/findings/parity-cycle12.md` for the full differential trail.
 
 use har_contract::{NativeTool, SettingSource};
-use har_provider::claude::binary_resolver::{
-    resolve_claude_binary_path, CLAUDE_BINARY_NAME,
-};
+use har_provider::claude::binary_resolver::{resolve_claude_binary_path, CLAUDE_BINARY_NAME};
 use har_provider::claude::config::parse_claude_config;
 use har_provider::claude::native_tools::{build_archon_mcp_server, ToolFieldKind};
 use serde_json::{json, Map, Value};
@@ -59,9 +57,7 @@ fn render_native(input_schema: Value) -> String {
                 })
                 .collect();
             // Oracle sorts fields by name to neutralize key-order nondeterminism.
-            fields.sort_by(|a, b| {
-                a["name"].as_str().unwrap().cmp(b["name"].as_str().unwrap())
-            });
+            fields.sort_by(|a, b| a["name"].as_str().unwrap().cmp(b["name"].as_str().unwrap()));
             let out = json!({
                 "ok": true,
                 "serverName": desc.name,
@@ -262,7 +258,10 @@ fn pr05_config_empty() {
 }
 #[test]
 fn pr05_config_model_string() {
-    assert_config(json!({"model":"claude-opus-4"}), r#"{"model":"claude-opus-4"}"#);
+    assert_config(
+        json!({"model":"claude-opus-4"}),
+        r#"{"model":"claude-opus-4"}"#,
+    );
 }
 #[test]
 fn pr05_config_model_nonstring() {
@@ -277,11 +276,17 @@ fn pr05_config_ss_both() {
 }
 #[test]
 fn pr05_config_ss_project() {
-    assert_config(json!({"settingSources":["project"]}), r#"{"settingSources":["project"]}"#);
+    assert_config(
+        json!({"settingSources":["project"]}),
+        r#"{"settingSources":["project"]}"#,
+    );
 }
 #[test]
 fn pr05_config_ss_user() {
-    assert_config(json!({"settingSources":["user"]}), r#"{"settingSources":["user"]}"#);
+    assert_config(
+        json!({"settingSources":["user"]}),
+        r#"{"settingSources":["user"]}"#,
+    );
 }
 #[test]
 fn pr05_config_ss_invalid_only() {
@@ -337,7 +342,10 @@ fn pr05_config_all_three() {
 }
 #[test]
 fn pr05_config_extra_keys() {
-    assert_config(json!({"model":"m","unknownFutureProp":"x","anotherProp":99}), r#"{"model":"m"}"#);
+    assert_config(
+        json!({"model":"m","unknownFutureProp":"x","anotherProp":99}),
+        r#"{"model":"m"}"#,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,7 +393,8 @@ fn pr04_env_missing_exact_error() {
     let e = resolve_claude_binary_path(None, true).unwrap_err();
     env::remove_var("CLAUDE_BIN_PATH");
     // EXACT TS text (sourceLabel = CLAUDE_BIN_PATH).
-    let expected = "CLAUDE_BIN_PATH is set to \"/nonexistent/cli.js\" but the file does not exist.\n\
+    let expected =
+        "CLAUDE_BIN_PATH is set to \"/nonexistent/cli.js\" but the file does not exist.\n\
         Please verify the path points to the Claude Code executable (native binary\n\
         from the curl/PowerShell installer, or cli.js from an npm global install).";
     assert_eq!(e, expected);

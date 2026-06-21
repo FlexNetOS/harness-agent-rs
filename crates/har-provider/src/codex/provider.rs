@@ -42,12 +42,12 @@ use har_contract::{
     SendQueryOptions,
 };
 
+use crate::cli_stream::spawner::{RealSpawner, SpawnOutcome, Spawner};
+use crate::cli_stream::stream::{NdjsonStream, StreamError};
 use crate::codex::argv::build_codex_argv;
 use crate::codex::binary_resolver::resolve_codex_binary_path;
 use crate::codex::config::parse_codex_config;
 use crate::codex::parser::{parse_codex_event, CodexStreamState};
-use crate::cli_stream::spawner::{RealSpawner, SpawnOutcome, Spawner};
-use crate::cli_stream::stream::{NdjsonStream, StreamError};
 use crate::CODEX_CAPABILITIES;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -97,8 +97,7 @@ const AUTH_PATTERNS: &[&str] = &[
 ];
 
 /// Subprocess crash pattern strings. Source: provider.ts:251.
-const SUBPROCESS_CRASH_PATTERNS: &[&str] =
-    &["exited with code", "killed", "signal", "codex exec"];
+const SUBPROCESS_CRASH_PATTERNS: &[&str] = &["exited with code", "killed", "signal", "codex exec"];
 
 /// Model fallback map. Source: provider.ts:212-214.
 const CODEX_MODEL_FALLBACKS: &[(&str, &str)] = &[("gpt-5.3-codex", "gpt-5.2-codex")];
@@ -132,9 +131,8 @@ impl std::fmt::Display for CodexErrorClass {
 fn is_model_access_error(error_message: &str) -> bool {
     let m = error_message.to_lowercase();
     let has_model = m.contains("model");
-    let has_availability_signal = m.contains("not available")
-        || m.contains("not found")
-        || m.contains("access denied");
+    let has_availability_signal =
+        m.contains("not available") || m.contains("not found") || m.contains("access denied");
     has_model && has_availability_signal
 }
 
@@ -430,8 +428,12 @@ pub async fn load_mcp_config(
         .await
         .map_err(|e| format!("Failed to read MCP config at {}: {}", resolved_path, e))?;
 
-    let raw: Value = serde_json::from_str(&contents)
-        .map_err(|e| format!("Failed to parse MCP config JSON at {}: {}", resolved_path, e))?;
+    let raw: Value = serde_json::from_str(&contents).map_err(|e| {
+        format!(
+            "Failed to parse MCP config JSON at {}: {}",
+            resolved_path, e
+        )
+    })?;
 
     let servers_obj = match &raw {
         Value::Object(obj) => obj,
@@ -954,7 +956,8 @@ fn write_schema_temp_file(schema: &Value) -> Result<tempfile::NamedTempFile, Str
         .map_err(|e| format!("schema serialization failed: {}", e))?;
     file.write_all(json.as_bytes())
         .map_err(|e| format!("schema write failed: {}", e))?;
-    file.flush().map_err(|e| format!("schema flush failed: {}", e))?;
+    file.flush()
+        .map_err(|e| format!("schema flush failed: {}", e))?;
     Ok(file)
 }
 
@@ -1016,8 +1019,7 @@ async fn run_codex_attempt(
             // Per-attempt cancel token for CancelGuard (scoped to this attempt).
             let attempt_cancel = CancellationToken::new();
             let pid = child.id().unwrap_or(0);
-            let _cancel_guard =
-                crate::cli_stream::CancelGuard::spawn(attempt_cancel.clone(), pid);
+            let _cancel_guard = crate::cli_stream::CancelGuard::spawn(attempt_cancel.clone(), pid);
 
             // Background stderr reader
             let (stderr_tx, mut stderr_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -1074,10 +1076,7 @@ async fn run_codex_attempt(
                             stderr_lines.push(line);
                         }
                         let ctx = stderr_lines.join("\n");
-                        return Err(format!(
-                            "I/O reading Codex stdout (stderr: {}): {}",
-                            ctx, e
-                        ));
+                        return Err(format!("I/O reading Codex stdout (stderr: {}): {}", ctx, e));
                     }
                     Some(Err(StreamError::ParseError {
                         line_no,
@@ -1097,12 +1096,9 @@ async fn run_codex_attempt(
             // If stream closed without a terminal event, synthesize fail-stop result.
             // Source: provider.ts:625-641
             if !is_done {
-                let message = state
-                    .last_non_mcp_error
-                    .clone()
-                    .unwrap_or_else(|| {
-                        "Codex stream closed without turn.completed or turn.failed".to_owned()
-                    });
+                let message = state.last_non_mcp_error.clone().unwrap_or_else(|| {
+                    "Codex stream closed without turn.completed or turn.failed".to_owned()
+                });
                 tracing::error!(message = %message, "codex.stream_incomplete");
                 chunks.push(MessageChunk::Result {
                     session_id: state.resolved_thread_id.clone(),
@@ -1191,12 +1187,9 @@ async fn run_codex_attempt(
 
             // Synthesize fail-stop if no terminal
             if !is_done {
-                let message = state
-                    .last_non_mcp_error
-                    .clone()
-                    .unwrap_or_else(|| {
-                        "Codex stream closed without turn.completed or turn.failed".to_owned()
-                    });
+                let message = state.last_non_mcp_error.clone().unwrap_or_else(|| {
+                    "Codex stream closed without turn.completed or turn.failed".to_owned()
+                });
                 chunks.push(MessageChunk::Result {
                     session_id: state.resolved_thread_id.clone(),
                     tokens: None,
@@ -1297,12 +1290,18 @@ mod tests {
             classify_codex_error("rate limit exceeded"),
             CodexErrorClass::RateLimit
         );
-        assert_eq!(classify_codex_error("429 too many"), CodexErrorClass::RateLimit);
+        assert_eq!(
+            classify_codex_error("429 too many"),
+            CodexErrorClass::RateLimit
+        );
     }
 
     #[test]
     fn classify_auth_error() {
-        assert_eq!(classify_codex_error("401 unauthorized"), CodexErrorClass::Auth);
+        assert_eq!(
+            classify_codex_error("401 unauthorized"),
+            CodexErrorClass::Auth
+        );
         assert_eq!(
             classify_codex_error("authentication failed"),
             CodexErrorClass::Auth
@@ -1315,7 +1314,10 @@ mod tests {
             classify_codex_error("codex exec exited with code 1"),
             CodexErrorClass::Crash
         );
-        assert_eq!(classify_codex_error("killed by signal"), CodexErrorClass::Crash);
+        assert_eq!(
+            classify_codex_error("killed by signal"),
+            CodexErrorClass::Crash
+        );
     }
 
     #[test]
@@ -1362,7 +1364,10 @@ mod tests {
             .get("mcp_servers")
             .and_then(|v| v.as_object())
             .unwrap();
-        let figma = mcp_servers.get("figma").and_then(|v| v.as_object()).unwrap();
+        let figma = mcp_servers
+            .get("figma")
+            .and_then(|v| v.as_object())
+            .unwrap();
         assert_eq!(
             figma.get("url").and_then(|v| v.as_str()),
             Some("https://figma.example.com/mcp")
@@ -1384,8 +1389,14 @@ mod tests {
             .and_then(|o| o.get("api"))
             .and_then(|v| v.as_object())
             .unwrap();
-        assert!(api.contains_key("http_headers"), "should map headers to http_headers");
-        assert!(!api.contains_key("headers"), "should not pass raw headers key");
+        assert!(
+            api.contains_key("http_headers"),
+            "should map headers to http_headers"
+        );
+        assert!(
+            !api.contains_key("headers"),
+            "should not pass raw headers key"
+        );
     }
 
     #[test]
@@ -1478,8 +1489,7 @@ mod tests {
         ])];
         let provider = CodexProvider::new_for_test(Arc::new(FakeSpawner::new(script)));
         let cancel = make_cancel();
-        let stream =
-            provider.send_query("ping".to_owned(), "/tmp".to_owned(), None, None, cancel);
+        let stream = provider.send_query("ping".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<MessageChunk> = stream.collect().await;
         assert!(
             matches!(&chunks[0], MessageChunk::Result { session_id: Some(sid), .. } if sid == "thread-xyz")
@@ -1494,8 +1504,7 @@ mod tests {
         )])];
         let provider = CodexProvider::new_for_test(Arc::new(FakeSpawner::new(script)));
         let cancel = make_cancel();
-        let stream =
-            provider.send_query("hello".to_owned(), "/tmp".to_owned(), None, None, cancel);
+        let stream = provider.send_query("hello".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<MessageChunk> = stream.collect().await;
         assert_eq!(chunks.len(), 1);
         assert!(
@@ -1510,8 +1519,7 @@ mod tests {
         let script = vec![FakeSpawnScript::Success(vec![])];
         let provider = CodexProvider::new_for_test(Arc::new(FakeSpawner::new(script)));
         let cancel = make_cancel();
-        let stream =
-            provider.send_query("test".to_owned(), "/tmp".to_owned(), None, None, cancel);
+        let stream = provider.send_query("test".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<MessageChunk> = stream.collect().await;
         assert_eq!(chunks.len(), 1);
         assert!(
@@ -1529,17 +1537,19 @@ mod tests {
                 1,
                 1,
                 Some("codex exec exited with code 1"),
-                vec![agent_message_line("Retry worked"), turn_completed_line(2, 2)],
+                vec![
+                    agent_message_line("Retry worked"),
+                    turn_completed_line(2, 2),
+                ],
             )),
         );
         let cancel = make_cancel();
-        let stream =
-            provider.send_query("test".to_owned(), "/tmp".to_owned(), None, None, cancel);
+        let stream = provider.send_query("test".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<MessageChunk> = stream.collect().await;
         // Should have assistant + result from retry
-        assert!(chunks
-            .iter()
-            .any(|c| matches!(c, MessageChunk::Assistant { content, .. } if content == "Retry worked")));
+        assert!(chunks.iter().any(
+            |c| matches!(c, MessageChunk::Assistant { content, .. } if content == "Retry worked")
+        ));
     }
 
     #[tokio::test]
@@ -1552,11 +1562,16 @@ mod tests {
         )])];
         let provider = CodexProvider::with_options(0, Arc::new(FakeSpawner::new(script)));
         let cancel = make_cancel();
-        let stream =
-            provider.send_query("test".to_owned(), "/tmp".to_owned(), None, None, cancel);
+        let stream = provider.send_query("test".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<MessageChunk> = stream.collect().await;
         assert_eq!(chunks.len(), 1);
-        assert!(matches!(&chunks[0], MessageChunk::Result { is_error: Some(true), .. }));
+        assert!(matches!(
+            &chunks[0],
+            MessageChunk::Result {
+                is_error: Some(true),
+                ..
+            }
+        ));
     }
 
     #[tokio::test]
@@ -1616,7 +1631,10 @@ mod tests {
         });
         let obj = schema.as_object().unwrap();
         let result = normalize_json_schema_for_openai_strict(obj);
-        assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            result.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
     }
 
     #[test]
@@ -1630,9 +1648,15 @@ mod tests {
         });
         let obj = schema.as_object().unwrap();
         let result = normalize_json_schema_for_openai_strict(obj);
-        assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            result.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
         let nested = result["properties"]["nested"].as_object().unwrap();
-        assert_eq!(nested.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            nested.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
     }
 
     #[test]
@@ -1660,7 +1684,10 @@ mod tests {
         let foo = result["$defs"]["Foo"].as_object().unwrap();
         assert_eq!(foo.get("additionalProperties"), Some(&Value::Bool(false)));
         let any_of_0 = result["anyOf"][0].as_object().unwrap();
-        assert_eq!(any_of_0.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            any_of_0.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
     }
 
     #[test]
@@ -1669,7 +1696,10 @@ mod tests {
         let schema = json!({"properties": {"a": {"type": "string"}}});
         let obj = schema.as_object().unwrap();
         let result = normalize_json_schema_for_openai_strict(obj);
-        assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            result.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
     }
 
     #[test]
@@ -1678,7 +1708,10 @@ mod tests {
         let schema = json!({"type": ["object", "null"], "properties": {"a": {"type": "string"}}});
         let obj = schema.as_object().unwrap();
         let result = normalize_json_schema_for_openai_strict(obj);
-        assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            result.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
     }
 
     #[test]
@@ -1691,7 +1724,10 @@ mod tests {
         });
         let obj = schema.as_object().unwrap();
         let result = normalize_json_schema_for_openai_strict(obj);
-        assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+        assert_eq!(
+            result.get("additionalProperties"),
+            Some(&Value::Bool(false))
+        );
         // Input is not mutated
         assert_eq!(
             schema["additionalProperties"],

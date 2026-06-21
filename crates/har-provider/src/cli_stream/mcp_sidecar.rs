@@ -252,25 +252,22 @@ impl McpSidecar {
             }
             (Some(def), Some(native)) => {
                 // Arg validation against ToolField specs.
-                let args_map = match &arguments {
-                    Value::Object(m) => m.clone(),
-                    Value::Null => Map::new(),
-                    _ => {
-                        return Ok(tools_call_error_result(
+                let args_map =
+                    match &arguments {
+                        Value::Object(m) => m.clone(),
+                        Value::Null => Map::new(),
+                        _ => return Ok(tools_call_error_result(
                             "MCP error -32602: Input validation error: arguments must be an object"
                                 .to_owned(),
-                        ))
-                    }
-                };
+                        )),
+                    };
 
                 if let Err(msg) = validate_tool_args(&def.fields, &args_map, &tool_name) {
                     return Ok(tools_call_error_result(msg));
                 }
 
                 // Convert args to `HashMap<String, Value>` for the handler.
-                let handler_args: HashMap<String, Value> = args_map
-                    .into_iter()
-                    .collect();
+                let handler_args: HashMap<String, Value> = args_map.into_iter().collect();
 
                 // Dispatch to the live handler.
                 match &native.handler {
@@ -294,9 +291,7 @@ impl McpSidecar {
                                         .into_panic()
                                         .downcast::<String>()
                                         .map(|s| *s)
-                                        .or_else(|p| {
-                                            p.downcast::<&str>().map(|s| (*s).to_owned())
-                                        })
+                                        .or_else(|p| p.downcast::<&str>().map(|s| (*s).to_owned()))
                                         .unwrap_or_else(|_| "handler panicked".to_owned())
                                 } else {
                                     "handler task cancelled".to_owned()
@@ -446,9 +441,7 @@ pub fn write_mcp_config_merged(
                 .get("mcpServers")
                 .and_then(Value::as_object)
                 .ok_or_else(|| {
-                    format!(
-                        "existing MCP config '{path}': 'mcpServers' must be a JSON object"
-                    )
+                    format!("existing MCP config '{path}': 'mcpServers' must be a JSON object")
                 })?
         } else {
             // Bare server-map form.
@@ -535,8 +528,7 @@ fn validate_tool_args(
                     }
                 };
                 if !values.iter().any(|v| v == s) {
-                    let quoted: Vec<String> =
-                        values.iter().map(|v| format!("\"{v}\"")).collect();
+                    let quoted: Vec<String> = values.iter().map(|v| format!("\"{v}\"")).collect();
                     issues.push(json!({
                         "code": "invalid_value",
                         "values": values,
@@ -791,7 +783,8 @@ mod tests {
         let expected: Value = serde_json::from_str(&fixture_str).unwrap();
 
         assert_eq!(
-            result, expected,
+            result,
+            expected,
             "tools/list response does not match SDK fixture.\nGot: {}\nExpected: {}",
             serde_json::to_string_pretty(&result).unwrap(),
             serde_json::to_string_pretty(&expected).unwrap()
@@ -826,7 +819,10 @@ mod tests {
         let result = resp.result.unwrap();
         assert_eq!(result["content"][0]["type"], "text");
         assert_eq!(result["content"][0]["text"], "canned response text");
-        assert!(result.get("isError").is_none(), "isError must not be present on success");
+        assert!(
+            result.get("isError").is_none(),
+            "isError must not be present on success"
+        );
     }
 
     #[tokio::test]
@@ -842,9 +838,8 @@ mod tests {
             }))
             .unwrap(),
             handler: Some(Arc::new(|args| {
-                Box::pin(async move {
-                    serde_json::to_string(&args).unwrap()
-                }) as Pin<Box<dyn Future<Output = String> + Send>>
+                Box::pin(async move { serde_json::to_string(&args).unwrap() })
+                    as Pin<Box<dyn Future<Output = String> + Send>>
             })),
         };
         let sidecar = McpSidecar::new(&[tool]).unwrap();
@@ -877,7 +872,10 @@ mod tests {
         assert_eq!(result["isError"], true, "must be isError:true");
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("-32602"), "must contain -32602: {text}");
-        assert!(text.contains("Input validation error"), "must mention validation error: {text}");
+        assert!(
+            text.contains("Input validation error"),
+            "must mention validation error: {text}"
+        );
     }
 
     #[tokio::test]
@@ -895,7 +893,10 @@ mod tests {
         let result = resp.result.unwrap();
         assert_eq!(result["isError"], true);
         let text = result["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("action"), "error must mention missing field: {text}");
+        assert!(
+            text.contains("action"),
+            "error must mention missing field: {text}"
+        );
     }
 
     // ── tools/call — unknown tool ─────────────────────────────────────────────
@@ -911,7 +912,10 @@ mod tests {
         let result = resp.result.unwrap();
         assert_eq!(result["isError"], true);
         let text = result["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("no_such_tool"), "error must mention tool name: {text}");
+        assert!(
+            text.contains("no_such_tool"),
+            "error must mention tool name: {text}"
+        );
     }
 
     // ── tools/call — handler panic (catch path) ───────────────────────────────
@@ -989,7 +993,9 @@ mod tests {
             .await
             .expect("HTTP POST failed");
         assert_eq!(resp.status(), 200, "expected 200 from server");
-        resp.json::<Value>().await.expect("response body is not JSON")
+        resp.json::<Value>()
+            .await
+            .expect("response body is not JSON")
     }
 
     /// Helper: send a notification (expects 202 empty).
@@ -1058,7 +1064,10 @@ mod tests {
         });
         let resp = http_post_json(port, &req).await;
         assert_eq!(resp["result"]["content"][0]["type"], "text");
-        assert_eq!(resp["result"]["content"][0]["text"], "http round-trip result");
+        assert_eq!(
+            resp["result"]["content"][0]["text"],
+            "http round-trip result"
+        );
         assert!(resp["result"].get("isError").is_none());
     }
 
@@ -1118,7 +1127,10 @@ mod tests {
         let content = std::fs::read_to_string(tf.path()).unwrap();
         let v: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(v["mcpServers"]["archon"]["type"], "http");
-        assert_eq!(v["mcpServers"]["archon"]["url"], "http://127.0.0.1:12345/mcp");
+        assert_eq!(
+            v["mcpServers"]["archon"]["url"],
+            "http://127.0.0.1:12345/mcp"
+        );
     }
 
     #[test]
@@ -1139,8 +1151,7 @@ mod tests {
         existing.flush().unwrap();
 
         let merged_tf =
-            super::write_mcp_config_merged(9999, Some(existing.path().to_str().unwrap()))
-                .unwrap();
+            super::write_mcp_config_merged(9999, Some(existing.path().to_str().unwrap())).unwrap();
 
         let content = std::fs::read_to_string(merged_tf.path()).unwrap();
         let v: Value = serde_json::from_str(&content).unwrap();
@@ -1150,7 +1161,10 @@ mod tests {
         assert_eq!(v["mcpServers"]["bar"]["url"], "http://bar");
         // archon injected.
         assert_eq!(v["mcpServers"]["archon"]["type"], "http");
-        assert_eq!(v["mcpServers"]["archon"]["url"], "http://127.0.0.1:9999/mcp");
+        assert_eq!(
+            v["mcpServers"]["archon"]["url"],
+            "http://127.0.0.1:9999/mcp"
+        );
     }
 
     #[test]
@@ -1168,15 +1182,17 @@ mod tests {
         existing.flush().unwrap();
 
         let merged_tf =
-            super::write_mcp_config_merged(7777, Some(existing.path().to_str().unwrap()))
-                .unwrap();
+            super::write_mcp_config_merged(7777, Some(existing.path().to_str().unwrap())).unwrap();
 
         let content = std::fs::read_to_string(merged_tf.path()).unwrap();
         let v: Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(v["mcpServers"]["baz"]["type"], "stdio");
         assert_eq!(v["mcpServers"]["archon"]["type"], "http");
-        assert_eq!(v["mcpServers"]["archon"]["url"], "http://127.0.0.1:7777/mcp");
+        assert_eq!(
+            v["mcpServers"]["archon"]["url"],
+            "http://127.0.0.1:7777/mcp"
+        );
     }
 
     #[test]
@@ -1192,12 +1208,14 @@ mod tests {
         existing.flush().unwrap();
 
         let merged_tf =
-            super::write_mcp_config_merged(1111, Some(existing.path().to_str().unwrap()))
-                .unwrap();
+            super::write_mcp_config_merged(1111, Some(existing.path().to_str().unwrap())).unwrap();
 
         let content = std::fs::read_to_string(merged_tf.path()).unwrap();
         let v: Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(v["mcpServers"]["archon"]["url"], "http://127.0.0.1:1111/mcp");
+        assert_eq!(
+            v["mcpServers"]["archon"]["url"],
+            "http://127.0.0.1:1111/mcp"
+        );
     }
 
     #[test]
@@ -1246,10 +1264,14 @@ mod tests {
         // Spawn the CLI with --mcp-config pointing at our loopback server.
         let output = tokio::process::Command::new(&claude_bin)
             .args([
-                "--output-format", "json",
-                "--print", "List my workflow runs using manage_run",
-                "--mcp-config", &config_path,
-                "--allowed-tools", "mcp__archon__*",
+                "--output-format",
+                "json",
+                "--print",
+                "List my workflow runs using manage_run",
+                "--mcp-config",
+                &config_path,
+                "--allowed-tools",
+                "mcp__archon__*",
             ])
             .output()
             .await

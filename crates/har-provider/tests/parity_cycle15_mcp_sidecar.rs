@@ -121,7 +121,10 @@ async fn item1_initialize_capabilities_match_live_sdk() {
         got["capabilities"], expected["capabilities"]
     );
     // protocolVersion: echo semantics — Rust echoes client's version; SDK does too.
-    assert_eq!(got["protocolVersion"], "2024-11-05", "must echo client protocolVersion");
+    assert_eq!(
+        got["protocolVersion"], "2024-11-05",
+        "must echo client protocolVersion"
+    );
 }
 
 // ── Item 2: tools/list (byte-for-byte) ──────────────────────────────────────
@@ -135,7 +138,8 @@ async fn item2_tools_list_byte_matches_live_sdk() {
     let got = resp.result.unwrap();
     let expected = load("tools_list.result.json");
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "tools/list diverges from live SDK.\nRust:\n{}\nLive:\n{}",
         serde_json::to_string_pretty(&got).unwrap(),
         serde_json::to_string_pretty(&expected).unwrap()

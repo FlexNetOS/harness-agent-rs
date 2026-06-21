@@ -52,8 +52,8 @@ use std::sync::Arc;
 
 use async_stream::stream;
 use har_contract::{
-    AgentProvider, CancelToken, CopilotProviderDefaults, CopilotReasoningEffort,
-    MessageChunk, ProviderCapabilities, SendQueryOptions,
+    AgentProvider, CancelToken, CopilotProviderDefaults, CopilotReasoningEffort, MessageChunk,
+    ProviderCapabilities, SendQueryOptions,
 };
 #[cfg(test)]
 use har_contract::{InlineAgentDefinition, StructuredOutputCapability};
@@ -192,7 +192,12 @@ fn resolve_copilot_reasoning(
         .map(CopilotEffort::from_har_enum);
 
     let nc = match node_config {
-        None => return ReasoningResult { effort: config_default, warning: None },
+        None => {
+            return ReasoningResult {
+                effort: config_default,
+                warning: None,
+            }
+        }
         Some(nc) => nc,
     };
 
@@ -203,20 +208,29 @@ fn resolve_copilot_reasoning(
     let thinking_is_off = raw_thinking.map(|v| v == "off").unwrap_or(false);
     let effort_is_off = raw_effort == Some("off");
     if thinking_is_off || effort_is_off {
-        return ReasoningResult { effort: None, warning: None };
+        return ReasoningResult {
+            effort: None,
+            warning: None,
+        };
     }
 
     // thinking as a string value
     if let Some(Value::String(s)) = raw_thinking {
         if let Some(effort) = normalize_reasoning(s) {
-            return ReasoningResult { effort: Some(effort), warning: None };
+            return ReasoningResult {
+                effort: Some(effort),
+                warning: None,
+            };
         }
     }
 
     // effort as a string value
     if let Some(s) = raw_effort {
         if let Some(effort) = normalize_reasoning(s) {
-            return ReasoningResult { effort: Some(effort), warning: None };
+            return ReasoningResult {
+                effort: Some(effort),
+                warning: None,
+            };
         }
     }
 
@@ -251,7 +265,10 @@ fn resolve_copilot_reasoning(
     }
 
     // Fall back to config-level default
-    ReasoningResult { effort: config_default, warning: None }
+    ReasoningResult {
+        effort: config_default,
+        warning: None,
+    }
 }
 
 // ─── System message ───────────────────────────────────────────────────────────
@@ -274,9 +291,7 @@ fn resolve_system_message(options: Option<&SendQueryOptions>) -> Option<String> 
         .node_config
         .as_ref()
         .and_then(|nc| match &nc.system_prompt {
-            Some(har_contract::SystemPromptInput::Single(s)) if !s.is_empty() => {
-                Some(s.as_str())
-            }
+            Some(har_contract::SystemPromptInput::Single(s)) if !s.is_empty() => Some(s.as_str()),
             _ => None,
         });
 
@@ -295,11 +310,14 @@ struct ToolRestrictions {
     excluded_tools: Option<Vec<String>>,
 }
 
-fn resolve_tool_restrictions(
-    node_config: Option<&har_contract::NodeConfig>,
-) -> ToolRestrictions {
+fn resolve_tool_restrictions(node_config: Option<&har_contract::NodeConfig>) -> ToolRestrictions {
     let nc = match node_config {
-        None => return ToolRestrictions { available_tools: None, excluded_tools: None },
+        None => {
+            return ToolRestrictions {
+                available_tools: None,
+                excluded_tools: None,
+            }
+        }
         Some(nc) => nc,
     };
     ToolRestrictions {
@@ -378,13 +396,20 @@ struct SkillsResult {
     warnings: Vec<ProviderWarning>,
 }
 
-fn resolve_skills(
-    node_config: Option<&har_contract::NodeConfig>,
-    cwd: &str,
-) -> SkillsResult {
+fn resolve_skills(node_config: Option<&har_contract::NodeConfig>, cwd: &str) -> SkillsResult {
     let skills = match node_config.and_then(|nc| nc.skills.as_ref()) {
-        None => return SkillsResult { paths: vec![], warnings: vec![] },
-        Some(s) if s.is_empty() => return SkillsResult { paths: vec![], warnings: vec![] },
+        None => {
+            return SkillsResult {
+                paths: vec![],
+                warnings: vec![],
+            }
+        }
+        Some(s) if s.is_empty() => {
+            return SkillsResult {
+                paths: vec![],
+                warnings: vec![],
+            }
+        }
         Some(s) => s,
     };
 
@@ -437,12 +462,20 @@ pub struct CustomAgentConfig {
     pub tools: Option<Vec<String>>,
 }
 
-fn resolve_agents(
-    node_config: Option<&har_contract::NodeConfig>,
-) -> AgentsResult {
+fn resolve_agents(node_config: Option<&har_contract::NodeConfig>) -> AgentsResult {
     let agents = match node_config.and_then(|nc| nc.agents.as_ref()) {
-        None => return AgentsResult { custom_agents: vec![], warnings: vec![] },
-        Some(a) if a.is_empty() => return AgentsResult { custom_agents: vec![], warnings: vec![] },
+        None => {
+            return AgentsResult {
+                custom_agents: vec![],
+                warnings: vec![],
+            }
+        }
+        Some(a) if a.is_empty() => {
+            return AgentsResult {
+                custom_agents: vec![],
+                warnings: vec![],
+            }
+        }
         Some(a) => a,
     };
 
@@ -489,7 +522,10 @@ fn resolve_agents(
         "copilot.agents_registered"
     );
 
-    AgentsResult { custom_agents, warnings }
+    AgentsResult {
+        custom_agents,
+        warnings,
+    }
 }
 
 // ─── Error classification ──────────────────────────────────────────────────────
@@ -870,7 +906,10 @@ mod tests {
         assert!(caps.mcp);
         assert!(!caps.hooks);
         assert!(!caps.native_tools);
-        assert_eq!(caps.structured_output, StructuredOutputCapability::BestEffort);
+        assert_eq!(
+            caps.structured_output,
+            StructuredOutputCapability::BestEffort
+        );
     }
 
     // ── build_copilot_env ─────────────────────────────────────────────────────
@@ -920,7 +959,10 @@ mod tests {
     fn resolve_generic_github_token_gh_token() {
         let mut env = HashMap::new();
         env.insert("GH_TOKEN".to_owned(), "ghp_gh".to_owned());
-        assert_eq!(resolve_generic_github_token(&env), Some("ghp_gh".to_owned()));
+        assert_eq!(
+            resolve_generic_github_token(&env),
+            Some("ghp_gh".to_owned())
+        );
     }
 
     #[test]
@@ -1024,7 +1066,10 @@ mod tests {
         assert_eq!(result.effort, None);
         assert!(result.warning.is_some());
         let w = result.warning.unwrap();
-        assert!(w.contains("minimal"), "warning should mention the offending value");
+        assert!(
+            w.contains("minimal"),
+            "warning should mention the offending value"
+        );
         assert!(w.contains("Valid:"));
     }
 
@@ -1047,10 +1092,15 @@ mod tests {
     #[test]
     fn system_message_from_request_system_prompt() {
         let opts = SendQueryOptions {
-            system_prompt: Some(har_contract::SystemPromptInput::Single("Be concise.".to_owned())),
+            system_prompt: Some(har_contract::SystemPromptInput::Single(
+                "Be concise.".to_owned(),
+            )),
             ..Default::default()
         };
-        assert_eq!(resolve_system_message(Some(&opts)), Some("Be concise.".to_owned()));
+        assert_eq!(
+            resolve_system_message(Some(&opts)),
+            Some("Be concise.".to_owned())
+        );
     }
 
     #[test]
@@ -1062,14 +1112,19 @@ mod tests {
     #[test]
     fn system_message_from_node_config_system_prompt() {
         let nc = har_contract::NodeConfig {
-            system_prompt: Some(har_contract::SystemPromptInput::Single("Node sys.".to_owned())),
+            system_prompt: Some(har_contract::SystemPromptInput::Single(
+                "Node sys.".to_owned(),
+            )),
             ..Default::default()
         };
         let opts = SendQueryOptions {
             node_config: Some(nc),
             ..Default::default()
         };
-        assert_eq!(resolve_system_message(Some(&opts)), Some("Node sys.".to_owned()));
+        assert_eq!(
+            resolve_system_message(Some(&opts)),
+            Some("Node sys.".to_owned())
+        );
     }
 
     #[test]
@@ -1079,11 +1134,16 @@ mod tests {
             ..Default::default()
         };
         let opts = SendQueryOptions {
-            system_prompt: Some(har_contract::SystemPromptInput::Single("request".to_owned())),
+            system_prompt: Some(har_contract::SystemPromptInput::Single(
+                "request".to_owned(),
+            )),
             node_config: Some(nc),
             ..Default::default()
         };
-        assert_eq!(resolve_system_message(Some(&opts)), Some("request".to_owned()));
+        assert_eq!(
+            resolve_system_message(Some(&opts)),
+            Some("request".to_owned())
+        );
     }
 
     // ── resolve_token_source ──────────────────────────────────────────────────
@@ -1175,7 +1235,9 @@ mod tests {
         let result = resolve_skills(Some(&nc), "/tmp");
         assert_eq!(result.paths.len(), 0);
         assert_eq!(result.warnings.len(), 1);
-        assert!(result.warnings[0].message.contains("nonexistent-skill-abc-xyz"));
+        assert!(result.warnings[0]
+            .message
+            .contains("nonexistent-skill-abc-xyz"));
     }
 
     // ── resolve_agents ────────────────────────────────────────────────────────

@@ -115,7 +115,9 @@ impl NdjsonStream {
             }
         };
 
-        Self { inner: Box::pin(inner_stream) }
+        Self {
+            inner: Box::pin(inner_stream),
+        }
     }
 
     /// Create from a `Bytes` blob (used by `FakeSpawner`).
@@ -139,10 +141,7 @@ mod tests {
     use futures::StreamExt;
 
     async fn collect_all(stream: NdjsonStream) -> Vec<Result<serde_json::Value, String>> {
-        stream
-            .map(|r| r.map_err(|e| e.to_string()))
-            .collect()
-            .await
+        stream.map(|r| r.map_err(|e| e.to_string())).collect().await
     }
 
     #[tokio::test]

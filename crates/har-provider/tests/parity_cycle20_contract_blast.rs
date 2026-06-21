@@ -106,7 +106,10 @@ fn copilot_tool_wire(args: Option<Value>) -> Value {
 #[test]
 fn copilot_object_passthrough() {
     // ORACLE: toolInput:{"a":1}
-    assert_eq!(copilot_tool_wire(Some(json!({"a":1})))["toolInput"], json!({"a":1}));
+    assert_eq!(
+        copilot_tool_wire(Some(json!({"a":1})))["toolInput"],
+        json!({"a":1})
+    );
 }
 
 #[test]
@@ -150,12 +153,7 @@ fn opencode_tool_wire(input: Value) -> Value {
     });
     let mut seen = HashSet::new();
     let mut done = HashSet::new();
-    let out = process_message_part_updated(
-        props.as_object().unwrap(),
-        "s1",
-        &mut seen,
-        &mut done,
-    );
+    let out = process_message_part_updated(props.as_object().unwrap(), "s1", &mut seen, &mut done);
     // First chunk is the Tool chunk.
     let tool = out
         .iter()
@@ -167,13 +165,19 @@ fn opencode_tool_wire(input: Value) -> Value {
 #[test]
 fn opencode_object_passthrough() {
     // ORACLE: toolInput:{"a":1}
-    assert_eq!(opencode_tool_wire(json!({"a":1}))["toolInput"], json!({"a":1}));
+    assert_eq!(
+        opencode_tool_wire(json!({"a":1}))["toolInput"],
+        json!({"a":1})
+    );
 }
 
 #[test]
 fn opencode_array_passthrough() {
     // ORACLE: toolInput:[1,2]  (isRecord true for arrays)
-    assert_eq!(opencode_tool_wire(json!([1, 2]))["toolInput"], json!([1, 2]));
+    assert_eq!(
+        opencode_tool_wire(json!([1, 2]))["toolInput"],
+        json!([1, 2])
+    );
 }
 
 #[test]

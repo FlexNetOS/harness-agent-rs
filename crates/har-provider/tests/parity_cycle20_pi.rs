@@ -56,7 +56,10 @@ fn chunk_wire(c: &MessageChunk) -> Value {
 fn area1_config_defensive_matrix_matches_live_oracle() {
     // (raw input, expected wire-serialized PiProviderDefaults) — from live bun.
     let cases: Vec<(Value, Value)> = vec![
-        (json!({"model": "google/gemini-2.5-pro"}), json!({"model": "google/gemini-2.5-pro"})),
+        (
+            json!({"model": "google/gemini-2.5-pro"}),
+            json!({"model": "google/gemini-2.5-pro"}),
+        ),
         (json!({"model": 123}), json!({})),
         (
             json!({"futureField": "x", "model": "google/gemini-2.5-pro"}),
@@ -65,8 +68,14 @@ fn area1_config_defensive_matrix_matches_live_oracle() {
         (json!({}), json!({})),
         (json!({"model": null}), json!({})),
         (json!({"model": []}), json!({})),
-        (json!({"enableExtensions": true}), json!({"enableExtensions": true})),
-        (json!({"enableExtensions": false}), json!({"enableExtensions": false})),
+        (
+            json!({"enableExtensions": true}),
+            json!({"enableExtensions": true}),
+        ),
+        (
+            json!({"enableExtensions": false}),
+            json!({"enableExtensions": false}),
+        ),
         (json!({"enableExtensions": "yes"}), json!({})),
         (json!({"enableExtensions": 1}), json!({})),
         (json!({"interactive": true}), json!({"interactive": true})),
@@ -103,10 +112,7 @@ fn area1_config_defensive_matrix_matches_live_oracle() {
         let got_wire = serde_json::to_value(&got).expect("serialize defaults");
         // Compare only the keys present in `expected` plus absence of others:
         // serialize both to canonical sorted JSON objects.
-        assert_eq!(
-            got_wire, expected,
-            "config parse diverged for input {raw}"
-        );
+        assert_eq!(got_wire, expected, "config parse diverged for input {raw}");
     }
 }
 
@@ -119,8 +125,14 @@ fn area2_model_ref_matches_live_oracle() {
     // (raw, Some((provider, model_id)) | None) — from live bun.
     let cases: Vec<(&str, Option<(&str, &str)>)> = vec![
         ("google/gemini-2.5-pro", Some(("google", "gemini-2.5-pro"))),
-        ("openrouter/qwen/qwen3-coder", Some(("openrouter", "qwen/qwen3-coder"))),
-        ("openai-codex/gpt-5.1-codex-mini", Some(("openai-codex", "gpt-5.1-codex-mini"))),
+        (
+            "openrouter/qwen/qwen3-coder",
+            Some(("openrouter", "qwen/qwen3-coder")),
+        ),
+        (
+            "openai-codex/gpt-5.1-codex-mini",
+            Some(("openai-codex", "gpt-5.1-codex-mini")),
+        ),
         ("google", None),
         ("/gemini", None),
         ("google/", None),
@@ -169,14 +181,23 @@ fn area3_serialize_tool_result_matches_live_oracle() {
         (json!(null), "null"),
     ];
     for (input, expected) in cases {
-        assert_eq!(serialize_tool_result(&input), expected, "serialize for {input}");
+        assert_eq!(
+            serialize_tool_result(&input),
+            expected,
+            "serialize for {input}"
+        );
     }
 }
 
 #[test]
 fn area3_usage_to_tokens_matches_live_oracle() {
     // {input,output,total,cost}
-    let u = PiUsage { input: 100, output: 50, total_tokens: 150, cost_total: 0.003 };
+    let u = PiUsage {
+        input: 100,
+        output: 50,
+        total_tokens: 150,
+        cost_total: 0.003,
+    };
     let t = usage_to_tokens(&u);
     assert_eq!(t.input, 100);
     assert_eq!(t.output, 50);
@@ -188,7 +209,12 @@ fn area3_usage_to_tokens_matches_live_oracle() {
 fn area3_build_result_chunk_matches_live_oracle() {
     // success: end_turn → tokens + cost + stopReason, no isError.
     let ok = PiAssistantMessage {
-        usage: PiUsage { input: 10, output: 5, total_tokens: 15, cost_total: 0.001 },
+        usage: PiUsage {
+            input: 10,
+            output: 5,
+            total_tokens: 15,
+            cost_total: 0.001,
+        },
         stop_reason: Some("end_turn".to_owned()),
         error_message: None,
         text_blocks: vec![],
@@ -202,7 +228,12 @@ fn area3_build_result_chunk_matches_live_oracle() {
 
     // error stopReason → isError, errorSubtype, errors[].
     let err = PiAssistantMessage {
-        usage: PiUsage { input: 1, output: 0, total_tokens: 1, cost_total: 0.0 },
+        usage: PiUsage {
+            input: 1,
+            output: 0,
+            total_tokens: 1,
+            cost_total: 0.0,
+        },
         stop_reason: Some("error".to_owned()),
         error_message: Some("Pi API failed".to_owned()),
         text_blocks: vec![],
@@ -242,11 +273,19 @@ fn area3_map_pi_event_object_args_matches_live_oracle() {
 #[test]
 fn area3_map_pi_event_text_thinking_deltas() {
     assert_eq!(
-        chunk_wire(&map_pi_event(&PiEvent::TextDelta { delta: "hello".to_owned() })[0]),
+        chunk_wire(
+            &map_pi_event(&PiEvent::TextDelta {
+                delta: "hello".to_owned()
+            })[0]
+        ),
         json!({"type":"assistant","content":"hello"})
     );
     assert_eq!(
-        chunk_wire(&map_pi_event(&PiEvent::ThinkingDelta { delta: "r".to_owned() })[0]),
+        chunk_wire(
+            &map_pi_event(&PiEvent::ThinkingDelta {
+                delta: "r".to_owned()
+            })[0]
+        ),
         json!({"type":"thinking","content":"r"})
     );
 }
@@ -301,55 +340,123 @@ fn area3_map_pi_event_tool_end_and_retry() {
 // ══════════════════════════════════════════════════════════════════════════
 
 fn nc_thinking(v: Value) -> NodeConfig {
-    NodeConfig { thinking: Some(v), ..Default::default() }
+    NodeConfig {
+        thinking: Some(v),
+        ..Default::default()
+    }
 }
 fn nc_effort(s: &str) -> NodeConfig {
-    NodeConfig { effort: Some(s.to_owned()), ..Default::default() }
+    NodeConfig {
+        effort: Some(s.to_owned()),
+        ..Default::default()
+    }
 }
 
 #[test]
 fn area4_thinking_level_matches_live_oracle() {
     // (NodeConfig, expected level Option, expected warning-substring Option)
     assert_eq!(resolve_pi_thinking_level(None).level, None);
-    assert_eq!(resolve_pi_thinking_level(Some(&NodeConfig::default())).level, None);
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&NodeConfig::default())).level,
+        None
+    );
 
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!("high")))).level, Some("high".into()));
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!("xhigh")))).level, Some("xhigh".into()));
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!("minimal")))).level, Some("minimal".into()));
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!("max")))).level, Some("xhigh".into()));
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_effort("medium"))).level, Some("medium".into()));
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_effort("max"))).level, Some("xhigh".into()));
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_effort("xhigh"))).level, Some("xhigh".into()));
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!("high")))).level,
+        Some("high".into())
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!("xhigh")))).level,
+        Some("xhigh".into())
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!("minimal")))).level,
+        Some("minimal".into())
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!("max")))).level,
+        Some("xhigh".into())
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_effort("medium"))).level,
+        Some("medium".into())
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_effort("max"))).level,
+        Some("xhigh".into())
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_effort("xhigh"))).level,
+        Some("xhigh".into())
+    );
 
-    let nc = NodeConfig { thinking: Some(json!("high")), effort: Some("low".into()), ..Default::default() };
-    assert_eq!(resolve_pi_thinking_level(Some(&nc)).level, Some("high".into()));
+    let nc = NodeConfig {
+        thinking: Some(json!("high")),
+        effort: Some("low".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc)).level,
+        Some("high".into())
+    );
 
     // off short-circuits
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!("off")))).level, None);
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_effort("off"))).level, None);
-    let nc = NodeConfig { thinking: Some(json!("off")), effort: Some("high".into()), ..Default::default() };
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!("off")))).level,
+        None
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_effort("off"))).level,
+        None
+    );
+    let nc = NodeConfig {
+        thinking: Some(json!("off")),
+        effort: Some("high".into()),
+        ..Default::default()
+    };
     assert_eq!(resolve_pi_thinking_level(Some(&nc)).level, None);
-    let nc = NodeConfig { thinking: Some(json!("minimal")), effort: Some("off".into()), ..Default::default() };
+    let nc = NodeConfig {
+        thinking: Some(json!("minimal")),
+        effort: Some("off".into()),
+        ..Default::default()
+    };
     assert_eq!(resolve_pi_thinking_level(Some(&nc)).level, None);
 
     // valid thinking wins over invalid effort
-    let nc = NodeConfig { thinking: Some(json!("low")), effort: Some("crushing".into()), ..Default::default() };
-    assert_eq!(resolve_pi_thinking_level(Some(&nc)).level, Some("low".into()));
+    let nc = NodeConfig {
+        thinking: Some(json!("low")),
+        effort: Some("crushing".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc)).level,
+        Some("low".into())
+    );
 
     // null / number thinking → none, no warning
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!(null)))).level, None);
-    assert_eq!(resolve_pi_thinking_level(Some(&nc_thinking(json!(123)))).warning, None);
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!(null)))).level,
+        None
+    );
+    assert_eq!(
+        resolve_pi_thinking_level(Some(&nc_thinking(json!(123)))).warning,
+        None
+    );
 }
 
 #[test]
 fn area4_thinking_warning_strings_byte_exact() {
     // object form → Claude-specific warning (byte-exact, incl. → arrow)
-    let r = resolve_pi_thinking_level(Some(&nc_thinking(json!({"type":"enabled","budget_tokens":4000}))));
+    let r = resolve_pi_thinking_level(Some(&nc_thinking(
+        json!({"type":"enabled","budget_tokens":4000}),
+    )));
     assert_eq!(r.level, None);
     assert_eq!(
         r.warning.as_deref(),
-        Some("Pi ignored `thinking` (object form is Claude-specific). \
-              Use `effort: low|medium|high|max` in YAML (max \u{2192} xhigh on Pi)."),
+        Some(
+            "Pi ignored `thinking` (object form is Claude-specific). \
+              Use `effort: low|medium|high|max` in YAML (max \u{2192} xhigh on Pi)."
+        ),
         "object-form warning must be byte-exact vs live bun"
     );
 
@@ -357,8 +464,10 @@ fn area4_thinking_warning_strings_byte_exact() {
     let r = resolve_pi_thinking_level(Some(&nc_thinking(json!("ultra"))));
     assert_eq!(
         r.warning.as_deref(),
-        Some("Pi ignored unknown thinking level 'ultra'. \
-              Valid: minimal, low, medium, high, xhigh, max, off."),
+        Some(
+            "Pi ignored unknown thinking level 'ultra'. \
+              Valid: minimal, low, medium, high, xhigh, max, off."
+        ),
         "unknown-thinking warning must be byte-exact vs live bun"
     );
 
@@ -366,8 +475,10 @@ fn area4_thinking_warning_strings_byte_exact() {
     let r = resolve_pi_thinking_level(Some(&nc_effort("crushing")));
     assert_eq!(
         r.warning.as_deref(),
-        Some("Pi ignored unknown thinking level 'crushing'. \
-              Valid: minimal, low, medium, high, xhigh, max, off."),
+        Some(
+            "Pi ignored unknown thinking level 'crushing'. \
+              Valid: minimal, low, medium, high, xhigh, max, off."
+        ),
     );
 }
 
@@ -375,7 +486,9 @@ fn area4_thinking_warning_strings_byte_exact() {
 fn area4_tools_selection_matches_live_oracle() {
     // (NodeConfig?, env?, expected tool-name list Option, expected unknown list)
     fn names(r: &har_provider::pi::options_translator::ResolvedTools) -> Option<Vec<String>> {
-        r.tools.as_ref().map(|v| v.iter().map(|s| s.name.clone()).collect())
+        r.tools
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.name.clone()).collect())
     }
 
     // no restrictions, no env → None
@@ -384,40 +497,83 @@ fn area4_tools_selection_matches_live_oracle() {
     assert!(r.unknown_tools.is_empty());
 
     // empty allowed → empty vec
-    let nc = NodeConfig { allowed_tools: Some(vec![]), ..Default::default() };
+    let nc = NodeConfig {
+        allowed_tools: Some(vec![]),
+        ..Default::default()
+    };
     let r = resolve_pi_tools(Some(&nc), None);
     assert_eq!(names(&r), Some(vec![]));
 
     // allowed read,bash → preserve order
-    let nc = NodeConfig { allowed_tools: Some(vec!["read".into(), "bash".into()]), ..Default::default() };
-    assert_eq!(names(&resolve_pi_tools(Some(&nc), None)), Some(vec!["read".into(), "bash".into()]));
+    let nc = NodeConfig {
+        allowed_tools: Some(vec!["read".into(), "bash".into()]),
+        ..Default::default()
+    };
+    assert_eq!(
+        names(&resolve_pi_tools(Some(&nc), None)),
+        Some(vec!["read".into(), "bash".into()])
+    );
 
     // case-insensitive normalize
-    let nc = NodeConfig { allowed_tools: Some(vec!["Read".into(), "BASH".into(), "Edit".into()]), ..Default::default() };
-    assert_eq!(names(&resolve_pi_tools(Some(&nc), None)), Some(vec!["read".into(), "bash".into(), "edit".into()]));
+    let nc = NodeConfig {
+        allowed_tools: Some(vec!["Read".into(), "BASH".into(), "Edit".into()]),
+        ..Default::default()
+    };
+    assert_eq!(
+        names(&resolve_pi_tools(Some(&nc), None)),
+        Some(vec!["read".into(), "bash".into(), "edit".into()])
+    );
 
     // unknown collected, order preserved
-    let nc = NodeConfig { allowed_tools: Some(vec!["read".into(), "WebFetch".into(), "bash".into()]), ..Default::default() };
+    let nc = NodeConfig {
+        allowed_tools: Some(vec!["read".into(), "WebFetch".into(), "bash".into()]),
+        ..Default::default()
+    };
     let r = resolve_pi_tools(Some(&nc), None);
     assert_eq!(names(&r), Some(vec!["read".into(), "bash".into()]));
     assert_eq!(r.unknown_tools, vec!["WebFetch".to_owned()]);
 
     // dedupe
-    let nc = NodeConfig { allowed_tools: Some(vec!["read".into(), "read".into(), "Read".into()]), ..Default::default() };
-    assert_eq!(names(&resolve_pi_tools(Some(&nc), None)), Some(vec!["read".into()]));
-
-    // denied alone → full set minus denied, PI_TOOL_NAMES order
-    let nc = NodeConfig { denied_tools: Some(vec!["bash".into()]), ..Default::default() };
+    let nc = NodeConfig {
+        allowed_tools: Some(vec!["read".into(), "read".into(), "Read".into()]),
+        ..Default::default()
+    };
     assert_eq!(
         names(&resolve_pi_tools(Some(&nc), None)),
-        Some(vec!["read".into(), "edit".into(), "write".into(), "grep".into(), "find".into(), "ls".into()])
+        Some(vec!["read".into()])
+    );
+
+    // denied alone → full set minus denied, PI_TOOL_NAMES order
+    let nc = NodeConfig {
+        denied_tools: Some(vec!["bash".into()]),
+        ..Default::default()
+    };
+    assert_eq!(
+        names(&resolve_pi_tools(Some(&nc), None)),
+        Some(vec![
+            "read".into(),
+            "edit".into(),
+            "write".into(),
+            "grep".into(),
+            "find".into(),
+            "ls".into()
+        ])
     );
 
     // denied multiple
-    let nc = NodeConfig { denied_tools: Some(vec!["bash".into(), "write".into()]), ..Default::default() };
+    let nc = NodeConfig {
+        denied_tools: Some(vec!["bash".into(), "write".into()]),
+        ..Default::default()
+    };
     assert_eq!(
         names(&resolve_pi_tools(Some(&nc), None)),
-        Some(vec!["read".into(), "edit".into(), "grep".into(), "find".into(), "ls".into()])
+        Some(vec![
+            "read".into(),
+            "edit".into(),
+            "grep".into(),
+            "find".into(),
+            "ls".into()
+        ])
     );
 
     // allowed - denied
@@ -426,7 +582,10 @@ fn area4_tools_selection_matches_live_oracle() {
         denied_tools: Some(vec!["bash".into()]),
         ..Default::default()
     };
-    assert_eq!(names(&resolve_pi_tools(Some(&nc), None)), Some(vec!["read".into(), "edit".into()]));
+    assert_eq!(
+        names(&resolve_pi_tools(Some(&nc), None)),
+        Some(vec!["read".into(), "edit".into()])
+    );
 
     // unknown from both allow + deny, order allow-then-deny
     let nc = NodeConfig {
@@ -436,14 +595,22 @@ fn area4_tools_selection_matches_live_oracle() {
     };
     let r = resolve_pi_tools(Some(&nc), None);
     assert_eq!(names(&r), Some(vec!["read".into()]));
-    assert_eq!(r.unknown_tools, vec!["UnknownA".to_owned(), "UnknownB".to_owned()]);
+    assert_eq!(
+        r.unknown_tools,
+        vec!["UnknownA".to_owned(), "UnknownB".to_owned()]
+    );
 
     // no restrictions + non-empty env → default 4 tools
     let mut env = HashMap::new();
     env.insert("DATABASE_URL".to_owned(), "postgres://x".to_owned());
     assert_eq!(
         names(&resolve_pi_tools(None, Some(&env))),
-        Some(vec!["read".into(), "bash".into(), "edit".into(), "write".into()])
+        Some(vec![
+            "read".into(),
+            "bash".into(),
+            "edit".into(),
+            "write".into()
+        ])
     );
 
     // no restrictions + empty env → None
@@ -481,8 +648,12 @@ fn area5_native_tools_accept_and_reject() {
     assert_eq!(defs[0].label, "manage_run"); // label derived from name
 
     // rejects: non-object schema, missing properties, unsupported type, empty enum
-    assert!(build_pi_native_tool_definitions(&[native_tool("bad", json!({"type":"string"}))]).is_err());
-    assert!(build_pi_native_tool_definitions(&[native_tool("bad", json!({"type":"object"}))]).is_err());
+    assert!(
+        build_pi_native_tool_definitions(&[native_tool("bad", json!({"type":"string"}))]).is_err()
+    );
+    assert!(
+        build_pi_native_tool_definitions(&[native_tool("bad", json!({"type":"object"}))]).is_err()
+    );
     assert!(build_pi_native_tool_definitions(&[native_tool(
         "bad",
         json!({"type":"object","properties":{"x":{"type":"number"}}})
@@ -507,25 +678,45 @@ fn area6_session_resolution_decision_logic() {
     // no resume → Fresh
     let r = resolve_pi_session_logic("/p", None, Some(&[]));
     assert!(!r.resume_failed);
-    assert_eq!(r.decision, SessionResolutionDecision::Fresh { cwd: "/p".into() });
+    assert_eq!(
+        r.decision,
+        SessionResolutionDecision::Fresh { cwd: "/p".into() }
+    );
 
     // empty resume id → Fresh (matches `!resumeSessionId` truthiness)
     let r = resolve_pi_session_logic("/p", Some(""), Some(&[]));
-    assert!(matches!(r.decision, SessionResolutionDecision::Fresh { .. }));
+    assert!(matches!(
+        r.decision,
+        SessionResolutionDecision::Fresh { .. }
+    ));
 
     // matching id → Open(path)
     let sessions = vec![
-        PiSessionEntry { id: "a".into(), path: "/s/a.jsonl".into() },
-        PiSessionEntry { id: "b".into(), path: "/s/b.jsonl".into() },
+        PiSessionEntry {
+            id: "a".into(),
+            path: "/s/a.jsonl".into(),
+        },
+        PiSessionEntry {
+            id: "b".into(),
+            path: "/s/b.jsonl".into(),
+        },
     ];
     let r = resolve_pi_session_logic("/p", Some("b"), Some(&sessions));
     assert!(!r.resume_failed);
-    assert_eq!(r.decision, SessionResolutionDecision::Open { path: "/s/b.jsonl".into() });
+    assert_eq!(
+        r.decision,
+        SessionResolutionDecision::Open {
+            path: "/s/b.jsonl".into()
+        }
+    );
 
     // unmatched id → FreshWithFailedResume
     let r = resolve_pi_session_logic("/p", Some("zz"), Some(&sessions));
     assert!(r.resume_failed);
-    assert!(matches!(r.decision, SessionResolutionDecision::FreshWithFailedResume { .. }));
+    assert!(matches!(
+        r.decision,
+        SessionResolutionDecision::FreshWithFailedResume { .. }
+    ));
 
     // ENOENT list (None) with id → FreshWithFailedResume
     let r = resolve_pi_session_logic("/p", Some("x"), None);
@@ -587,7 +778,13 @@ async fn area9_send_query_reaches_pi_sdk_not_bound_seam() {
         ..Default::default()
     };
     let chunks: Vec<_> = provider
-        .send_query("hi".into(), "/tmp".into(), None, Some(opts), Arc::new(NoCancel))
+        .send_query(
+            "hi".into(),
+            "/tmp".into(),
+            None,
+            Some(opts),
+            Arc::new(NoCancel),
+        )
         .collect()
         .await;
     let result = chunks
@@ -595,7 +792,11 @@ async fn area9_send_query_reaches_pi_sdk_not_bound_seam() {
         .find(|c| matches!(c, MessageChunk::Result { .. }))
         .expect("a result chunk");
     match result {
-        MessageChunk::Result { is_error, error_subtype, .. } => {
+        MessageChunk::Result {
+            is_error,
+            error_subtype,
+            ..
+        } => {
             assert_eq!(*is_error, Some(true));
             assert_eq!(error_subtype.as_deref(), Some("pi_sdk_not_bound"));
         }
@@ -613,7 +814,10 @@ async fn area9_send_query_missing_model_before_seam() {
         .send_query("hi".into(), "/tmp".into(), None, None, Arc::new(NoCancel))
         .collect()
         .await;
-    let result = chunks.iter().find(|c| matches!(c, MessageChunk::Result { .. })).unwrap();
+    let result = chunks
+        .iter()
+        .find(|c| matches!(c, MessageChunk::Result { .. }))
+        .unwrap();
     if let MessageChunk::Result { error_subtype, .. } = result {
         assert_eq!(error_subtype.as_deref(), Some("pi_model_missing"));
     }

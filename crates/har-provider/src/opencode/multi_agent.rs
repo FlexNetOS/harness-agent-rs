@@ -133,7 +133,10 @@ pub fn collect_tool_chunks_for_emission(states: &[&AgentRunState]) -> Vec<Messag
         .iter()
         .flat_map(|state| {
             state.chunks.iter().filter(|c| {
-                matches!(c, MessageChunk::Tool { .. } | MessageChunk::ToolResult { .. })
+                matches!(
+                    c,
+                    MessageChunk::Tool { .. } | MessageChunk::ToolResult { .. }
+                )
             })
         })
         .cloned()

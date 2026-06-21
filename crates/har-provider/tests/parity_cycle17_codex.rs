@@ -41,7 +41,14 @@ fn to_map(v: Value) -> Map<String, Value> {
 /// Oracle CASE1 (bun): minimal config.
 #[test]
 fn argv_minimal_matches_sdk_oracle() {
-    let argv = build_codex_argv(None, &CodexProviderDefaults::default(), None, None, "/workspace", None);
+    let argv = build_codex_argv(
+        None,
+        &CodexProviderDefaults::default(),
+        None,
+        None,
+        "/workspace",
+        None,
+    );
     let expected = vec![
         "exec",
         "--experimental-json",
@@ -103,7 +110,10 @@ fn argv_resume_matches_sdk_oracle() {
         ..Default::default()
     };
     let argv = build_codex_argv(None, &d, Some("thread-abc"), None, "/workspace", None);
-    assert_eq!(&argv[argv.len() - 2..], &["resume".to_owned(), "thread-abc".to_owned()]);
+    assert_eq!(
+        &argv[argv.len() - 2..],
+        &["resume".to_owned(), "thread-abc".to_owned()]
+    );
     // approval_policy must be the LAST flag before resume
     let resume_idx = argv.iter().position(|a| a == "resume").unwrap();
     assert_eq!(argv[resume_idx - 1], "approval_policy=\"never\"");
@@ -121,12 +131,25 @@ fn argv_mcp_overrides_position_and_flatten_matches_sdk_oracle() {
             }
         }
     });
-    let argv = build_codex_argv(None, &CodexProviderDefaults::default(), None, None, "/workspace", Some(&overrides));
+    let argv = build_codex_argv(
+        None,
+        &CodexProviderDefaults::default(),
+        None,
+        None,
+        "/workspace",
+        Some(&overrides),
+    );
     // SDK oracle: config overrides come immediately after --experimental-json
     assert_eq!(argv[2], "--config");
-    assert_eq!(argv[3], "mcp_servers.figma.url=\"http://127.0.0.1:3845/mcp\"");
+    assert_eq!(
+        argv[3],
+        "mcp_servers.figma.url=\"http://127.0.0.1:3845/mcp\""
+    );
     assert_eq!(argv[4], "--config");
-    assert_eq!(argv[5], "mcp_servers.figma.http_headers.Authorization=\"Bearer x\"");
+    assert_eq!(
+        argv[5],
+        "mcp_servers.figma.http_headers.Authorization=\"Bearer x\""
+    );
     // then --sandbox (no --model since none set)
     assert_eq!(argv[6], "--sandbox");
 }
@@ -135,13 +158,30 @@ fn argv_mcp_overrides_position_and_flatten_matches_sdk_oracle() {
 /// SDK: `n=42`, `b=false`, `arr=["x", 1, true]` (space after comma).
 #[test]
 fn argv_toml_number_bool_array_matches_sdk_oracle() {
-    let overrides = json!({ "mcp_servers": { "s": { "n": 42, "b": false, "arr": ["x", 1, true] } } });
-    let argv = build_codex_argv(None, &CodexProviderDefaults::default(), None, None, "/workspace", Some(&overrides));
+    let overrides =
+        json!({ "mcp_servers": { "s": { "n": 42, "b": false, "arr": ["x", 1, true] } } });
+    let argv = build_codex_argv(
+        None,
+        &CodexProviderDefaults::default(),
+        None,
+        None,
+        "/workspace",
+        Some(&overrides),
+    );
     let flat: Vec<&String> = argv.iter().collect();
-    assert!(flat.iter().any(|s| *s == "mcp_servers.s.n=42"), "argv={:?}", argv);
-    assert!(flat.iter().any(|s| *s == "mcp_servers.s.b=false"), "argv={:?}", argv);
     assert!(
-        flat.iter().any(|s| *s == "mcp_servers.s.arr=[\"x\", 1, true]"),
+        flat.iter().any(|s| *s == "mcp_servers.s.n=42"),
+        "argv={:?}",
+        argv
+    );
+    assert!(
+        flat.iter().any(|s| *s == "mcp_servers.s.b=false"),
+        "argv={:?}",
+        argv
+    );
+    assert!(
+        flat.iter()
+            .any(|s| *s == "mcp_servers.s.arr=[\"x\", 1, true]"),
         "array TOML must match SDK ', '-joined form; argv={:?}",
         argv
     );
@@ -176,7 +216,10 @@ fn toml_value_escapes_control_chars_like_json_stringify() {
 /// Plain strings (no control chars) MUST match — this part of to_toml_value is correct.
 #[test]
 fn toml_value_plain_string_matches_json_stringify() {
-    assert_eq!(to_toml_value(&Value::String("hello".to_owned()), "k").unwrap(), "\"hello\"");
+    assert_eq!(
+        to_toml_value(&Value::String("hello".to_owned()), "k").unwrap(),
+        "\"hello\""
+    );
     assert_eq!(
         to_toml_value(&Value::String("a\"b\\c".to_owned()), "k").unwrap(),
         "\"a\\\"b\\\\c\"",
@@ -199,9 +242,15 @@ fn config_defensive_parse_matrix() {
         "codexBinaryPath": "/bin/codex"
     })));
     assert_eq!(r.model.as_deref(), Some("gpt-5.2-codex"));
-    assert_eq!(r.model_reasoning_effort, Some(ModelReasoningEffortCodex::Xhigh));
+    assert_eq!(
+        r.model_reasoning_effort,
+        Some(ModelReasoningEffortCodex::Xhigh)
+    );
     assert_eq!(r.web_search_mode, Some(WebSearchModeCodex::Cached));
-    assert_eq!(r.additional_directories, Some(vec!["/x".to_owned(), "/y".to_owned()]));
+    assert_eq!(
+        r.additional_directories,
+        Some(vec!["/x".to_owned(), "/y".to_owned()])
+    );
     assert_eq!(r.codex_binary_path.as_deref(), Some("/bin/codex"));
 
     // wrong-typed → dropped; invalid enum → dropped
@@ -238,7 +287,10 @@ fn normalizer_top_level_object_gets_closed() {
         "required": ["a"]
     });
     let result = normalize_json_schema_for_openai_strict(schema.as_object().unwrap());
-    assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+    assert_eq!(
+        result.get("additionalProperties"),
+        Some(&Value::Bool(false))
+    );
 }
 
 /// Oracle: nested object properties are also closed.
@@ -252,7 +304,10 @@ fn normalizer_recurses_into_nested_properties() {
         }
     });
     let result = normalize_json_schema_for_openai_strict(schema.as_object().unwrap());
-    assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+    assert_eq!(
+        result.get("additionalProperties"),
+        Some(&Value::Bool(false))
+    );
     let inner = result["properties"]["inner"].as_object().unwrap();
     assert_eq!(inner.get("additionalProperties"), Some(&Value::Bool(false)));
 }
@@ -314,7 +369,10 @@ fn normalizer_replaces_typed_additional_properties_with_false() {
         "additionalProperties": {"type": "number"}
     });
     let result = normalize_json_schema_for_openai_strict(schema.as_object().unwrap());
-    assert_eq!(result.get("additionalProperties"), Some(&Value::Bool(false)));
+    assert_eq!(
+        result.get("additionalProperties"),
+        Some(&Value::Bool(false))
+    );
     // Input NOT mutated
     assert_eq!(schema["additionalProperties"], json!({"type": "number"}));
 }
@@ -326,21 +384,51 @@ fn normalizer_replaces_typed_additional_properties_with_false() {
 #[test]
 fn classify_codex_error_all_classes() {
     // model_access takes precedence over rate_limit etc.
-    assert_eq!(classify_codex_error("model not available"), CodexErrorClass::ModelAccess);
-    assert_eq!(classify_codex_error("Model not found"), CodexErrorClass::ModelAccess);
-    assert_eq!(classify_codex_error("model access denied"), CodexErrorClass::ModelAccess);
-    assert_eq!(classify_codex_error("rate limit hit"), CodexErrorClass::RateLimit);
+    assert_eq!(
+        classify_codex_error("model not available"),
+        CodexErrorClass::ModelAccess
+    );
+    assert_eq!(
+        classify_codex_error("Model not found"),
+        CodexErrorClass::ModelAccess
+    );
+    assert_eq!(
+        classify_codex_error("model access denied"),
+        CodexErrorClass::ModelAccess
+    );
+    assert_eq!(
+        classify_codex_error("rate limit hit"),
+        CodexErrorClass::RateLimit
+    );
     assert_eq!(classify_codex_error("429"), CodexErrorClass::RateLimit);
-    assert_eq!(classify_codex_error("overloaded"), CodexErrorClass::RateLimit);
-    assert_eq!(classify_codex_error("too many requests"), CodexErrorClass::RateLimit);
-    assert_eq!(classify_codex_error("credit balance too low"), CodexErrorClass::Auth);
+    assert_eq!(
+        classify_codex_error("overloaded"),
+        CodexErrorClass::RateLimit
+    );
+    assert_eq!(
+        classify_codex_error("too many requests"),
+        CodexErrorClass::RateLimit
+    );
+    assert_eq!(
+        classify_codex_error("credit balance too low"),
+        CodexErrorClass::Auth
+    );
     assert_eq!(classify_codex_error("401"), CodexErrorClass::Auth);
     assert_eq!(classify_codex_error("403 forbidden"), CodexErrorClass::Auth);
     assert_eq!(classify_codex_error("invalid token"), CodexErrorClass::Auth);
-    assert_eq!(classify_codex_error("codex exec exited with code 1"), CodexErrorClass::Crash);
+    assert_eq!(
+        classify_codex_error("codex exec exited with code 1"),
+        CodexErrorClass::Crash
+    );
     assert_eq!(classify_codex_error("killed"), CodexErrorClass::Crash);
-    assert_eq!(classify_codex_error("signal SIGTERM"), CodexErrorClass::Crash);
-    assert_eq!(classify_codex_error("something weird"), CodexErrorClass::Unknown);
+    assert_eq!(
+        classify_codex_error("signal SIGTERM"),
+        CodexErrorClass::Crash
+    );
+    assert_eq!(
+        classify_codex_error("something weird"),
+        CodexErrorClass::Unknown
+    );
 }
 
 /// BYTE-EXACT vs bun oracle (2026-06-21). `\`-continuation gotcha checked:
@@ -381,7 +469,10 @@ fn model_access_message_trims_before_fallback() {
 #[test]
 fn mcp_headers_remapped_to_http_headers() {
     let mut servers = Map::new();
-    servers.insert("api".to_owned(), json!({"url": "https://e", "headers": {"X": "y"}}));
+    servers.insert(
+        "api".to_owned(),
+        json!({"url": "https://e", "headers": {"X": "y"}}),
+    );
     let ov = build_codex_mcp_config_overrides(&servers).unwrap();
     let api = ov["mcp_servers"]["api"].as_object().unwrap();
     assert!(api.contains_key("http_headers"));
@@ -406,12 +497,28 @@ fn mcp_explicit_http_headers_not_overwritten_by_headers() {
 #[test]
 fn mcp_all_22_passthrough_keys_preserved() {
     let keys = [
-        "command", "args", "env", "url", "enabled", "required",
-        "startup_timeout_sec", "startup_timeout_ms", "tool_timeout_sec",
-        "enabled_tools", "disabled_tools", "supports_parallel_tool_calls", "cwd",
-        "env_vars", "experimental_environment", "http_headers", "env_http_headers",
-        "oauth_resource", "scopes", "bearer_token_env_var",
-        "default_tools_approval_mode", "tools",
+        "command",
+        "args",
+        "env",
+        "url",
+        "enabled",
+        "required",
+        "startup_timeout_sec",
+        "startup_timeout_ms",
+        "tool_timeout_sec",
+        "enabled_tools",
+        "disabled_tools",
+        "supports_parallel_tool_calls",
+        "cwd",
+        "env_vars",
+        "experimental_environment",
+        "http_headers",
+        "env_http_headers",
+        "oauth_resource",
+        "scopes",
+        "bearer_token_env_var",
+        "default_tools_approval_mode",
+        "tools",
     ];
     assert_eq!(keys.len(), 22);
     let mut cfg = Map::new();
@@ -430,7 +537,10 @@ fn mcp_all_22_passthrough_keys_preserved() {
 #[test]
 fn mcp_unknown_keys_dropped() {
     let mut servers = Map::new();
-    servers.insert("s".to_owned(), json!({"url": "u", "unknown_future_key": "x"}));
+    servers.insert(
+        "s".to_owned(),
+        json!({"url": "u", "unknown_future_key": "x"}),
+    );
     let ov = build_codex_mcp_config_overrides(&servers).unwrap();
     let s = ov["mcp_servers"]["s"].as_object().unwrap();
     assert!(s.contains_key("url"));
@@ -449,51 +559,101 @@ fn parse(ev: Value, state: &mut CodexStreamState, hof: bool, smc: bool) -> Vec<M
 fn stream_full_happy_sequence() {
     let mut s = CodexStreamState::new(None);
     // thread.started → sets id, no chunk
-    assert!(parse(json!({"type":"thread.started","thread_id":"T1"}), &mut s, false, false).is_empty());
+    assert!(parse(
+        json!({"type":"thread.started","thread_id":"T1"}),
+        &mut s,
+        false,
+        false
+    )
+    .is_empty());
     assert_eq!(s.resolved_thread_id.as_deref(), Some("T1"));
     // agent_message → assistant
-    let c = parse(json!({"type":"item.completed","item":{"type":"agent_message","id":"a","text":"hi"}}), &mut s, false, false);
+    let c = parse(
+        json!({"type":"item.completed","item":{"type":"agent_message","id":"a","text":"hi"}}),
+        &mut s,
+        false,
+        false,
+    );
     assert!(matches!(&c[0], MessageChunk::Assistant{content,..} if content=="hi"));
     // turn.completed → terminal result, session from thread.started
-    let r = parse_codex_event(&to_map(json!({"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":4}})), &mut s, false, false);
+    let r = parse_codex_event(
+        &to_map(json!({"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":4}})),
+        &mut s,
+        false,
+        false,
+    );
     assert!(r.is_terminal());
     let c = r.into_chunks();
-    assert!(matches!(&c[0], MessageChunk::Result{session_id:Some(sid),tokens:Some(t),is_error:None,..} if sid=="T1" && t.input==3 && t.output==4));
+    assert!(
+        matches!(&c[0], MessageChunk::Result{session_id:Some(sid),tokens:Some(t),is_error:None,..} if sid=="T1" && t.input==3 && t.output==4)
+    );
 }
 
 #[test]
 fn stream_command_execution_exit_code_suffix() {
     let mut s = CodexStreamState::new(Some("T"));
-    let c = parse(json!({"type":"item.completed","item":{"type":"command_execution","id":"c","command":"ls","aggregated_output":"out\n","exit_code":2}}), &mut s, false, false);
-    assert!(matches!(&c[1], MessageChunk::ToolResult{tool_output,..} if tool_output=="out\n\n[exit code: 2]"));
+    let c = parse(
+        json!({"type":"item.completed","item":{"type":"command_execution","id":"c","command":"ls","aggregated_output":"out\n","exit_code":2}}),
+        &mut s,
+        false,
+        false,
+    );
+    assert!(
+        matches!(&c[1], MessageChunk::ToolResult{tool_output,..} if tool_output=="out\n\n[exit code: 2]")
+    );
 }
 
 #[test]
 fn stream_turn_failed_terminal_error() {
     let mut s = CodexStreamState::new(Some("T"));
-    let r = parse_codex_event(&to_map(json!({"type":"turn.failed","error":{"message":"boom"}})), &mut s, false, false);
+    let r = parse_codex_event(
+        &to_map(json!({"type":"turn.failed","error":{"message":"boom"}})),
+        &mut s,
+        false,
+        false,
+    );
     assert!(r.is_terminal());
     let c = r.into_chunks();
-    assert!(matches!(&c[0], MessageChunk::Result{is_error:Some(true),error_subtype:Some(st),errors:Some(e),..} if st=="codex_turn_failed" && e[0]=="boom"));
+    assert!(
+        matches!(&c[0], MessageChunk::Result{is_error:Some(true),error_subtype:Some(st),errors:Some(e),..} if st=="codex_turn_failed" && e[0]=="boom")
+    );
 }
 
 #[test]
 fn stream_error_event_mcp_vs_non_mcp() {
     let mut s = CodexStreamState::new(None);
     // non-mcp error captured
-    parse(json!({"type":"error","message":"model not available"}), &mut s, false, false);
+    parse(
+        json!({"type":"error","message":"model not available"}),
+        &mut s,
+        false,
+        false,
+    );
     assert_eq!(s.last_non_mcp_error.as_deref(), Some("model not available"));
     // mcp client error NOT captured, surfaced only when flag set
     let mut s2 = CodexStreamState::new(None);
-    let c = parse(json!({"type":"error","message":"MCP client failed"}), &mut s2, false, true);
-    assert!(matches!(&c[0], MessageChunk::System{content} if content.contains("MCP client failed")));
+    let c = parse(
+        json!({"type":"error","message":"MCP client failed"}),
+        &mut s2,
+        false,
+        true,
+    );
+    assert!(
+        matches!(&c[0], MessageChunk::System{content} if content.contains("MCP client failed"))
+    );
     assert!(s2.last_non_mcp_error.is_none());
 }
 
 #[test]
 fn stream_unknown_item_type_and_event_silently_ignored() {
     let mut s = CodexStreamState::new(Some("T"));
-    assert!(parse(json!({"type":"item.completed","item":{"type":"mystery_item","id":"x"}}), &mut s, false, false).is_empty());
+    assert!(parse(
+        json!({"type":"item.completed","item":{"type":"mystery_item","id":"x"}}),
+        &mut s,
+        false,
+        false
+    )
+    .is_empty());
     assert!(parse(json!({"type":"some.unknown.event"}), &mut s, false, false).is_empty());
 }
 
@@ -501,20 +661,54 @@ fn stream_unknown_item_type_and_event_silently_ignored() {
 fn stream_structured_output_valid_and_invalid() {
     // valid JSON → structured_output Some, single terminal
     let mut s = CodexStreamState::new(Some("T"));
-    parse(json!({"type":"item.completed","item":{"type":"agent_message","id":"a","text":"{\"ok\":true}"}}), &mut s, true, false);
-    let r = parse_codex_event(&to_map(json!({"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}})), &mut s, true, false);
+    parse(
+        json!({"type":"item.completed","item":{"type":"agent_message","id":"a","text":"{\"ok\":true}"}}),
+        &mut s,
+        true,
+        false,
+    );
+    let r = parse_codex_event(
+        &to_map(json!({"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}})),
+        &mut s,
+        true,
+        false,
+    );
     let c = r.into_chunks();
-    assert!(matches!(c.last().unwrap(), MessageChunk::Result{structured_output:Some(_),..}));
+    assert!(matches!(
+        c.last().unwrap(),
+        MessageChunk::Result {
+            structured_output: Some(_),
+            ..
+        }
+    ));
 
     // invalid JSON → warning System chunk THEN result with structured_output None
     let mut s2 = CodexStreamState::new(Some("T"));
-    parse(json!({"type":"item.completed","item":{"type":"agent_message","id":"a","text":"not json"}}), &mut s2, true, false);
-    let r2 = parse_codex_event(&to_map(json!({"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}})), &mut s2, true, false);
+    parse(
+        json!({"type":"item.completed","item":{"type":"agent_message","id":"a","text":"not json"}}),
+        &mut s2,
+        true,
+        false,
+    );
+    let r2 = parse_codex_event(
+        &to_map(json!({"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}})),
+        &mut s2,
+        true,
+        false,
+    );
     assert!(matches!(r2, ParseResult::TerminalWithPreamble(_)));
     let c2 = r2.into_chunks();
     assert_eq!(c2.len(), 2);
-    assert!(matches!(&c2[0], MessageChunk::System{content} if content.contains("Structured output requested")));
-    assert!(matches!(&c2[1], MessageChunk::Result{structured_output:None,..}));
+    assert!(
+        matches!(&c2[0], MessageChunk::System{content} if content.contains("Structured output requested"))
+    );
+    assert!(matches!(
+        &c2[1],
+        MessageChunk::Result {
+            structured_output: None,
+            ..
+        }
+    ));
 }
 
 // ── FIXED #3: UTF-8 char-boundary-safe truncation in warning preview ──────────
@@ -539,7 +733,11 @@ fn structured_output_warning_preview_char_safe_truncation() {
     );
     // The fix: chars().take(200) never panics regardless of char boundaries.
     let preview: String = text.chars().take(200).collect();
-    assert_eq!(preview.chars().count(), 200, "should have exactly 200 chars");
+    assert_eq!(
+        preview.chars().count(),
+        200,
+        "should have exactly 200 chars"
+    );
     // The preview should end with the emoji (the 200th char), not panic.
     assert!(preview.ends_with('😀'));
 }

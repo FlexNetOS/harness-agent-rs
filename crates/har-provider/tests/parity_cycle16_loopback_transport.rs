@@ -81,7 +81,12 @@ fn req(method: &str, params: Option<Value>) -> JsonRpcRequest {
 async fn http_post(port: u16, body: &Value) -> (u16, Option<Value>) {
     let url = format!("http://127.0.0.1:{port}/mcp");
     let client = reqwest::Client::new();
-    let resp = client.post(&url).json(body).send().await.expect("POST failed");
+    let resp = client
+        .post(&url)
+        .json(body)
+        .send()
+        .await
+        .expect("POST failed");
     let status = resp.status().as_u16();
     let text = resp.text().await.expect("read body");
     let parsed = if text.is_empty() {
@@ -116,27 +121,45 @@ async fn transport_is_byte_identical_to_direct_handler() {
     // canned handler fires; also an invalid-enum call to exercise the isError envelope
     // through the transport.
     let requests = vec![
-        ("initialize", json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": { "name": "diff", "version": "1.0.0" }
-        })),
+        (
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": { "name": "diff", "version": "1.0.0" }
+            }),
+        ),
         ("tools/list", Value::Null),
-        ("tools/call", json!({ "name": "manage_run", "arguments": { "action": "list" } })),
-        ("tools/call", json!({ "name": "manage_run", "arguments": { "action": "BOGUS" } })),
-        ("tools/call", json!({ "name": "no_such_tool", "arguments": {} })),
+        (
+            "tools/call",
+            json!({ "name": "manage_run", "arguments": { "action": "list" } }),
+        ),
+        (
+            "tools/call",
+            json!({ "name": "manage_run", "arguments": { "action": "BOGUS" } }),
+        ),
+        (
+            "tools/call",
+            json!({ "name": "no_such_tool", "arguments": {} }),
+        ),
         ("ping", Value::Null),
         ("methods/unknown", Value::Null),
     ];
 
     for (method, params) in requests {
-        let params_opt = if params.is_null() { None } else { Some(params.clone()) };
+        let params_opt = if params.is_null() {
+            None
+        } else {
+            Some(params.clone())
+        };
 
         // Direct (oracle): call handle_mcp_request and serialize as the handler would.
         let direct_resp = sidecar
             .handle_mcp_request(req(method, params_opt.clone()))
             .await
-            .unwrap_or_else(|| panic!("direct: {method} unexpectedly returned None (notification?)"));
+            .unwrap_or_else(|| {
+                panic!("direct: {method} unexpectedly returned None (notification?)")
+            });
         let direct_json = direct_to_value(&direct_resp);
 
         // Transport (port): same request over HTTP.
@@ -187,7 +210,10 @@ async fn transport_notification_202_matches_direct_none() {
     let body = json!({ "jsonrpc": "2.0", "method": "notifications/initialized", "params": {} });
     let (status, parsed) = http_post(port, &body).await;
     assert_eq!(status, 202, "notification must return HTTP 202");
-    assert!(parsed.is_none(), "notification must have an EMPTY body, got: {parsed:?}");
+    assert!(
+        parsed.is_none(),
+        "notification must have an EMPTY body, got: {parsed:?}"
+    );
 }
 
 // ─── CHECK 2 — MERGE = SDK {...existing, archon} SPREAD, NO SERVER DROPPED ──────────
@@ -227,17 +253,27 @@ async fn merge_wrapper_preserves_servers_verbatim_and_adds_archon() {
     .unwrap();
     existing.flush().unwrap();
 
-    let merged_tf =
-        write_mcp_config_merged(9999, Some(existing.path().to_str().unwrap())).unwrap();
+    let merged_tf = write_mcp_config_merged(9999, Some(existing.path().to_str().unwrap())).unwrap();
     let v = read_merged(&merged_tf);
     let servers = v["mcpServers"].as_object().expect("mcpServers object");
 
     // No server dropped: exactly {foo, bar, archon}.
-    assert_eq!(servers.len(), 3, "expected {{foo,bar,archon}}, got keys: {:?}", servers.keys().collect::<Vec<_>>());
+    assert_eq!(
+        servers.len(),
+        3,
+        "expected {{foo,bar,archon}}, got keys: {:?}",
+        servers.keys().collect::<Vec<_>>()
+    );
 
     // foo and bar deep-equal their INPUT values — byte-verbatim, nothing rewritten/dropped.
-    assert_eq!(v["mcpServers"]["foo"], foo, "foo must be preserved VERBATIM (all fields)");
-    assert_eq!(v["mcpServers"]["bar"], bar, "bar must be preserved VERBATIM (all fields)");
+    assert_eq!(
+        v["mcpServers"]["foo"], foo,
+        "foo must be preserved VERBATIM (all fields)"
+    );
+    assert_eq!(
+        v["mcpServers"]["bar"], bar,
+        "bar must be preserved VERBATIM (all fields)"
+    );
 
     // archon = the exact SDK-spread descriptor.
     assert_eq!(
@@ -256,13 +292,15 @@ async fn merge_bare_map_preserves_servers_verbatim_and_adds_archon() {
     write!(existing, "{}", json!({ "baz": baz })).unwrap();
     existing.flush().unwrap();
 
-    let merged_tf =
-        write_mcp_config_merged(7777, Some(existing.path().to_str().unwrap())).unwrap();
+    let merged_tf = write_mcp_config_merged(7777, Some(existing.path().to_str().unwrap())).unwrap();
     let v = read_merged(&merged_tf);
     let servers = v["mcpServers"].as_object().unwrap();
 
     assert_eq!(servers.len(), 2, "expected {{baz,archon}}");
-    assert_eq!(v["mcpServers"]["baz"], baz, "baz must be preserved VERBATIM");
+    assert_eq!(
+        v["mcpServers"]["baz"], baz,
+        "baz must be preserved VERBATIM"
+    );
     assert_eq!(
         v["mcpServers"]["archon"],
         json!({ "type": "http", "url": "http://127.0.0.1:7777/mcp" }),
@@ -295,10 +333,22 @@ async fn coexistence_node_servers_survive_in_merged_file() {
     let servers = v["mcpServers"].as_object().unwrap();
 
     // ALL THREE present — node servers NOT dropped.
-    assert!(servers.contains_key("linear"), "linear (nodeConfig server) DROPPED — downgrade!");
-    assert!(servers.contains_key("ctx7"), "ctx7 (nodeConfig server) DROPPED — downgrade!");
-    assert!(servers.contains_key("archon"), "archon missing from merged file");
-    assert_eq!(v["mcpServers"]["linear"], node_srv_a, "linear must be verbatim");
+    assert!(
+        servers.contains_key("linear"),
+        "linear (nodeConfig server) DROPPED — downgrade!"
+    );
+    assert!(
+        servers.contains_key("ctx7"),
+        "ctx7 (nodeConfig server) DROPPED — downgrade!"
+    );
+    assert!(
+        servers.contains_key("archon"),
+        "archon missing from merged file"
+    );
+    assert_eq!(
+        v["mcpServers"]["linear"], node_srv_a,
+        "linear must be verbatim"
+    );
     assert_eq!(v["mcpServers"]["ctx7"], node_srv_b, "ctx7 must be verbatim");
     assert_eq!(
         v["mcpServers"]["archon"],
@@ -331,16 +381,33 @@ fn argv_emits_single_mcp_config_and_archon_wildcard_when_subsumed() {
         .enumerate()
         .filter(|(_, a)| a.as_str() == "--mcp-config")
         .collect();
-    assert_eq!(mcp_flags.len(), 1, "must emit exactly ONE --mcp-config, argv: {argv:?}");
+    assert_eq!(
+        mcp_flags.len(),
+        1,
+        "must emit exactly ONE --mcp-config, argv: {argv:?}"
+    );
     let (pos, _) = mcp_flags[0];
-    assert_eq!(argv[pos + 1], "/tmp/merged-archon.json", "must point at MERGED file");
+    assert_eq!(
+        argv[pos + 1],
+        "/tmp/merged-archon.json",
+        "must point at MERGED file"
+    );
 
     // allowed-tools carries mcp__archon__* AND the node server wildcards (no wildcard dropped).
     let tools_pos = argv.iter().position(|a| a == "--allowed-tools").unwrap();
     let tools = &argv[tools_pos + 1];
-    assert!(tools.contains("mcp__archon__*"), "archon wildcard missing: {tools}");
-    assert!(tools.contains("mcp__linear__*"), "node wildcard linear dropped: {tools}");
-    assert!(tools.contains("mcp__ctx7__*"), "node wildcard ctx7 dropped: {tools}");
+    assert!(
+        tools.contains("mcp__archon__*"),
+        "archon wildcard missing: {tools}"
+    );
+    assert!(
+        tools.contains("mcp__linear__*"),
+        "node wildcard linear dropped: {tools}"
+    );
+    assert!(
+        tools.contains("mcp__ctx7__*"),
+        "node wildcard ctx7 dropped: {tools}"
+    );
 }
 
 /// Without native tools, nodeConfig.mcp still emits its OWN --mcp-config (no regression
@@ -361,7 +428,10 @@ fn argv_node_mcp_unchanged_when_no_native_tools() {
         &[],
         None, // no native tools
     );
-    let mcp_flags: Vec<_> = argv.iter().filter(|a| a.as_str() == "--mcp-config").collect();
+    let mcp_flags: Vec<_> = argv
+        .iter()
+        .filter(|a| a.as_str() == "--mcp-config")
+        .collect();
     assert_eq!(mcp_flags.len(), 1);
     let pos = argv.iter().position(|a| a == "--mcp-config").unwrap();
     assert_eq!(argv[pos + 1], "/existing/node-mcp.json");
@@ -377,7 +447,11 @@ async fn server_drop_stops_accepting() {
     let port = server.port();
 
     // Reachable before drop.
-    let (status, _) = http_post(port, &json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" })).await;
+    let (status, _) = http_post(
+        port,
+        &json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" }),
+    )
+    .await;
     assert_eq!(status, 200);
 
     drop(server);

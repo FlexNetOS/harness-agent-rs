@@ -151,20 +151,32 @@ impl Spawner for FakeSpawner {
         match script {
             FakeSpawnScript::Success(lines) => {
                 // Build an in-memory byte stream from the NDJSON lines.
-                let data: Vec<u8> = lines.into_iter().flat_map(|l| {
-                    let mut b = l.into_bytes();
-                    b.push(b'\n');
-                    b
-                }).collect();
+                let data: Vec<u8> = lines
+                    .into_iter()
+                    .flat_map(|l| {
+                        let mut b = l.into_bytes();
+                        b.push(b'\n');
+                        b
+                    })
+                    .collect();
 
                 let stream: FakeByteStream = Box::pin(futures::stream::once(async move {
                     Ok::<bytes::Bytes, std::io::Error>(bytes::Bytes::from(data))
                 }));
-                Ok(SpawnOutcome::Fake { stdout_stream: stream, exit_code: 0 })
+                Ok(SpawnOutcome::Fake {
+                    stdout_stream: stream,
+                    exit_code: 0,
+                })
             }
-            FakeSpawnScript::Crash { exit_code, stderr: _ } => {
+            FakeSpawnScript::Crash {
+                exit_code,
+                stderr: _,
+            } => {
                 let stream: FakeByteStream = Box::pin(futures::stream::empty());
-                Ok(SpawnOutcome::Fake { stdout_stream: stream, exit_code })
+                Ok(SpawnOutcome::Fake {
+                    stdout_stream: stream,
+                    exit_code,
+                })
             }
         }
     }

@@ -249,7 +249,10 @@ mod tests {
     #[test]
     fn tier3_trailing_comma_recovered() {
         let result = try_parse_structured_output(r#"{"a":1,}"#);
-        assert!(result.is_some(), "trailing comma must be recovered by jsonrepair tier-3");
+        assert!(
+            result.is_some(),
+            "trailing comma must be recovered by jsonrepair tier-3"
+        );
         assert_eq!(result.unwrap()["a"], 1);
     }
 
@@ -304,7 +307,10 @@ mod tests {
     fn tier3_two_objects_with_prose_returns_none() {
         // jsonrepair turns this into an array → object-only gate rejects → None
         let result = try_parse_structured_output("{\"x\":1}\nFor example: {\"y\":2}");
-        assert!(result.is_none(), "two objects separated by prose must be None");
+        assert!(
+            result.is_none(),
+            "two objects separated by prose must be None"
+        );
     }
 
     #[test]

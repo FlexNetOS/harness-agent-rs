@@ -75,7 +75,10 @@ pub enum ParseResult {
 impl ParseResult {
     /// True if this result ends the stream.
     pub fn is_terminal(&self) -> bool {
-        matches!(self, ParseResult::Terminal(_) | ParseResult::TerminalWithPreamble(_))
+        matches!(
+            self,
+            ParseResult::Terminal(_) | ParseResult::TerminalWithPreamble(_)
+        )
     }
 
     /// Consume into chunks. For Terminal(c) returns `vec![c]`.
@@ -150,10 +153,7 @@ pub fn parse_codex_event(
     // ─── error ────────────────────────────────────────────────────────────
     // Source: provider.ts:393-411
     if event_type == "error" {
-        let message = event
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let message = event.get("message").and_then(|v| v.as_str()).unwrap_or("");
         tracing::error!(message = %message, "stream_error");
 
         let is_mcp_client_error = message.to_lowercase().contains("mcp client");
@@ -304,8 +304,7 @@ pub fn parse_codex_event(
             "web_search" => {
                 if let Some(query) = item.get("query").and_then(|v| v.as_str()) {
                     if !query.is_empty() {
-                        let search_tool_name =
-                            format!("\u{1F50D} Searching: {}", query);
+                        let search_tool_name = format!("\u{1F50D} Searching: {}", query);
                         chunks.push(MessageChunk::Tool {
                             tool_name: search_tool_name.clone(),
                             tool_input: None,
@@ -348,29 +347,21 @@ pub fn parse_codex_event(
                             .collect();
 
                         // Signature-based dedup (provider.ts:492-493)
-                        let signature =
-                            serde_json::to_string(&normalized).unwrap_or_default();
+                        let signature = serde_json::to_string(&normalized).unwrap_or_default();
                         if Some(&signature) != state.last_todo_list_signature.as_ref() {
                             state.last_todo_list_signature = Some(signature);
 
                             let task_list = normalized
                                 .iter()
                                 .map(|(text, completed)| {
-                                    let icon = if *completed {
-                                        "\u{2705}"
-                                    } else {
-                                        "\u{2B1C}"
-                                    };
+                                    let icon = if *completed { "\u{2705}" } else { "\u{2B1C}" };
                                     format!("{} {}", icon, text)
                                 })
                                 .collect::<Vec<_>>()
                                 .join("\n");
 
                             chunks.push(MessageChunk::System {
-                                content: format!(
-                                    "\u{1F4CB} Tasks:\n{}",
-                                    task_list
-                                ),
+                                content: format!("\u{1F4CB} Tasks:\n{}", task_list),
                             });
                         }
                     } else {
@@ -392,9 +383,8 @@ pub fn parse_codex_event(
                 };
 
                 // Extract error message (provider.ts:507-512)
-                let file_error_message: Option<String> = item
-                    .get("error")
-                    .and_then(|raw_err| match raw_err {
+                let file_error_message: Option<String> =
+                    item.get("error").and_then(|raw_err| match raw_err {
                         Value::String(s) => Some(s.clone()),
                         Value::Object(obj) => obj
                             .get("message")
@@ -409,8 +399,7 @@ pub fn parse_codex_event(
                         let change_list = changes
                             .iter()
                             .map(|c| {
-                                let kind =
-                                    c.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                                let kind = c.get("kind").and_then(|v| v.as_str()).unwrap_or("");
                                 let path = c
                                     .get("path")
                                     .and_then(|v| v.as_str())
@@ -531,8 +520,7 @@ pub fn parse_codex_event(
                     if let Some(mcp_result) = item.get("result").and_then(|v| v.as_object()) {
                         if let Some(content) = mcp_result.get("content") {
                             if content.is_array() {
-                                tool_output =
-                                    serde_json::to_string(content).unwrap_or_default();
+                                tool_output = serde_json::to_string(content).unwrap_or_default();
                             } else {
                                 let result_type = match content {
                                     Value::Null => "null",
@@ -659,7 +647,10 @@ fn extract_usage_from_turn_completed(event: &Map<String, Value>) -> TokenUsage {
             cost: None,
         }
     } else {
-        tracing::warn!(event_type = "turn.completed", "codex.usage_null_on_turn_completed");
+        tracing::warn!(
+            event_type = "turn.completed",
+            "codex.usage_null_on_turn_completed"
+        );
         TokenUsage {
             input: 0,
             output: 0,
@@ -711,9 +702,8 @@ mod tests {
     #[test]
     fn item_started_emits_no_chunks() {
         let mut state = fresh_state();
-        let ev = event(
-            json!({"type": "item.started", "item": {"type": "agent_message", "id": "i1"}}),
-        );
+        let ev =
+            event(json!({"type": "item.started", "item": {"type": "agent_message", "id": "i1"}}));
         let result = parse_codex_event(&ev, &mut state, false, false);
         assert!(matches!(result, ParseResult::Chunks(ref v) if v.is_empty()));
     }
@@ -1083,8 +1073,7 @@ mod tests {
     #[test]
     fn error_event_mcp_client_error_not_captured() {
         let mut state = fresh_state();
-        let ev =
-            event(json!({"type": "error", "message": "MCP client connection timeout"}));
+        let ev = event(json!({"type": "error", "message": "MCP client connection timeout"}));
         parse_codex_event(&ev, &mut state, false, false);
         // MCP client errors are NOT captured as last_non_mcp_error
         assert!(state.last_non_mcp_error.is_none());
@@ -1093,8 +1082,7 @@ mod tests {
     #[test]
     fn error_event_mcp_client_surfaced_when_surface_mcp_errors_true() {
         let mut state = fresh_state();
-        let ev =
-            event(json!({"type": "error", "message": "MCP client connection timeout"}));
+        let ev = event(json!({"type": "error", "message": "MCP client connection timeout"}));
         let chunks = parse_codex_event(&ev, &mut state, false, true).into_chunks();
         assert_eq!(chunks.len(), 1);
         assert!(
@@ -1107,20 +1095,17 @@ mod tests {
     #[test]
     fn turn_failed_yields_terminal_error_result() {
         let mut state = fresh_state();
-        let ev =
-            event(json!({"type": "turn.failed", "error": {"message": "Rate limit exceeded"}}));
+        let ev = event(json!({"type": "turn.failed", "error": {"message": "Rate limit exceeded"}}));
         let result = parse_codex_event(&ev, &mut state, false, false);
         assert!(result.is_terminal());
         let chunks = result.into_chunks();
         assert_eq!(chunks.len(), 1);
-        assert!(
-            matches!(&chunks[0], MessageChunk::Result {
+        assert!(matches!(&chunks[0], MessageChunk::Result {
                 is_error: Some(true),
                 error_subtype: Some(sub),
                 errors: Some(errs),
                 ..
-            } if sub == "codex_turn_failed" && errs.contains(&"Rate limit exceeded".to_owned()))
-        );
+            } if sub == "codex_turn_failed" && errs.contains(&"Rate limit exceeded".to_owned())));
     }
 
     #[test]
@@ -1128,11 +1113,9 @@ mod tests {
         let mut state = fresh_state();
         let ev = event(json!({"type": "turn.failed", "error": null}));
         let chunks = parse_codex_event(&ev, &mut state, false, false).into_chunks();
-        assert!(
-            matches!(&chunks[0], MessageChunk::Result {
+        assert!(matches!(&chunks[0], MessageChunk::Result {
                 errors: Some(errs), ..
-            } if errs.contains(&"Unknown error".to_owned()))
-        );
+            } if errs.contains(&"Unknown error".to_owned())));
     }
 
     // ── turn.completed ────────────────────────────────────────────────────────
@@ -1153,14 +1136,12 @@ mod tests {
         assert!(result.is_terminal());
         let chunks = result.into_chunks();
         assert_eq!(chunks.len(), 1);
-        assert!(
-            matches!(&chunks[0], MessageChunk::Result {
+        assert!(matches!(&chunks[0], MessageChunk::Result {
                 session_id: Some(sid),
                 tokens: Some(t),
                 is_error: None,
                 ..
-            } if sid == "thread-123" && t.input == 10 && t.output == 5)
-        );
+            } if sid == "thread-123" && t.input == 10 && t.output == 5));
     }
 
     #[test]
@@ -1207,8 +1188,12 @@ mod tests {
         assert!(
             matches!(&chunks[0], MessageChunk::System { content } if content.contains("Structured output requested"))
         );
-        assert!(
-            matches!(&chunks[1], MessageChunk::Result { structured_output: None, .. })
-        );
+        assert!(matches!(
+            &chunks[1],
+            MessageChunk::Result {
+                structured_output: None,
+                ..
+            }
+        ));
     }
 }

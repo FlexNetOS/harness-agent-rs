@@ -68,7 +68,10 @@ fn validate_and_normalize_schema(schema: &Value) -> Result<Value, String> {
                 ));
             }
             // Represent as enum schema (TypeBox Union of Literals)
-            let literals: Vec<Value> = values.iter().map(|&v| Value::String(v.to_owned())).collect();
+            let literals: Vec<Value> = values
+                .iter()
+                .map(|&v| Value::String(v.to_owned()))
+                .collect();
             let mut field = serde_json::json!({ "type": "string", "enum": literals });
             if let Some(desc) = prop.get("description").and_then(|v| v.as_str()) {
                 field["description"] = Value::String(desc.to_owned());
@@ -217,19 +220,13 @@ mod tests {
 
     #[test]
     fn rejects_non_object_schema() {
-        let tool = make_native_tool(
-            "bad",
-            json!({ "type": "string" }),
-        );
+        let tool = make_native_tool("bad", json!({ "type": "string" }));
         assert!(build_pi_native_tool_definitions(&[tool]).is_err());
     }
 
     #[test]
     fn rejects_missing_properties() {
-        let tool = make_native_tool(
-            "bad",
-            json!({ "type": "object" }),
-        );
+        let tool = make_native_tool("bad", json!({ "type": "object" }));
         assert!(build_pi_native_tool_definitions(&[tool]).is_err());
     }
 

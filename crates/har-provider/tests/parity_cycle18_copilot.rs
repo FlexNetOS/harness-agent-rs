@@ -31,7 +31,10 @@ fn obj(s: &str) -> Option<serde_json::Value> {
 fn so_tier1_object_passes() {
     assert_eq!(obj(r#"{"a":1}"#).unwrap()["a"], 1);
     assert_eq!(obj(r#"  {"a":1}  "#).unwrap()["a"], 1);
-    assert_eq!(obj(r#"{"outer":{"inner":"v"}}"#).unwrap()["outer"]["inner"], "v");
+    assert_eq!(
+        obj(r#"{"outer":{"inner":"v"}}"#).unwrap()["outer"]["inner"],
+        "v"
+    );
 }
 
 #[test]
@@ -60,7 +63,10 @@ fn so_code_fences_pass() {
 #[test]
 fn so_tier2_preamble_passes() {
     // Source recovers "preamble then single object" via forward scan to first `{`.
-    assert_eq!(obj("Here is the JSON:\n{\"result\": true}").unwrap()["result"], true);
+    assert_eq!(
+        obj("Here is the JSON:\n{\"result\": true}").unwrap()["result"],
+        true
+    );
     assert_eq!(obj("preamble {\"x\":1}").unwrap()["x"], 1);
 }
 
@@ -115,5 +121,8 @@ fn augment_schema_key_order_must_be_deterministic() {
     // Source order is type, properties, required (insertion).
     let want_order = a.find("\"type\"").unwrap() < a.find("\"properties\"").unwrap()
         && a.find("\"properties\"").unwrap() < a.find("\"required\"").unwrap();
-    assert!(want_order, "schema key order must match source insertion order");
+    assert!(
+        want_order,
+        "schema key order must match source insertion order"
+    );
 }

@@ -78,7 +78,9 @@ pub fn resolve_pi_session_logic(
         None | Some("") => {
             return ResolvedSession {
                 resume_failed: false,
-                decision: SessionResolutionDecision::Fresh { cwd: cwd.to_owned() },
+                decision: SessionResolutionDecision::Fresh {
+                    cwd: cwd.to_owned(),
+                },
             }
         }
         Some(id) => id,
@@ -100,13 +102,17 @@ pub fn resolve_pi_session_logic(
     if let Some(entry) = sessions.iter().find(|s| s.id == id) {
         return ResolvedSession {
             resume_failed: false,
-            decision: SessionResolutionDecision::Open { path: entry.path.clone() },
+            decision: SessionResolutionDecision::Open {
+                path: entry.path.clone(),
+            },
         };
     }
 
     ResolvedSession {
         resume_failed: true,
-        decision: SessionResolutionDecision::FreshWithFailedResume { cwd: cwd.to_owned() },
+        decision: SessionResolutionDecision::FreshWithFailedResume {
+            cwd: cwd.to_owned(),
+        },
     }
 }
 
@@ -129,10 +135,7 @@ pub struct ResolvedPiSession {
 ///
 /// Error handling: ENOENT/ENOTDIR from `SessionManager.list()` → treat as
 /// "no sessions yet" (graceful fallback). Any other error propagates.
-pub fn resolve_pi_session(
-    cwd: &str,
-    resume_session_id: Option<&str>,
-) -> ResolvedPiSession {
+pub fn resolve_pi_session(cwd: &str, resume_session_id: Option<&str>) -> ResolvedPiSession {
     // In the live SDK path, this would call `SessionManager.list(cwd)` and
     // pass the results to `resolve_pi_session_logic`. At the `pi_sdk_not_bound`
     // seam, we perform only the decision logic without a real file-backed list.
@@ -161,7 +164,9 @@ mod tests {
         assert!(!result.resume_failed);
         assert_eq!(
             result.decision,
-            SessionResolutionDecision::Fresh { cwd: "/tmp/proj".to_owned() }
+            SessionResolutionDecision::Fresh {
+                cwd: "/tmp/proj".to_owned()
+            }
         );
     }
 

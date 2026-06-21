@@ -20,8 +20,8 @@
 //! are the real source values, and will remain unchanged when PR-03+ land.
 
 // ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06, PR-09, PR-11) ────────────────
-pub mod cli_stream;
 pub mod claude;
+pub mod cli_stream;
 pub mod codex;
 pub mod copilot;
 pub mod opencode;
@@ -430,9 +430,7 @@ pub fn register_pi_provider() {
     let _ = register_provider(ProviderRegistration {
         id: "pi".to_owned(),
         display_name: "Pi (community)".to_owned(),
-        factory: Box::new(|| {
-            Arc::new(pi::provider::PiProvider::new()) as Arc<dyn AgentProvider>
-        }),
+        factory: Box::new(|| Arc::new(pi::provider::PiProvider::new()) as Arc<dyn AgentProvider>),
         capabilities: PI_CAPABILITIES,
         built_in: false,
     });
@@ -468,7 +466,11 @@ mod tests {
         clear_registry();
     }
 
-    fn make_noop_registration(id: &str, display_name: &str, built_in: bool) -> ProviderRegistration {
+    fn make_noop_registration(
+        id: &str,
+        display_name: &str,
+        built_in: bool,
+    ) -> ProviderRegistration {
         let id_owned = id.to_owned();
         ProviderRegistration {
             id: id_owned.clone(),
@@ -543,10 +545,7 @@ mod tests {
         .unwrap();
         let caps = get_provider_capabilities("my-prov").unwrap();
         assert_eq!(caps.mcp, PI_CAPABILITIES.mcp);
-        assert_eq!(
-            caps.structured_output,
-            PI_CAPABILITIES.structured_output
-        );
+        assert_eq!(caps.structured_output, PI_CAPABILITIES.structured_output);
     }
 
     #[test]
@@ -815,7 +814,11 @@ mod tests {
         register_community_providers();
         for id in &["opencode", "pi", "copilot"] {
             let info = get_registration_info(id).unwrap();
-            assert!(!info.built_in, "community provider '{}' must have builtIn: false", id);
+            assert!(
+                !info.built_in,
+                "community provider '{}' must have builtIn: false",
+                id
+            );
         }
     }
 
@@ -833,7 +836,10 @@ mod tests {
         assert!(caps.skills);
         assert!(caps.agents);
         assert!(caps.tool_restrictions);
-        assert_eq!(caps.structured_output, StructuredOutputCapability::BestEffort);
+        assert_eq!(
+            caps.structured_output,
+            StructuredOutputCapability::BestEffort
+        );
         assert!(caps.env_injection);
         assert!(!caps.cost_control);
         assert!(caps.effort_control);
@@ -858,7 +864,10 @@ mod tests {
         assert!(caps.skills);
         assert!(!caps.agents, "pi: agents=false");
         assert!(caps.tool_restrictions);
-        assert_eq!(caps.structured_output, StructuredOutputCapability::BestEffort);
+        assert_eq!(
+            caps.structured_output,
+            StructuredOutputCapability::BestEffort
+        );
         assert!(caps.env_injection);
         assert!(!caps.cost_control);
         assert!(caps.effort_control);

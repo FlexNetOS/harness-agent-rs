@@ -80,7 +80,10 @@ mod tests {
     use serde_json::json;
 
     fn raw(pairs: &[(&str, serde_json::Value)]) -> HashMap<String, Value> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 
     #[test]
@@ -136,14 +139,20 @@ mod tests {
     #[test]
     fn normalizes_max_alias_to_xhigh() {
         let result = parse_copilot_config(&raw(&[("modelReasoningEffort", json!("max"))]));
-        assert_eq!(result.model_reasoning_effort, Some(CopilotReasoningEffort::Xhigh));
+        assert_eq!(
+            result.model_reasoning_effort,
+            Some(CopilotReasoningEffort::Xhigh)
+        );
     }
 
     #[test]
     fn parses_copilot_cli_path_string() {
         let result =
             parse_copilot_config(&raw(&[("copilotCliPath", json!("/usr/local/bin/copilot"))]));
-        assert_eq!(result.copilot_cli_path.as_deref(), Some("/usr/local/bin/copilot"));
+        assert_eq!(
+            result.copilot_cli_path.as_deref(),
+            Some("/usr/local/bin/copilot")
+        );
     }
 
     #[test]
@@ -160,11 +169,9 @@ mod tests {
 
     #[test]
     fn parses_enable_config_discovery_boolean() {
-        let result =
-            parse_copilot_config(&raw(&[("enableConfigDiscovery", json!(true))]));
+        let result = parse_copilot_config(&raw(&[("enableConfigDiscovery", json!(true))]));
         assert_eq!(result.enable_config_discovery, Some(true));
-        let result =
-            parse_copilot_config(&raw(&[("enableConfigDiscovery", json!(false))]));
+        let result = parse_copilot_config(&raw(&[("enableConfigDiscovery", json!(false))]));
         assert_eq!(result.enable_config_discovery, Some(false));
     }
 
@@ -204,8 +211,10 @@ mod tests {
 
     #[test]
     fn ignores_unknown_keys() {
-        let result =
-            parse_copilot_config(&raw(&[("futureField", json!("x")), ("model", json!("gpt-5"))]));
+        let result = parse_copilot_config(&raw(&[
+            ("futureField", json!("x")),
+            ("model", json!("gpt-5")),
+        ]));
         assert_eq!(result.model.as_deref(), Some("gpt-5"));
     }
 
@@ -229,7 +238,10 @@ mod tests {
             ("logLevel", json!("debug")),
         ]));
         assert_eq!(result.model.as_deref(), Some("gpt-5-mini"));
-        assert_eq!(result.model_reasoning_effort, Some(CopilotReasoningEffort::High));
+        assert_eq!(
+            result.model_reasoning_effort,
+            Some(CopilotReasoningEffort::High)
+        );
         assert_eq!(result.copilot_cli_path.as_deref(), Some("/bin/copilot"));
         assert_eq!(result.config_dir.as_deref(), Some("/etc/copilot"));
         assert_eq!(result.enable_config_discovery, Some(true));

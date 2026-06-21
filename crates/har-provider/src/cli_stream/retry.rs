@@ -95,7 +95,10 @@ pub fn classify_subprocess_error(error_message: &str, stderr_output: &str) -> Er
     if AUTH_PATTERNS.iter().any(|p| combined.contains(p)) {
         return ErrorClass::Auth;
     }
-    if SUBPROCESS_CRASH_PATTERNS.iter().any(|p| combined.contains(p)) {
+    if SUBPROCESS_CRASH_PATTERNS
+        .iter()
+        .any(|p| combined.contains(p))
+    {
         return ErrorClass::Crash;
     }
     ErrorClass::Unknown
@@ -147,7 +150,10 @@ pub fn classify_and_enrich_error(
         let enriched_message = if stderr_context.is_empty() {
             format!("Claude Code auth error: {}", error_message)
         } else {
-            format!("Claude Code auth error: {} ({})", error_message, stderr_context)
+            format!(
+                "Claude Code auth error: {} ({})",
+                error_message, stderr_context
+            )
         };
         return EnrichedError {
             message: enriched_message,
@@ -160,10 +166,17 @@ pub fn classify_and_enrich_error(
     let enriched_message = if stderr_context.is_empty() {
         format!("Claude Code {}: {}", error_class, error_message)
     } else {
-        format!("Claude Code {}: {} (stderr: {})", error_class, error_message, stderr_context)
+        format!(
+            "Claude Code {}: {} (stderr: {})",
+            error_class, error_message, stderr_context
+        )
     };
     let should_retry = error_class == ErrorClass::RateLimit || error_class == ErrorClass::Crash;
-    EnrichedError { message: enriched_message, error_class, should_retry }
+    EnrichedError {
+        message: enriched_message,
+        error_class,
+        should_retry,
+    }
 }
 
 /// Error type for `with_first_message_timeout`.
@@ -297,12 +310,18 @@ mod tests {
 
     #[test]
     fn classify_crash_killed() {
-        assert_eq!(classify_subprocess_error("process killed", ""), ErrorClass::Crash);
+        assert_eq!(
+            classify_subprocess_error("process killed", ""),
+            ErrorClass::Crash
+        );
     }
 
     #[test]
     fn classify_unknown_random_message() {
-        assert_eq!(classify_subprocess_error("something weird", ""), ErrorClass::Unknown);
+        assert_eq!(
+            classify_subprocess_error("something weird", ""),
+            ErrorClass::Unknown
+        );
     }
 
     // ── classify_and_enrich_error ─────────────────────────────────────────────

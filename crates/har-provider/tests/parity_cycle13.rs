@@ -52,7 +52,8 @@ fn assert_parity(base: &str) {
     let actual = run_rust_parser(&ndjson);
 
     assert_eq!(
-        actual, expected,
+        actual,
+        expected,
         "\n=== PARITY DIVERGENCE in {base} ===\nRUST:     {}\nEXPECTED: {}\n",
         serde_json::to_string_pretty(&actual).unwrap(),
         serde_json::to_string_pretty(&expected).unwrap(),
@@ -81,11 +82,17 @@ parity_test!(rate_limit, "09_rate_limit");
 parity_test!(rate_limit_no_info, "10_rate_limit_no_info");
 parity_test!(result_success_full_fields, "11_result_success");
 // THE LOAD-BEARING CASE: is_error:true + subtype:success → clean success
-parity_test!(result_iserror_true_subtype_success, "12_result_iserror_success");
+parity_test!(
+    result_iserror_true_subtype_success,
+    "12_result_iserror_success"
+);
 parity_test!(result_real_error, "13_result_real_error");
 parity_test!(user_toolresult, "14_user_toolresult");
 parity_test!(user_toolresult_content_array, "15_user_toolresult_array");
-parity_test!(interleaved_tool_toolresult_assistant_result, "16_interleaved");
+parity_test!(
+    interleaved_tool_toolresult_assistant_result,
+    "16_interleaved"
+);
 parity_test!(result_partial_usage_omits_tokens, "17_result_partial_usage");
 parity_test!(unknown_event_no_chunk, "18_unknown_event");
 parity_test!(user_no_toolresult_no_chunk, "19_user_no_toolresult");

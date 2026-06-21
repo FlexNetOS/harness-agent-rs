@@ -131,9 +131,7 @@ pub struct HookCommand {
 /// ```
 ///
 /// Returns `None` if the hook map is empty (no `--settings` flag needed).
-pub fn build_hooks_settings_json(
-    node_hooks: &Value,
-) -> Option<serde_json::Map<String, Value>> {
+pub fn build_hooks_settings_json(node_hooks: &Value) -> Option<serde_json::Map<String, Value>> {
     let obj = node_hooks.as_object()?;
     if obj.is_empty() {
         return None;
@@ -156,7 +154,8 @@ pub fn build_hooks_settings_json(
                 let timeout = m.get("timeout").and_then(|v| v.as_f64());
 
                 // Encode the response as a shell echo so the CLI hook returns it.
-                let response_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".to_owned());
+                let response_json =
+                    serde_json::to_string(&response).unwrap_or_else(|_| "null".to_owned());
                 // Use single-quote-safe encoding: replace ' with '\''
                 let safe_response = response_json.replace('\'', "'\\''");
                 let command = format!("echo '{}'", safe_response);
@@ -192,7 +191,9 @@ pub fn build_hooks_settings_json(
 /// Write hooks settings to a temp file and return the path.
 ///
 /// The caller is responsible for deleting the file when done.
-fn write_hooks_settings_file(settings: &serde_json::Map<String, Value>) -> std::io::Result<tempfile::NamedTempFile> {
+fn write_hooks_settings_file(
+    settings: &serde_json::Map<String, Value>,
+) -> std::io::Result<tempfile::NamedTempFile> {
     use std::io::Write;
     let mut file = tempfile::NamedTempFile::new()?;
     let json = serde_json::to_string(settings).map_err(std::io::Error::other)?;
@@ -251,7 +252,10 @@ impl ClaudeProvider {
                 }
             }
         }
-        Ok(Self { retry_base_delay_ms, spawner })
+        Ok(Self {
+            retry_base_delay_ms,
+            spawner,
+        })
     }
 
     /// Bypass the UID guard — for testing only.
@@ -260,7 +264,10 @@ impl ClaudeProvider {
     /// compilation) can construct a provider without tripping the UID-0 guard.
     #[cfg(any(test, feature = "test-util"))]
     pub fn new_for_test(spawner: Arc<dyn Spawner>) -> Self {
-        Self { retry_base_delay_ms: RETRY_BASE_DELAY_MS, spawner }
+        Self {
+            retry_base_delay_ms: RETRY_BASE_DELAY_MS,
+            spawner,
+        }
     }
 
     /// Test-only constructor with a configurable retry base delay (ms).
@@ -269,7 +276,10 @@ impl ClaudeProvider {
     /// while still exercising the real `base * 2^attempt` formula. NOT a production path.
     #[cfg(any(test, feature = "test-util"))]
     pub fn new_for_test_with_delay(spawner: Arc<dyn Spawner>, retry_base_delay_ms: u64) -> Self {
-        Self { retry_base_delay_ms, spawner }
+        Self {
+            retry_base_delay_ms,
+            spawner,
+        }
     }
 
     /// Get the `ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS` env var (or default 60_000).
@@ -290,13 +300,21 @@ impl ClaudeProvider {
     ///
     /// Port of `buildSubprocessEnv()` (provider.ts:88-99): start from process env,
     /// overlay with `requestOptions.env` if provided. Logs auth mode.
-    fn build_subprocess_env(request_env: Option<&HashMap<String, String>>) -> HashMap<String, String> {
+    fn build_subprocess_env(
+        request_env: Option<&HashMap<String, String>>,
+    ) -> HashMap<String, String> {
         // Collect current process env
         let mut env: HashMap<String, String> = std::env::vars().collect();
 
         // Auth mode logging (provider.ts:89-97)
-        let has_explicit_tokens = env.get("CLAUDE_CODE_OAUTH_TOKEN").map(|v| !v.is_empty()).unwrap_or(false)
-            || env.get("CLAUDE_API_KEY").map(|v| !v.is_empty()).unwrap_or(false);
+        let has_explicit_tokens = env
+            .get("CLAUDE_CODE_OAUTH_TOKEN")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+            || env
+                .get("CLAUDE_API_KEY")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
         if has_explicit_tokens {
             tracing::info!(auth_mode = "explicit", "using_explicit_tokens");
         } else {
@@ -312,7 +330,6 @@ impl ClaudeProvider {
 
         env
     }
-
 }
 
 impl Default for ClaudeProvider {
@@ -672,8 +689,7 @@ async fn run_single_attempt(
             let _cancel_guard = crate::cli_stream::CancelGuard::spawn(cancel_token.clone(), pid);
 
             // Read stderr in background
-            let (stderr_tx, mut stderr_rx) =
-                tokio::sync::mpsc::unbounded_channel::<String>();
+            let (stderr_tx, mut stderr_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             tokio::spawn(async move {
                 use tokio::io::AsyncBufReadExt;
                 let mut lines = tokio::io::BufReader::new(stderr).lines();
@@ -735,7 +751,11 @@ async fn run_single_attempt(
                         let ctx = stderr_lines.join("\n");
                         return Err(format!("I/O reading stdout (stderr: {}): {}", ctx, e));
                     }
-                    Err(StreamError::ParseError { line_no, line, source }) => {
+                    Err(StreamError::ParseError {
+                        line_no,
+                        line,
+                        source,
+                    }) => {
                         tracing::warn!(line_no, line = %line, err = %source, "ndjson.parse_error_skipped");
                     }
                 }
@@ -753,7 +773,11 @@ async fn run_single_attempt(
                     return Err(format!(
                         "process exited with code {}{}",
                         code,
-                        if ctx.is_empty() { String::new() } else { format!(" (stderr: {})", ctx) }
+                        if ctx.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" (stderr: {})", ctx)
+                        }
                     ));
                 }
             }
@@ -761,7 +785,10 @@ async fn run_single_attempt(
             Ok(chunks)
         }
 
-        SpawnOutcome::Fake { stdout_stream, exit_code } => {
+        SpawnOutcome::Fake {
+            stdout_stream,
+            exit_code,
+        } => {
             // The fake spawner ignores stdin; prompt is not consumed.
             let mut ndjson = NdjsonStream::from_byte_stream(stdout_stream);
             let mut chunks: Vec<MessageChunk> = Vec::new();
@@ -794,7 +821,11 @@ async fn run_single_attempt(
                             chunks.extend(parse_claude_stream_json(map));
                         }
                     }
-                    Err(StreamError::ParseError { line_no, line, source }) => {
+                    Err(StreamError::ParseError {
+                        line_no,
+                        line,
+                        source,
+                    }) => {
                         tracing::warn!(line_no, line = %line, err = %source, "ndjson.parse_error_skipped");
                     }
                     Err(StreamError::Io(e)) => {
@@ -905,16 +936,13 @@ mod tests {
         // 1 crash then success
         let provider = crash_then_success_provider(1);
         let cancel = make_cancel();
-        let stream = provider.send_query(
-            "prompt".to_owned(),
-            "/tmp".to_owned(),
-            None,
-            None,
-            cancel,
-        );
+        let stream =
+            provider.send_query("prompt".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<_> = stream.collect().await;
         assert!(
-            chunks.iter().any(|c| matches!(c, MessageChunk::Assistant { .. })),
+            chunks
+                .iter()
+                .any(|c| matches!(c, MessageChunk::Assistant { .. })),
             "expected assistant chunk after retry, got: {:?}",
             chunks
         );
@@ -930,13 +958,8 @@ mod tests {
         // Use a very short timeout via env var — we can't easily inject it without a seam.
         // Instead: verify empty stream terminates cleanly.
         let cancel = make_cancel();
-        let stream = provider.send_query(
-            "prompt".to_owned(),
-            "/tmp".to_owned(),
-            None,
-            None,
-            cancel,
-        );
+        let stream =
+            provider.send_query("prompt".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<_> = stream.collect().await;
         // Empty stream or just warning chunks — no panic
         let _ = chunks;
@@ -950,13 +973,8 @@ mod tests {
         let cancel = Arc::new(TokioCancelToken::new());
         cancel.cancel(); // cancel before stream starts
 
-        let stream = provider.send_query(
-            "prompt".to_owned(),
-            "/tmp".to_owned(),
-            None,
-            None,
-            cancel,
-        );
+        let stream =
+            provider.send_query("prompt".to_owned(), "/tmp".to_owned(), None, None, cancel);
         let chunks: Vec<_> = stream.collect().await;
         // Stream should terminate quickly (cancelled)
         assert!(
@@ -980,7 +998,10 @@ mod tests {
         let settings = settings.unwrap();
         assert!(settings.contains_key("hooks"), "expected 'hooks' key");
         let hooks_val = &settings["hooks"];
-        assert!(hooks_val.get("PostToolUse").is_some(), "expected PostToolUse key");
+        assert!(
+            hooks_val.get("PostToolUse").is_some(),
+            "expected PostToolUse key"
+        );
     }
 
     #[test]
@@ -1001,7 +1022,10 @@ mod tests {
         let entries = settings["hooks"]["PreToolUse"].as_array().unwrap();
         let entry = &entries[0];
         // matcher field should be absent (no "matcher" key)
-        assert!(entry.get("matcher").is_none(), "no matcher expected when not set");
+        assert!(
+            entry.get("matcher").is_none(),
+            "no matcher expected when not set"
+        );
     }
 
     #[test]
@@ -1015,8 +1039,16 @@ mod tests {
         let entries = settings["hooks"]["PostToolUse"].as_array().unwrap();
         let hooks_arr = entries[0]["hooks"].as_array().unwrap();
         let cmd = hooks_arr[0]["command"].as_str().unwrap();
-        assert!(cmd.starts_with("echo '"), "expected echo command, got: {}", cmd);
-        assert!(cmd.contains("continue"), "expected response JSON in command, got: {}", cmd);
+        assert!(
+            cmd.starts_with("echo '"),
+            "expected echo command, got: {}",
+            cmd
+        );
+        assert!(
+            cmd.contains("continue"),
+            "expected response JSON in command, got: {}",
+            cmd
+        );
     }
 
     // ── persistSession / excludeDynamicSections CLI flags ─────────────────────
@@ -1080,7 +1112,10 @@ mod tests {
         ]
         .into();
         let env = ClaudeProvider::build_subprocess_env(Some(&req_env));
-        assert_eq!(env.get("TEST_EXISTING_KEY").map(|s| s.as_str()), Some("overridden"));
+        assert_eq!(
+            env.get("TEST_EXISTING_KEY").map(|s| s.as_str()),
+            Some("overridden")
+        );
         assert_eq!(env.get("NEW_KEY").map(|s| s.as_str()), Some("new_value"));
         // Clean up
         std::env::remove_var("TEST_EXISTING_KEY");

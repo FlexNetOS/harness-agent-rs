@@ -13,7 +13,14 @@
 // ─── Error pattern constants ──────────────────────────────────────────────────
 
 const RATE_LIMIT_PATTERNS: &[&str] = &["rate limit", "too many requests", "429", "overloaded"];
-const AUTH_PATTERNS: &[&str] = &["unauthorized", "authentication", "invalid token", "401", "403", "api key"];
+const AUTH_PATTERNS: &[&str] = &[
+    "unauthorized",
+    "authentication",
+    "invalid token",
+    "401",
+    "403",
+    "api key",
+];
 const CRASH_PATTERNS: &[&str] = &[
     "server disconnected",
     "disposed",
@@ -95,7 +102,10 @@ pub fn classify_opencode_error(combined_lower: &str, aborted: bool) -> Retryable
     if aborted {
         return RetryableErrorClass::Aborted;
     }
-    if RATE_LIMIT_PATTERNS.iter().any(|p| combined_lower.contains(p)) {
+    if RATE_LIMIT_PATTERNS
+        .iter()
+        .any(|p| combined_lower.contains(p))
+    {
         return RetryableErrorClass::RateLimit;
     }
     if AUTH_PATTERNS.iter().any(|p| combined_lower.contains(p)) {
@@ -104,7 +114,10 @@ pub fn classify_opencode_error(combined_lower: &str, aborted: bool) -> Retryable
     if CRASH_PATTERNS.iter().any(|p| combined_lower.contains(p)) {
         return RetryableErrorClass::Crash;
     }
-    if AGENT_NOT_FOUND_PATTERNS.iter().any(|p| combined_lower.contains(p)) {
+    if AGENT_NOT_FOUND_PATTERNS
+        .iter()
+        .any(|p| combined_lower.contains(p))
+    {
         return RetryableErrorClass::AgentNotFound;
     }
     RetryableErrorClass::Unknown
@@ -260,7 +273,10 @@ mod tests {
         assert_eq!(RetryableErrorClass::RateLimit.to_string(), "rate_limit");
         assert_eq!(RetryableErrorClass::Auth.to_string(), "auth");
         assert_eq!(RetryableErrorClass::Crash.to_string(), "crash");
-        assert_eq!(RetryableErrorClass::AgentNotFound.to_string(), "agent_not_found");
+        assert_eq!(
+            RetryableErrorClass::AgentNotFound.to_string(),
+            "agent_not_found"
+        );
         assert_eq!(RetryableErrorClass::Unknown.to_string(), "unknown");
         assert_eq!(RetryableErrorClass::Aborted.to_string(), "aborted");
     }

@@ -153,10 +153,8 @@ mod tests {
         let skill_root = tmp.path().join(".agents").join("skills");
         make_skill(&skill_root, "my-skill");
 
-        let result = resolve_skill_directories(
-            tmp.path().to_str().unwrap(),
-            &["my-skill".to_owned()],
-        );
+        let result =
+            resolve_skill_directories(tmp.path().to_str().unwrap(), &["my-skill".to_owned()]);
         assert_eq!(result.paths.len(), 1);
         assert!(result.paths[0].contains("my-skill"));
         assert!(result.missing.is_empty());
@@ -168,17 +166,16 @@ mod tests {
         let skill_root = tmp.path().join(".claude").join("skills");
         make_skill(&skill_root, "claude-skill");
 
-        let result = resolve_skill_directories(
-            tmp.path().to_str().unwrap(),
-            &["claude-skill".to_owned()],
-        );
+        let result =
+            resolve_skill_directories(tmp.path().to_str().unwrap(), &["claude-skill".to_owned()]);
         assert_eq!(result.paths.len(), 1);
         assert!(result.missing.is_empty());
     }
 
     #[test]
     fn missing_skill_goes_to_missing() {
-        let result = resolve_skill_directories("/tmp/nonexistent-cwd-42", &["no-such-skill".to_owned()]);
+        let result =
+            resolve_skill_directories("/tmp/nonexistent-cwd-42", &["no-such-skill".to_owned()]);
         assert!(result.paths.is_empty());
         assert_eq!(result.missing, vec!["no-such-skill"]);
     }
@@ -240,10 +237,8 @@ mod tests {
         make_skill(&agents_root, "shared-skill");
         make_skill(&claude_root, "shared-skill");
 
-        let result = resolve_skill_directories(
-            tmp.path().to_str().unwrap(),
-            &["shared-skill".to_owned()],
-        );
+        let result =
+            resolve_skill_directories(tmp.path().to_str().unwrap(), &["shared-skill".to_owned()]);
         assert_eq!(result.paths.len(), 1);
         // Should prefer .agents/skills
         assert!(result.paths[0].contains(".agents"));

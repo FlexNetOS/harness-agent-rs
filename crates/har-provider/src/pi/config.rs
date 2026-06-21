@@ -187,8 +187,13 @@ mod tests {
         let raw = to_map(json!({ "extensionFlags": { "plan": true, "profile": "Default" } }));
         let result = parse_pi_config(&raw);
         let flags = result.extension_flags.unwrap();
-        assert!(matches!(flags.get("plan"), Some(PiExtensionFlagValue::Bool(true))));
-        assert!(matches!(flags.get("profile"), Some(PiExtensionFlagValue::String(s)) if s == "Default"));
+        assert!(matches!(
+            flags.get("plan"),
+            Some(PiExtensionFlagValue::Bool(true))
+        ));
+        assert!(
+            matches!(flags.get("profile"), Some(PiExtensionFlagValue::String(s)) if s == "Default")
+        );
     }
 
     #[test]
@@ -274,8 +279,7 @@ mod tests {
 
     #[test]
     fn combines_model_and_enable_extensions() {
-        let raw =
-            to_map(json!({ "model": "google/gemini-2.5-pro", "enableExtensions": true }));
+        let raw = to_map(json!({ "model": "google/gemini-2.5-pro", "enableExtensions": true }));
         let result = parse_pi_config(&raw);
         assert_eq!(result.model, Some("google/gemini-2.5-pro".to_owned()));
         assert_eq!(result.enable_extensions, Some(true));

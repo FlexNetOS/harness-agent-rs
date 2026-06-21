@@ -199,7 +199,11 @@ pub fn build_claude_argv(
     let setting_sources: Vec<String> = defaults
         .setting_sources
         .as_ref()
-        .map(|ss| ss.iter().map(|s| format!("{:?}", s).to_lowercase()).collect())
+        .map(|ss| {
+            ss.iter()
+                .map(|s| format!("{:?}", s).to_lowercase())
+                .collect()
+        })
         .unwrap_or_else(|| vec!["project".to_owned(), "user".to_owned()]);
     argv.push("--setting-sources".to_owned());
     argv.push(setting_sources.join(","));
@@ -333,7 +337,10 @@ pub fn build_claude_argv(
                 }
             }
             // Haiku warning: provider.ts:335-342
-            if model.map(|m| m.to_lowercase().contains("haiku")).unwrap_or(false) {
+            if model
+                .map(|m| m.to_lowercase().contains("haiku"))
+                .unwrap_or(false)
+            {
                 warnings.push(ProviderWarning {
                     code: "mcp_haiku_tool_search".to_owned(),
                     message: "Using Haiku model with MCP servers \u{2014} tool search (lazy loading for many tools) is not supported on Haiku. Consider using Sonnet or Opus.".to_owned(),
@@ -343,7 +350,11 @@ pub fn build_claude_argv(
             if !mcp_missing_vars.is_empty() {
                 let unique_vars: Vec<String> = {
                     let mut seen = std::collections::HashSet::new();
-                    mcp_missing_vars.iter().filter(|v| seen.insert(*v)).cloned().collect()
+                    mcp_missing_vars
+                        .iter()
+                        .filter(|v| seen.insert(*v))
+                        .cloned()
+                        .collect()
                 };
                 warnings.push(ProviderWarning {
                     code: "mcp_env_vars_missing".to_owned(),
@@ -375,9 +386,8 @@ pub fn build_claude_argv(
             if !agent_roster_tools.is_empty() {
                 let mut tools_with_skill = agent_roster_tools.clone();
                 tools_with_skill.push("Skill".to_owned());
-                agent_def["tools"] = Value::Array(
-                    tools_with_skill.into_iter().map(Value::String).collect()
-                );
+                agent_def["tools"] =
+                    Value::Array(tools_with_skill.into_iter().map(Value::String).collect());
             }
             if let Some(m) = model {
                 agent_def["model"] = Value::String(m.to_owned());
@@ -515,7 +525,10 @@ mod tests {
 
     #[test]
     fn model_from_request_options() {
-        let opts = SendQueryOptions { model: Some("claude-opus-4".to_owned()), ..Default::default() };
+        let opts = SendQueryOptions {
+            model: Some("claude-opus-4".to_owned()),
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_has_pair(&argv, "--model", "claude-opus-4");
@@ -554,8 +567,7 @@ mod tests {
             fallback_model: Some("haiku-fallback".to_owned()),
             ..Default::default()
         };
-        let (argv, _) =
-            build_claude_argv(None, Some(&nc), &defaults(), None, None, &[], &[], None);
+        let (argv, _) = build_claude_argv(None, Some(&nc), &defaults(), None, None, &[], &[], None);
         assert_argv_has_pair(&argv, "--fallback-model", "haiku-fallback");
     }
 
@@ -586,7 +598,10 @@ mod tests {
 
     #[test]
     fn fork_session_true_emits_flag() {
-        let opts = SendQueryOptions { fork_session: Some(true), ..Default::default() };
+        let opts = SendQueryOptions {
+            fork_session: Some(true),
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_contains(&argv, "--fork-session");
@@ -594,7 +609,10 @@ mod tests {
 
     #[test]
     fn fork_session_false_no_flag() {
-        let opts = SendQueryOptions { fork_session: Some(false), ..Default::default() };
+        let opts = SendQueryOptions {
+            fork_session: Some(false),
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_not_contains(&argv, "--fork-session");
@@ -621,7 +639,10 @@ mod tests {
 
     #[test]
     fn effort_from_node_config() {
-        let nc = NodeConfig { effort: Some("high".to_owned()), ..Default::default() };
+        let nc = NodeConfig {
+            effort: Some("high".to_owned()),
+            ..Default::default()
+        };
         let (argv, _) = build_claude_argv(None, Some(&nc), &defaults(), None, None, &[], &[], None);
         assert_argv_has_pair(&argv, "--effort", "high");
     }
@@ -640,7 +661,10 @@ mod tests {
 
     #[test]
     fn empty_betas_no_flag() {
-        let nc = NodeConfig { betas: Some(vec![]), ..Default::default() };
+        let nc = NodeConfig {
+            betas: Some(vec![]),
+            ..Default::default()
+        };
         let (argv, _) = build_claude_argv(None, Some(&nc), &defaults(), None, None, &[], &[], None);
         assert_argv_not_contains(&argv, "--betas");
     }
@@ -677,16 +701,29 @@ mod tests {
         let (argv, _) = build_claude_argv(None, Some(&nc), &defaults(), None, None, &[], &[], None);
         // --allowed-tools contains only "Skill" (not "Bash")
         let tools_pos = argv.iter().position(|a| a == "--allowed-tools");
-        assert!(tools_pos.is_some(), "expected --allowed-tools when skills present");
+        assert!(
+            tools_pos.is_some(),
+            "expected --allowed-tools when skills present"
+        );
         let tools_val = &argv[tools_pos.unwrap() + 1];
-        assert_eq!(tools_val, "Skill", "--allowed-tools must be exactly 'Skill', got: {}", tools_val);
+        assert_eq!(
+            tools_val, "Skill",
+            "--allowed-tools must be exactly 'Skill', got: {}",
+            tools_val
+        );
         // --agents JSON must contain agentDef.tools = ["Bash", "Skill"]
         let agents_pos = argv.iter().position(|a| a == "--agents").unwrap();
         let agents_val: serde_json::Value = serde_json::from_str(&argv[agents_pos + 1]).unwrap();
         let tools = agents_val["dag-node-skills"]["tools"].as_array().unwrap();
         let tool_strs: Vec<&str> = tools.iter().filter_map(|v| v.as_str()).collect();
-        assert!(tool_strs.contains(&"Bash"), "agentDef.tools must contain Bash");
-        assert!(tool_strs.contains(&"Skill"), "agentDef.tools must contain Skill");
+        assert!(
+            tool_strs.contains(&"Bash"),
+            "agentDef.tools must contain Bash"
+        );
+        assert!(
+            tool_strs.contains(&"Skill"),
+            "agentDef.tools must contain Skill"
+        );
     }
 
     #[test]
@@ -708,14 +745,30 @@ mod tests {
             ..Default::default()
         };
         let server_names = vec!["my-server".to_owned(), "other-server".to_owned()];
-        let (argv, _) =
-            build_claude_argv(None, Some(&nc), &defaults(), None, None, &server_names, &[], None);
+        let (argv, _) = build_claude_argv(
+            None,
+            Some(&nc),
+            &defaults(),
+            None,
+            None,
+            &server_names,
+            &[],
+            None,
+        );
         assert_argv_has_pair(&argv, "--mcp-config", "/path/to/mcp.json");
         // Wildcards should be in --allowed-tools
         let tools_pos = argv.iter().position(|a| a == "--allowed-tools").unwrap();
         let tools_val = &argv[tools_pos + 1];
-        assert!(tools_val.contains("mcp__my-server__*"), "tools: {}", tools_val);
-        assert!(tools_val.contains("mcp__other-server__*"), "tools: {}", tools_val);
+        assert!(
+            tools_val.contains("mcp__my-server__*"),
+            "tools: {}",
+            tools_val
+        );
+        assert!(
+            tools_val.contains("mcp__other-server__*"),
+            "tools: {}",
+            tools_val
+        );
     }
 
     #[test]
@@ -747,7 +800,11 @@ mod tests {
             mcp: Some("/mcp.json".to_owned()),
             ..Default::default()
         };
-        let missing = vec!["SECRET_KEY".to_owned(), "API_TOKEN".to_owned(), "SECRET_KEY".to_owned()]; // dup
+        let missing = vec![
+            "SECRET_KEY".to_owned(),
+            "API_TOKEN".to_owned(),
+            "SECRET_KEY".to_owned(),
+        ]; // dup
         let (_, warnings) = build_claude_argv(
             None,
             Some(&nc),
@@ -758,13 +815,19 @@ mod tests {
             &missing,
             None,
         );
-        let w = warnings.iter().find(|w| w.code == "mcp_env_vars_missing").unwrap();
+        let w = warnings
+            .iter()
+            .find(|w| w.code == "mcp_env_vars_missing")
+            .unwrap();
         // Deduped
         assert!(w.message.contains("SECRET_KEY"));
         assert!(w.message.contains("API_TOKEN"));
         // Dup removed
         let count_secret = w.message.matches("SECRET_KEY").count();
-        assert_eq!(count_secret, 1, "SECRET_KEY should appear exactly once after dedup");
+        assert_eq!(
+            count_secret, 1,
+            "SECRET_KEY should appear exactly once after dedup"
+        );
     }
 
     // ── Skills → agents ───────────────────────────────────────────────────────
@@ -782,7 +845,11 @@ mod tests {
         let tools_pos = argv.iter().position(|a| a == "--allowed-tools");
         assert!(tools_pos.is_some(), "expected --allowed-tools for skills");
         let tools_val = &argv[tools_pos.unwrap() + 1];
-        assert!(tools_val.contains("Skill"), "expected Skill in allowed-tools: {}", tools_val);
+        assert!(
+            tools_val.contains("Skill"),
+            "expected Skill in allowed-tools: {}",
+            tools_val
+        );
     }
 
     #[test]
@@ -826,10 +893,16 @@ mod tests {
             m.insert("type".to_owned(), serde_json::json!("object"));
             m
         };
-        let nc = NodeConfig { output_format: Some(schema), ..Default::default() };
+        let nc = NodeConfig {
+            output_format: Some(schema),
+            ..Default::default()
+        };
         let (argv, _) = build_claude_argv(None, Some(&nc), &defaults(), None, None, &[], &[], None);
         assert_argv_contains(&argv, "--output-format-schema");
-        let pos = argv.iter().position(|a| a == "--output-format-schema").unwrap();
+        let pos = argv
+            .iter()
+            .position(|a| a == "--output-format-schema")
+            .unwrap();
         let schema_str = &argv[pos + 1];
         let parsed: serde_json::Value = serde_json::from_str(schema_str).unwrap();
         assert_eq!(parsed["type"], "object");
@@ -839,7 +912,10 @@ mod tests {
 
     #[test]
     fn max_budget_from_request_options() {
-        let opts = SendQueryOptions { max_budget_usd: Some(5.0), ..Default::default() };
+        let opts = SendQueryOptions {
+            max_budget_usd: Some(5.0),
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_has_pair(&argv, "--max-budget-usd", "5");
@@ -897,12 +973,24 @@ mod tests {
             ..Default::default()
         };
         let server_names = vec!["my-server".to_owned()];
-        let (argv, _) =
-            build_claude_argv(None, Some(&nc), &defaults(), None, None, &server_names, &[], None);
+        let (argv, _) = build_claude_argv(
+            None,
+            Some(&nc),
+            &defaults(),
+            None,
+            None,
+            &server_names,
+            &[],
+            None,
+        );
         let tools_pos = argv.iter().position(|a| a == "--allowed-tools").unwrap();
         let tools_val = &argv[tools_pos + 1];
         // Both must be present
-        assert!(tools_val.contains("mcp__my-server__*"), "missing mcp wildcard: {}", tools_val);
+        assert!(
+            tools_val.contains("mcp__my-server__*"),
+            "missing mcp wildcard: {}",
+            tools_val
+        );
         assert!(tools_val.contains("Skill"), "missing Skill: {}", tools_val);
         // MCP wildcard must appear BEFORE Skill (source order)
         let mcp_pos = tools_val.find("mcp__my-server__*").unwrap();
@@ -923,7 +1011,10 @@ mod tests {
 
     #[test]
     fn persist_session_false_emits_no_session_persistence() {
-        let opts = SendQueryOptions { persist_session: Some(false), ..Default::default() };
+        let opts = SendQueryOptions {
+            persist_session: Some(false),
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_contains(&argv, "--no-session-persistence");
@@ -931,7 +1022,10 @@ mod tests {
 
     #[test]
     fn persist_session_true_does_not_emit_flag() {
-        let opts = SendQueryOptions { persist_session: Some(true), ..Default::default() };
+        let opts = SendQueryOptions {
+            persist_session: Some(true),
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_not_contains(&argv, "--no-session-persistence");
@@ -940,7 +1034,10 @@ mod tests {
     #[test]
     fn persist_session_absent_does_not_emit_flag() {
         // None means caller didn't set it — use CLI default (sessions persisted).
-        let opts = SendQueryOptions { persist_session: None, ..Default::default() };
+        let opts = SendQueryOptions {
+            persist_session: None,
+            ..Default::default()
+        };
         let (argv, _) =
             build_claude_argv(Some(&opts), None, &defaults(), None, None, &[], &[], None);
         assert_argv_not_contains(&argv, "--no-session-persistence");
@@ -954,8 +1051,9 @@ mod tests {
 
     #[test]
     fn exclude_dynamic_sections_true_emits_flag() {
-        use har_contract::{SystemPromptInput, SystemPromptPreset, SystemPromptPresetName,
-            SystemPromptPresetType};
+        use har_contract::{
+            SystemPromptInput, SystemPromptPreset, SystemPromptPresetName, SystemPromptPresetType,
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
                 kind: SystemPromptPresetType::Preset,
@@ -972,8 +1070,9 @@ mod tests {
 
     #[test]
     fn exclude_dynamic_sections_false_does_not_emit_flag() {
-        use har_contract::{SystemPromptInput, SystemPromptPreset, SystemPromptPresetName,
-            SystemPromptPresetType};
+        use har_contract::{
+            SystemPromptInput, SystemPromptPreset, SystemPromptPresetName, SystemPromptPresetType,
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
                 kind: SystemPromptPresetType::Preset,
@@ -990,8 +1089,9 @@ mod tests {
 
     #[test]
     fn exclude_dynamic_sections_absent_does_not_emit_flag() {
-        use har_contract::{SystemPromptInput, SystemPromptPreset, SystemPromptPresetName,
-            SystemPromptPresetType};
+        use har_contract::{
+            SystemPromptInput, SystemPromptPreset, SystemPromptPresetName, SystemPromptPresetType,
+        };
         let opts = SendQueryOptions {
             system_prompt: Some(SystemPromptInput::Preset(SystemPromptPreset {
                 kind: SystemPromptPresetType::Preset,
@@ -1085,7 +1185,11 @@ mod tests {
         assert!(tools_val.contains("mcp__archon__*"), "tools: {}", tools_val);
 
         // nodeConfig MCP wildcards (for srv) must still be in --allowed-tools.
-        assert!(tools_val.contains("mcp__srv__*"), "node MCP wildcard must still be present: {}", tools_val);
+        assert!(
+            tools_val.contains("mcp__srv__*"),
+            "node MCP wildcard must still be present: {}",
+            tools_val
+        );
     }
 
     /// Decision 5: without native tools, nodeConfig.mcp still emits its own --mcp-config normally.

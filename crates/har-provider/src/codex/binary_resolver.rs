@@ -65,9 +65,8 @@ pub fn file_exists(path: &Path) -> bool {
 ///
 /// Source: `getVendorBinaryName()` — checks `process.platform` and `process.arch`.
 fn get_vendor_binary_name() -> Option<&'static str> {
-    let is_supported_platform = cfg!(target_os = "macos")
-        || cfg!(target_os = "linux")
-        || cfg!(target_os = "windows");
+    let is_supported_platform =
+        cfg!(target_os = "macos") || cfg!(target_os = "linux") || cfg!(target_os = "windows");
     let is_supported_arch = cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64");
     if !is_supported_platform || !is_supported_arch {
         return None;
@@ -287,7 +286,8 @@ mod tests {
                     Ok(None) => panic!("in binary mode should not return None"),
                     Err(msg) => {
                         assert!(
-                            msg.contains("Codex CLI binary not found") || msg.contains("does not exist"),
+                            msg.contains("Codex CLI binary not found")
+                                || msg.contains("does not exist"),
                             "unexpected error: {}",
                             msg
                         );

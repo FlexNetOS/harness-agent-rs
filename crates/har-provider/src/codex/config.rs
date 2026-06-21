@@ -129,7 +129,12 @@ mod tests {
         ] {
             let raw = to_map(json!({"modelReasoningEffort": s}));
             let result = parse_codex_config(&raw);
-            assert_eq!(result.model_reasoning_effort, Some(expected), "effort={}", s);
+            assert_eq!(
+                result.model_reasoning_effort,
+                Some(expected),
+                "effort={}",
+                s
+            );
         }
     }
 

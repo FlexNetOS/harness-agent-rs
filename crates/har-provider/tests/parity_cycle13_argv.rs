@@ -144,12 +144,20 @@ fn run_scenario(base: &str) {
     let mcp_server_names: Vec<String> = scenario
         .get("mcpServerNames")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default();
     let mcp_missing_vars: Vec<String> = scenario
         .get("mcpMissingVars")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default();
 
     let (argv, warnings) = build_claude_argv(
@@ -207,7 +215,10 @@ fn run_scenario(base: &str) {
 
     // ── Differential 3: --no-env-file must precede --print when present ──
     if let Some(neo) = argv.iter().position(|a| a == "--no-env-file") {
-        let print_pos = argv.iter().position(|a| a == "--print").expect("--print present");
+        let print_pos = argv
+            .iter()
+            .position(|a| a == "--print")
+            .expect("--print present");
         assert!(
             neo < print_pos,
             "{base}: --no-env-file must precede --print; argv={argv:?}"
@@ -233,7 +244,10 @@ argv_test!(resume_and_fork, "a06_resume_fork");
 argv_test!(setting_sources_user, "a07_setting_sources_user");
 argv_test!(system_prompt_string, "a08_sysprompt_string");
 argv_test!(system_prompt_preset_append, "a09_sysprompt_preset_append");
-argv_test!(effort_thinking_sandbox_betas, "a10_effort_thinking_sandbox_betas");
+argv_test!(
+    effort_thinking_sandbox_betas,
+    "a10_effort_thinking_sandbox_betas"
+);
 argv_test!(output_format_node_config, "a11_output_format");
 argv_test!(allowed_denied_tools, "a12_allowed_denied_tools");
 argv_test!(mcp_present_env, "a13_mcp_present_env");
@@ -242,8 +256,14 @@ argv_test!(mcp_haiku_warning, "a15_mcp_haiku");
 argv_test!(skills_to_agents, "a16_skills");
 argv_test!(skills_with_tools, "a17_skills_with_tools");
 argv_test!(inline_agents, "a18_inline_agents");
-argv_test!(inline_agents_override_skills, "a19_inline_agents_override_skills");
+argv_test!(
+    inline_agents_override_skills,
+    "a19_inline_agents_override_skills"
+);
 argv_test!(js_cli_no_env_file, "a20_js_cli_noenvfile");
 argv_test!(native_cli_no_no_env_file, "a21_native_cli_no_noenvfile");
 argv_test!(request_output_format, "a22_request_output_format");
-argv_test!(node_config_system_prompt_override, "a23_nodeconfig_sysprompt_override");
+argv_test!(
+    node_config_system_prompt_override,
+    "a23_nodeconfig_sysprompt_override"
+);

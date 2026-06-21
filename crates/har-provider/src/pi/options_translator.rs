@@ -58,7 +58,12 @@ pub struct ResolvedThinkingLevel {
 /// PORT of `resolvePiThinkingLevel(nodeConfig?)` (options-translator.ts:72-107).
 pub fn resolve_pi_thinking_level(node_config: Option<&NodeConfig>) -> ResolvedThinkingLevel {
     let nc = match node_config {
-        None => return ResolvedThinkingLevel { level: None, warning: None },
+        None => {
+            return ResolvedThinkingLevel {
+                level: None,
+                warning: None,
+            }
+        }
         Some(nc) => nc,
     };
 
@@ -69,20 +74,29 @@ pub fn resolve_pi_thinking_level(node_config: Option<&NodeConfig>) -> ResolvedTh
     let thinking_is_off = thinking.map(|v| v.as_str() == Some("off")).unwrap_or(false);
     let effort_is_off = effort == Some("off");
     if thinking_is_off || effort_is_off {
-        return ResolvedThinkingLevel { level: None, warning: None };
+        return ResolvedThinkingLevel {
+            level: None,
+            warning: None,
+        };
     }
 
     // thinking takes precedence over effort when both are valid strings.
     if let Some(v) = thinking {
         if let Some(level) = normalize_to_thinking_level(v) {
-            return ResolvedThinkingLevel { level: Some(level), warning: None };
+            return ResolvedThinkingLevel {
+                level: Some(level),
+                warning: None,
+            };
         }
     }
 
     if let Some(s) = effort {
         let v = Value::String(s.to_owned());
         if let Some(level) = normalize_to_thinking_level(&v) {
-            return ResolvedThinkingLevel { level: Some(level), warning: None };
+            return ResolvedThinkingLevel {
+                level: Some(level),
+                warning: None,
+            };
         }
     }
 
@@ -112,7 +126,10 @@ pub fn resolve_pi_thinking_level(node_config: Option<&NodeConfig>) -> ResolvedTh
         };
     }
 
-    ResolvedThinkingLevel { level: None, warning: None }
+    ResolvedThinkingLevel {
+        level: None,
+        warning: None,
+    }
 }
 
 // ─── Tool restrictions ─────────────────────────────────────────────────────
@@ -210,7 +227,10 @@ pub fn resolve_pi_tools(
         // No restrictions. Match Pi's default tool set unless env injection forces
         // a custom bash tool.
         if !has_env {
-            return ResolvedTools { tools: None, unknown_tools: vec![] };
+            return ResolvedTools {
+                tools: None,
+                unknown_tools: vec![],
+            };
         }
         return ResolvedTools {
             tools: Some(build_default_pi_tools(env)),
@@ -310,7 +330,10 @@ mod tests {
     fn thinking_level_none_when_no_config() {
         assert_eq!(
             resolve_pi_thinking_level(None),
-            ResolvedThinkingLevel { level: None, warning: None }
+            ResolvedThinkingLevel {
+                level: None,
+                warning: None
+            }
         );
     }
 
@@ -318,7 +341,10 @@ mod tests {
     fn thinking_level_none_for_empty_config() {
         assert_eq!(
             resolve_pi_thinking_level(Some(&NodeConfig::default())),
-            ResolvedThinkingLevel { level: None, warning: None }
+            ResolvedThinkingLevel {
+                level: None,
+                warning: None
+            }
         );
     }
 
@@ -368,7 +394,10 @@ mod tests {
         let nc = make_nc_with_thinking(json!("off"));
         assert_eq!(
             resolve_pi_thinking_level(Some(&nc)),
-            ResolvedThinkingLevel { level: None, warning: None }
+            ResolvedThinkingLevel {
+                level: None,
+                warning: None
+            }
         );
     }
 
@@ -377,7 +406,10 @@ mod tests {
         let nc = make_nc_with_effort("off");
         assert_eq!(
             resolve_pi_thinking_level(Some(&nc)),
-            ResolvedThinkingLevel { level: None, warning: None }
+            ResolvedThinkingLevel {
+                level: None,
+                warning: None
+            }
         );
     }
 
@@ -459,7 +491,11 @@ mod tests {
     #[test]
     fn case_insensitive_tool_names() {
         let nc = NodeConfig {
-            allowed_tools: Some(vec!["Read".to_owned(), "BASH".to_owned(), "Edit".to_owned()]),
+            allowed_tools: Some(vec![
+                "Read".to_owned(),
+                "BASH".to_owned(),
+                "Edit".to_owned(),
+            ]),
             ..Default::default()
         };
         let result = resolve_pi_tools(Some(&nc), None);
@@ -484,7 +520,11 @@ mod tests {
     #[test]
     fn denied_tools_subtracted_from_allowed() {
         let nc = NodeConfig {
-            allowed_tools: Some(vec!["read".to_owned(), "bash".to_owned(), "edit".to_owned()]),
+            allowed_tools: Some(vec![
+                "read".to_owned(),
+                "bash".to_owned(),
+                "edit".to_owned(),
+            ]),
             denied_tools: Some(vec!["bash".to_owned()]),
             ..Default::default()
         };
@@ -506,7 +546,11 @@ mod tests {
     #[test]
     fn dedupes_duplicate_tool_names() {
         let nc = NodeConfig {
-            allowed_tools: Some(vec!["read".to_owned(), "read".to_owned(), "Read".to_owned()]),
+            allowed_tools: Some(vec![
+                "read".to_owned(),
+                "read".to_owned(),
+                "Read".to_owned(),
+            ]),
             ..Default::default()
         };
         let result = resolve_pi_tools(Some(&nc), None);
@@ -520,11 +564,7 @@ mod tests {
         let result = resolve_pi_tools(None, Some(&env));
         assert_eq!(result.tools.as_ref().unwrap().len(), 4);
         // bash tool should have env_hook = true
-        let bash = result
-            .tools
-            .unwrap()
-            .into_iter()
-            .find(|t| t.name == "bash");
+        let bash = result.tools.unwrap().into_iter().find(|t| t.name == "bash");
         assert!(bash.unwrap().has_env_hook);
     }
 
@@ -532,9 +572,11 @@ mod tests {
     fn no_restrictions_with_empty_env_returns_none() {
         let empty_env: HashMap<String, String> = HashMap::new();
         assert!(resolve_pi_tools(None, Some(&empty_env)).tools.is_none());
-        assert!(resolve_pi_tools(Some(&NodeConfig::default()), Some(&empty_env))
-            .tools
-            .is_none());
+        assert!(
+            resolve_pi_tools(Some(&NodeConfig::default()), Some(&empty_env))
+                .tools
+                .is_none()
+        );
     }
 
     #[test]

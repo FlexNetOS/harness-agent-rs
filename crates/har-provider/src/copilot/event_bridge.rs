@@ -248,7 +248,9 @@ pub enum CopilotEvent {
     SessionError(SessionErrorEventData),
     SessionCompactionStart,
     /// Any event type not explicitly handled — debug-logged and ignored.
-    Other { event_type: String },
+    Other {
+        event_type: String,
+    },
 }
 
 /// Pure mapper: one `CopilotEvent` → zero or more `MessageChunk`s, plus side-effect
@@ -310,10 +312,7 @@ pub fn map_copilot_event(event: CopilotEvent, ctx: &mut EventMapperContext) -> V
 
             // Prefer detailedContent (full output) over content (truncated for LLM).
             // Source: event-bridge.ts:193 "Prefer detailedContent (full output) over content"
-            let raw_output = data
-                .detailed_content
-                .or(data.content)
-                .unwrap_or_default();
+            let raw_output = data.detailed_content.or(data.content).unwrap_or_default();
 
             let mut chunks = Vec::new();
             if !data.success {
@@ -580,8 +579,12 @@ mod tests {
         });
         let out = map_copilot_event(event, &mut ctx);
         assert_eq!(out.len(), 2);
-        assert!(matches!(&out[0], MessageChunk::System { content } if content.contains("Tool bash failed")));
-        assert!(matches!(&out[1], MessageChunk::ToolResult { tool_output, .. } if tool_output.contains("permission denied")));
+        assert!(
+            matches!(&out[0], MessageChunk::System { content } if content.contains("Tool bash failed"))
+        );
+        assert!(
+            matches!(&out[1], MessageChunk::ToolResult { tool_output, .. } if tool_output.contains("permission denied"))
+        );
     }
 
     #[test]
@@ -595,7 +598,9 @@ mod tests {
         });
         let out = map_copilot_event(event, &mut ctx);
         assert_eq!(out.len(), 1);
-        assert!(matches!(&out[0], MessageChunk::ToolResult { tool_name, .. } if tool_name == "unknown"));
+        assert!(
+            matches!(&out[0], MessageChunk::ToolResult { tool_name, .. } if tool_name == "unknown")
+        );
     }
 
     #[test]
@@ -624,7 +629,9 @@ mod tests {
         let event = CopilotEvent::SessionCompactionStart;
         let out = map_copilot_event(event, &mut ctx);
         assert_eq!(out.len(), 1);
-        assert!(matches!(&out[0], MessageChunk::System { content } if content.contains("Compacting context")));
+        assert!(
+            matches!(&out[0], MessageChunk::System { content } if content.contains("Compacting context"))
+        );
     }
 
     #[test]

@@ -117,7 +117,9 @@ pub fn validate_and_convert_schema(
 ) -> Result<Vec<ToolField>, String> {
     // `schema.type !== 'object'` check
     if schema.get("type").and_then(Value::as_str) != Some("object") {
-        return Err("native tool inputSchema must be an object schema with `properties`".to_owned());
+        return Err(
+            "native tool inputSchema must be an object schema with `properties`".to_owned(),
+        );
     }
     // `typeof schema.properties !== 'object' || schema.properties === null`
     let props = match schema.get("properties") {
@@ -207,9 +209,7 @@ pub fn validate_and_convert_schema(
 /// source calls `createSdkMcpServer()` for an in-process server; that API is SDK-internal.
 ///
 /// Source: `packages/providers/src/claude/native-tools.ts:70-87`
-pub fn build_archon_mcp_server(
-    native_tools: &[NativeTool],
-) -> Result<McpServerDescriptor, String> {
+pub fn build_archon_mcp_server(native_tools: &[NativeTool]) -> Result<McpServerDescriptor, String> {
     let mut tool_defs = Vec::new();
 
     for tool in native_tools {
@@ -354,10 +354,7 @@ pub fn wire_tool_list_item(tool: &SdkToolDef) -> Value {
     obj.insert("execution".to_owned(), Value::Object(execution));
 
     let mut meta = Map::new();
-    meta.insert(
-        "anthropic/alwaysLoad".to_owned(),
-        Value::Bool(true),
-    );
+    meta.insert("anthropic/alwaysLoad".to_owned(), Value::Bool(true));
     obj.insert("_meta".to_owned(), Value::Object(meta));
 
     Value::Object(obj)
@@ -678,13 +675,13 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/claude/native_tools/tools_list.expected.json"
         );
-        let fixture_str = std::fs::read_to_string(fixture_path)
-            .expect("fixture file must exist");
+        let fixture_str = std::fs::read_to_string(fixture_path).expect("fixture file must exist");
         let fixture: serde_json::Value = serde_json::from_str(&fixture_str).unwrap();
         let expected_schema = &fixture["tools"][0]["inputSchema"];
 
         assert_eq!(
-            &schema, expected_schema,
+            &schema,
+            expected_schema,
             "wire inputSchema does not match live SDK fixture.\nGot: {}\nExpected: {}",
             serde_json::to_string_pretty(&schema).unwrap(),
             serde_json::to_string_pretty(expected_schema).unwrap()
@@ -698,7 +695,10 @@ mod tests {
         let schema = wire_input_schema(&fields);
         let obj = schema.as_object().unwrap();
         let keys: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-        assert_eq!(keys[0], "$schema", "first key must be $schema, got: {keys:?}");
+        assert_eq!(
+            keys[0], "$schema",
+            "first key must be $schema, got: {keys:?}"
+        );
         assert_eq!(keys[1], "type");
         assert_eq!(keys[2], "properties");
         assert_eq!(keys[3], "required");
@@ -712,8 +712,11 @@ mod tests {
         let props = schema["properties"].as_object().unwrap();
         let action = props["action"].as_object().unwrap();
         let keys: Vec<&str> = action.keys().map(|k| k.as_str()).collect();
-        assert_eq!(keys, vec!["description", "type", "enum"],
-            "enum field key order wrong: {keys:?}");
+        assert_eq!(
+            keys,
+            vec!["description", "type", "enum"],
+            "enum field key order wrong: {keys:?}"
+        );
     }
 
     #[test]
@@ -744,7 +747,10 @@ mod tests {
     fn wire_input_schema_no_additional_properties() {
         let fields = manage_run_fields();
         let schema = wire_input_schema(&fields);
-        assert!(!schema.as_object().unwrap().contains_key("additionalProperties"));
+        assert!(!schema
+            .as_object()
+            .unwrap()
+            .contains_key("additionalProperties"));
     }
 
     #[test]
@@ -754,7 +760,9 @@ mod tests {
             description: "test".to_owned(),
             fields: vec![ToolField {
                 name: "action".to_owned(),
-                kind: ToolFieldKind::StringEnum { values: vec!["list".to_owned()] },
+                kind: ToolFieldKind::StringEnum {
+                    values: vec!["list".to_owned()],
+                },
                 description: Some("desc".to_owned()),
                 required: true,
             }],

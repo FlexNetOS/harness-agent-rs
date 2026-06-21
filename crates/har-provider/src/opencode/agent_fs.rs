@@ -54,7 +54,8 @@ pub fn build_agent_file_content(agent_config: &AgentConfig) -> String {
     }
 
     if let Some(model) = &agent_config.model {
-        let json_model = serde_json::to_string(model.as_str()).unwrap_or_else(|_| format!("{:?}", model));
+        let json_model =
+            serde_json::to_string(model.as_str()).unwrap_or_else(|_| format!("{:?}", model));
         lines.push(format!("model: {}", json_model));
     }
 
@@ -66,7 +67,8 @@ pub fn build_agent_file_content(agent_config: &AgentConfig) -> String {
         if !skills.is_empty() {
             lines.push("skills:".to_owned());
             for skill in skills {
-                let json_skill = serde_json::to_string(skill.as_str()).unwrap_or_else(|_| format!("{:?}", skill));
+                let json_skill = serde_json::to_string(skill.as_str())
+                    .unwrap_or_else(|_| format!("{:?}", skill));
                 lines.push(format!("- {}", json_skill));
             }
         }
@@ -213,7 +215,15 @@ mod tests {
 
     #[test]
     fn basic_subagent_mode_is_set() {
-        let config = make_config("Test agent", "You are helpful", None, None, None, None, None);
+        let config = make_config(
+            "Test agent",
+            "You are helpful",
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         let content = build_agent_file_content(&config);
         // Exact byte check: mode line is present and description is JSON-quoted.
         assert_eq!(
@@ -224,7 +234,15 @@ mod tests {
 
     #[test]
     fn description_is_json_quoted() {
-        let config = make_config("Code review specialist", "Review the patch carefully", None, None, None, None, None);
+        let config = make_config(
+            "Code review specialist",
+            "Review the patch carefully",
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         let content = build_agent_file_content(&config);
         assert_eq!(
             content,
@@ -246,12 +264,23 @@ mod tests {
     #[test]
     fn empty_description_and_empty_prompt() {
         let config = make_config("", "", None, None, None, None, None);
-        assert_eq!(build_agent_file_content(&config), "---\nmode: subagent\n---");
+        assert_eq!(
+            build_agent_file_content(&config),
+            "---\nmode: subagent\n---"
+        );
     }
 
     #[test]
     fn model_is_json_quoted() {
-        let config = make_config("Agent", "prompt", Some("anthropic/claude-3-5-sonnet"), None, None, None, None);
+        let config = make_config(
+            "Agent",
+            "prompt",
+            Some("anthropic/claude-3-5-sonnet"),
+            None,
+            None,
+            None,
+            None,
+        );
         let content = build_agent_file_content(&config);
         assert_eq!(
             content,
@@ -271,7 +300,15 @@ mod tests {
 
     #[test]
     fn skills_are_yaml_listed() {
-        let config = make_config("Agent", "prompt", None, None, None, Some(vec!["review-work"]), None);
+        let config = make_config(
+            "Agent",
+            "prompt",
+            None,
+            None,
+            None,
+            Some(vec!["review-work"]),
+            None,
+        );
         let content = build_agent_file_content(&config);
         assert_eq!(
             content,
@@ -283,11 +320,13 @@ mod tests {
     #[test]
     fn tools_and_disallowed_tools_insertion_order() {
         let config = make_config(
-            "Agent", "prompt",
+            "Agent",
+            "prompt",
             None,
             Some(vec!["read", "grep"]),
             Some(vec!["bash"]),
-            None, None,
+            None,
+            None,
         );
         assert_eq!(
             build_agent_file_content(&config),
@@ -297,7 +336,15 @@ mod tests {
 
     #[test]
     fn prompt_body_appended_after_frontmatter() {
-        let config = make_config("Agent", "Review the patch carefully", None, None, None, None, None);
+        let config = make_config(
+            "Agent",
+            "Review the patch carefully",
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         let content = build_agent_file_content(&config);
         assert_eq!(
             content,
@@ -338,7 +385,10 @@ mod tests {
 
         materialize_agents(cwd, &agents).await.unwrap();
 
-        let agent_path = Path::new(cwd).join(".opencode").join("agents").join("archon-reviewer.md");
+        let agent_path = Path::new(cwd)
+            .join(".opencode")
+            .join("agents")
+            .join("archon-reviewer.md");
         assert!(agent_path.exists());
         let content = tokio::fs::read_to_string(&agent_path).await.unwrap();
         assert!(content.contains("mode: subagent"));
@@ -353,9 +403,15 @@ mod tests {
         tokio::fs::create_dir_all(&agents_dir).await.unwrap();
 
         // Create a stale archon file and a user file
-        tokio::fs::write(agents_dir.join("archon-stale-agent.md"), "stale").await.unwrap();
-        tokio::fs::write(agents_dir.join("custom-agent.md"), "# user agent").await.unwrap();
-        tokio::fs::write(agents_dir.join("archon-keep-agent.md"), "keep").await.unwrap();
+        tokio::fs::write(agents_dir.join("archon-stale-agent.md"), "stale")
+            .await
+            .unwrap();
+        tokio::fs::write(agents_dir.join("custom-agent.md"), "# user agent")
+            .await
+            .unwrap();
+        tokio::fs::write(agents_dir.join("archon-keep-agent.md"), "keep")
+            .await
+            .unwrap();
 
         let mut agents = HashMap::new();
         agents.insert(
@@ -368,7 +424,9 @@ mod tests {
         // Custom user file untouched
         assert!(agents_dir.join("custom-agent.md").exists());
         // Keep agent refreshed
-        let keep_content = tokio::fs::read_to_string(agents_dir.join("archon-keep-agent.md")).await.unwrap();
+        let keep_content = tokio::fs::read_to_string(agents_dir.join("archon-keep-agent.md"))
+            .await
+            .unwrap();
         assert!(keep_content.contains("Fresh prompt"));
         // Stale archon file removed
         assert!(!agents_dir.join("archon-stale-agent.md").exists());
