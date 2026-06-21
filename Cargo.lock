@@ -791,6 +791,7 @@ dependencies = [
  "har-contract",
  "har-provider",
  "indexmap",
+ "jsonrepair-rs",
  "libc",
  "reqwest",
  "serde",
@@ -1159,6 +1160,12 @@ dependencies = [
  "futures-util",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "jsonrepair-rs"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bb8db9715bb6f3f7bb38c78bd572b18757e27aa79d029859268fc9d8b3d21f9"
 
 [[package]]
 name = "lazy_static"

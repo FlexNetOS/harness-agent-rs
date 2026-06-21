@@ -20,6 +20,7 @@ tracing.workspace = true
 indexmap.workspace = true
 bytes.workspace = true
 tempfile = "3"
+jsonrepair-rs.workspace = true
 
 directories.workspace = true
 axum.workspace = true

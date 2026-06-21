@@ -1229,6 +1229,14 @@ mod tests {
     use crate::cli_stream::TokioCancelToken;
     use futures::StreamExt;
     use serde_json::json;
+    // `#[serial]` because send_query calls resolve_codex_binary_path which reads
+    // BUNDLED_IS_BINARY and CODEX_BIN_PATH — the same process-global env vars that
+    // codex::binary_resolver::tests manipulates.  Without serialisation these tests
+    // race: the binary_resolver test sets BUNDLED_IS_BINARY=true, the provider test
+    // finds "binary mode" active, resolve_codex_binary_path returns an error, and the
+    // stream yields a single error Result instead of the expected chunks.
+    // Exactly the same class as the cycle-8 CLAUDE_BIN_PATH race (fixed with #[serial]).
+    use serial_test::serial;
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1436,6 +1444,7 @@ mod tests {
     // ── CodexProvider send_query via FakeSpawner ─────────────────────────────
 
     #[tokio::test]
+    #[serial]
     async fn send_query_yields_assistant_and_result() {
         let script = vec![FakeSpawnScript::Success(vec![
             thread_started_line("tid-1"),
@@ -1461,6 +1470,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_session_id_from_thread_started() {
         let script = vec![FakeSpawnScript::Success(vec![
             thread_started_line("thread-xyz"),
@@ -1477,6 +1487,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_turn_failed_yields_error_result() {
         let script = vec![FakeSpawnScript::Success(vec![turn_failed_line(
             "Model access denied",
@@ -1493,6 +1504,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_stream_incomplete_synthesizes_fail_stop() {
         // Empty stdout → no terminal event → fail-stop
         let script = vec![FakeSpawnScript::Success(vec![])];
@@ -1508,6 +1520,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_retries_on_crash_error() {
         // First attempt: crash (exit code 1); second attempt: success
         let provider = CodexProvider::with_options(
@@ -1530,6 +1543,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_turn_failed_no_retry() {
         // turn.failed events are handled in parser → yield error Result directly.
         // These are NOT retried — they are terminal events, not spawn errors.
@@ -1546,6 +1560,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_cancel_token_stops_stream() {
         let script = vec![FakeSpawnScript::Success(vec![
             agent_message_line("first"),

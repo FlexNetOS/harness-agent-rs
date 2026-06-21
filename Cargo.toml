@@ -71,6 +71,9 @@ indexmap = { version = "2", features = ["serde"] }
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
 
+# JSON repair (matches npm jsonrepair's throw-on-trailing-garbage + recover-malformed behavior)
+jsonrepair-rs = "0.2.1"
+
 # Regex
 regex = "1"
 

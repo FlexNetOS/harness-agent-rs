@@ -8,26 +8,31 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1    # reset on resume 2026-06-21 (fresh session); baseline re-verified PASS (clippy clean, 1117 tests). cycle 17 done.
-cycles_total: 17
-ledger: parity **36/79 units** — PR-07 CodexProvider + PR-08 (binary-resolver/config) now FULL VERIFIED UNITS
-        (cycle 17, differential PASS vs live @openai/codex-sdk@0.125.0 + bun). (PR-01/02/03/04/05/06/07/08;
-        WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) Codex reuses the cli_stream/ substrate
-        (Spawner/NdjsonStream/retry/cancel/stderr) — no duplication. native_tools/no-downgrade preserved.
-last_item: cycle 17 — **Codex provider** (PR-07 + PR-08). Ported crates/har-provider/src/codex/ (binary_resolver,
-           config, argv, parser, provider) mirroring claude/, reusing cli_stream/. Wired CodexProvider into
-           register_builtin_providers (replaced UnimplementedProvider for "codex"). Differential gate FAILed
-           first (3 downgrades the porter's green tests hid): D1 to_toml_value control-char escaping (→ serde_json
-           JSON.stringify), D2 missing normalize_json_schema_for_openai_strict for --output-schema (ported from
-           shared/structured-output.ts:147-233 + hasOpen warn), D3 byte-slice panic preview (→ char-safe). All
-           fixed + RE-VERIFIED PASS (0 diffs across 256 codepoints / 18-schema matrix). D3 recorded `- [≠]`
-           (log-cosmetic). Live model call SKIPPED — env-gated (no auth). Harness: tests/parity_cycle17_codex.rs
-           (30 live tests, 0 ignores). Workspace 1117→1266 tests. Findings: findings/parity-cycle17.md.
-status: cycle 17 DONE (1/3 this session). NEXT = cycle 18: **PR-09/10/11 community providers** (pi/opencode/copilot
-        — packages/providers/src/{pi,opencode,copilot}/) reusing the same cli_stream/ substrate + deterministic
-        argv+parser differential strategy. Then PR-12 loadMcpConfig (closes the carried `- [≈]` + rewires codex/
-        claude send_query MCP) → har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09 dag-executor (keystone).
-last_update: 2026-06-21T00:00:00Z
+cycles_this_session: 2    # resume 2026-06-21 (fresh session); baseline re-verified PASS. cycles 17+18 done.
+cycles_total: 18
+ledger: parity **36/79 units** verified + **PR-10 Copilot ported-surface verified, provider `- [~]` blocked on
+        ONE owner-wall** (the @github/copilot-sdk Node-SDK session binding — UP-2, NEEDS-HUMAN). PR-10 is NOT a
+        full `- [x]` unit until the owner picks the SDK-seam option. (Full units: PR-01..08; WF-01..08, WF-11..14;
+        PA-01/06/07; GI-01..05; IS-01..08.) native_tools/no-downgrade preserved end-to-end.
+last_item: cycle 18 — **Copilot community provider** (PR-10). Ported crates/har-provider/src/copilot/
+           (binary_resolver, config, event_bridge, provider) + crates/har-provider/src/shared/ (structured_output,
+           skills). Copilot wraps the @github/copilot-sdk NODE SDK (not a CLI) → cli_stream/ does NOT apply. ALL
+           surrounding logic ported + differential-verified vs live bun (event-bridge 8 events, binary-resolver,
+           config, token/env, error-class, structured-output, skills). SDK session binding = isolated NEEDS-HUMAN
+           seam → send_query returns clean `copilot_sdk_not_bound` (honest, no stub/downgrade). Gate FAILed first
+           (3 structured-output downgrades: jsonrepair `[≠]` REFUTED→ported jsonrepair-rs crate + object-gate;
+           non-deterministic schema key order → order-preserving serde_json::Map [touched har-contract
+           OutputFormat.schema, blast-radius verified clean on claude+codex --output-schema]; absent tool args
+           →`{}`). All fixed + RE-VERIFIED PASS. Found+recorded 2 bounded `[≠]` (jsonrepair-rs vs npm on
+           NaN/Infinity/+N pathological inputs). Fixed a REAL env-race flake (codex provider tests leaked
+           BUNDLED_IS_BINARY/CODEX_BIN_PATH → #[serial], 5/5 green). New dep: jsonrepair-rs 0.2.1. Harness:
+           tests/parity_cycle18_copilot.rs (8 live, 0 ignores). Workspace 1266→1392 tests. Findings: parity-cycle18.md.
+status: cycle 18 DONE (2/3 this session). **OWNER DECISION PENDING: PR-10 Copilot SDK-seam (UP-2, 3 options,
+        rec=(a) Node sidecar per R8 precedent)** — blocks PR-10 `- [x]`. NEXT (no-wall) = cycle 19: **PR-09 Pi
+        (2038 LOC) or PR-11 OpenCode (1680 LOC) community provider** — both ALSO wrap Node SDKs (not CLIs); expect
+        the SAME SDK-binding seam (decide UP-2 once, applies to all 3). Then PR-12 loadMcpConfig (closes carried
+        `- [≈]`, rewires codex/claude/copilot send_query MCP) → har-ledger (CO db MAP→hf, WF-19) → WF-09 dag-executor.
+last_update: 2026-06-21T12:00:00Z
 
 ## Open follow-ups (tracked — not downgrades, owed by not-yet-ported sibling units)
 - **loadMcpConfig full wiring into send_query** (owes two items surfaced cycles 15-16):

@@ -413,11 +413,16 @@ pub struct AgentRequestOptions {
 }
 
 /// JSON Schema output format. types.ts:246.
+///
+/// `schema` uses `serde_json::Map` (order-preserving with the workspace's
+/// `serde_json/preserve_order` feature) so that `augment_prompt_for_json_schema`
+/// can serialize it with the same key order as `JSON.stringify` (insertion order).
+/// The augmented prompt is sent to the LLM, so key order is observable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputFormat {
     #[serde(rename = "type")]
     pub kind: OutputFormatType,
-    pub schema: HashMap<String, Value>,
+    pub schema: serde_json::Map<String, Value>,
 }
 
 /// Output format type discriminant. types.ts:246.

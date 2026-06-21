@@ -709,14 +709,18 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-10: Community Copilot Provider
 **Source:** `packages/providers/src/community/copilot/` (7 files)
-**Rust target:** `crates/providers/src/community/copilot/`
+**Rust target:** `crates/har-provider/src/copilot/` (+ shared/structured_output.rs, shared/skills.rs)
+**Status (cycle 18):** ported surface parity-verified vs live bun; provider `- [~]` blocked on ONE NEEDS-HUMAN owner-wall (the @github/copilot-sdk Node-SDK session binding). NOT a `- [x]` unit until the seam is decided.
 
-- [ ] `CopilotProvider` implementing `IAgentProvider` (provider.ts)
-- [ ] `COPILOT_CAPABILITIES: ProviderCapabilities` (capabilities.ts)
-- [ ] `parseCopilotConfig(raw) -> CopilotProviderDefaults` (config.ts)
-- [ ] `CopilotEventBridge` (event-bridge.ts)
-- [ ] `resolveCopilotBinaryPath(config)` (binary-resolver.ts)
-- [ ] Provider hardening: retry on transient errors (provider-hardening.test.ts confirms)
+- [~] `CopilotProvider` implementing `IAgentProvider` (provider.ts) — ALL surrounding logic ported + verified (reasoning/system/tool-restrictions/skills/agents resolution, token+env, error classification, send_query steps 1-9). **SDK seam:** `createSession`/`sendAndWait`/`abort` + `bridgeSession` (event-bridge.ts:271-434) NOT bound → `send_query` returns clean `Result{is_error:true, error_subtype:"copilot_sdk_not_bound"}`. **NEEDS-HUMAN** — see docs/POST-PORT-UPGRADES.md UP-2 (3 options; R8-precedent Node sidecar recommended).
+- [x] `COPILOT_CAPABILITIES: ProviderCapabilities` (capabilities.ts) — 14 flags exact (re-verified cycle 18)
+- [x] `parseCopilotConfig(raw) -> CopilotProviderDefaults` (config.ts) — cycle 18, 22-case defensive-parse PASS
+- [x] `CopilotEventBridge` / `map_copilot_event` / `normalize_copilot_usage` / `AsyncQueue` (event-bridge.ts) — cycle 18, all 8 event types + usage byte-exact; absent tool args → `{}` (matched)
+- [x] `resolveCopilotBinaryPath(config)` (binary-resolver.ts) — cycle 18, all 6 tiers + error text byte-exact
+- [x] shared: `augment_prompt_for_json_schema` (order-preserving) + `try_parse_structured_output` (shared/structured-output.ts) — cycle 18 PASS. `- [≠]` tier-3 jsonrepair: `jsonrepair-rs 0.2.1` (only Rust equiv) vs npm jsonrepair 3.14.0 differs ONLY on pathological invalid-JSON no model emits — `NaN`/`Infinity`→`null` vs `"NaN"`; `+1`/`+1.5`→strip-and-accept vs throw→None. Bounded, recorded.
+- [x] shared: `resolve_skill_directories` (shared/skills.ts) — cycle 18, 17-case PASS
+- [≈] MCP: `send_query` reuses codex's inline stopgap `load_mcp_config`; rewire when PR-12 `loadMcpConfig` lands (carried, out-of-unit)
+- [ ] Provider hardening: retry on transient errors (provider-hardening.test.ts) — folded into the SDK-seam binding (retry wraps the session call); completes when the seam is bound
 
 ### UNIT PR-11: Community OpenCode Provider
 **Source:** `packages/providers/src/community/opencode/` (9 files)

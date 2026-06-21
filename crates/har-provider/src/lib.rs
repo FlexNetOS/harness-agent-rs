@@ -19,10 +19,12 @@
 //! panics on `send_query` — this is correct: the CAPABILITIES (the consumer-facing contract)
 //! are the real source values, and will remain unchanged when PR-03+ land.
 
-// ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06) ──────────────────────────────
+// ─── Sub-modules (PR-03+, PR-04, PR-05, PR-06, PR-11) ───────────────────────
 pub mod cli_stream;
 pub mod claude;
 pub mod codex;
+pub mod copilot;
+pub mod shared;
 
 use har_contract::{
     AgentProvider, MessageChunk, ProviderCapabilities, ProviderInfo, ProviderRegistration,
@@ -378,7 +380,7 @@ pub fn register_builtin_providers() {
 /// Register the GitHub Copilot community provider. Idempotent.
 ///
 /// Source: `packages/providers/src/community/copilot/registration.ts`.
-/// Factory seam: `UnimplementedProvider` until PR-10 lands.
+/// PR-11 WIRED (cycle 18): `CopilotProvider` now wired — replaces `UnimplementedProvider`.
 pub fn register_copilot_provider() {
     if is_registered_provider("copilot") {
         return;
@@ -389,10 +391,7 @@ pub fn register_copilot_provider() {
         id: "copilot".to_owned(),
         display_name: "Copilot (GitHub)".to_owned(),
         factory: Box::new(|| {
-            Arc::new(UnimplementedProvider {
-                provider_type: "copilot",
-                capabilities: &COPILOT_CAPABILITIES,
-            })
+            Arc::new(copilot::provider::CopilotProvider::new()) as Arc<dyn AgentProvider>
         }),
         capabilities: COPILOT_CAPABILITIES,
         built_in: false,
