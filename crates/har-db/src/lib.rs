@@ -29,6 +29,8 @@ pub mod error;
 pub mod postgres;
 pub mod schema;
 pub mod sqlite;
+pub mod workflow_events;
+pub mod workflow_node_sessions;
 pub mod workflows;
 
 pub use adapters::{
@@ -44,6 +46,17 @@ pub use error::DbError;
 pub use postgres::PostgresAdapter;
 pub use schema::get_schema_sql;
 pub use sqlite::SqliteAdapter;
+pub use workflow_events::{
+    create_workflow_event, get_completed_dag_node_outputs, list_recent_events,
+    list_workflow_events, list_workflow_events_since, parse_event_row, to_db_date_param,
+    SqlWorkflowEventStore, WorkflowEventRow,
+};
+pub use workflow_node_sessions::{
+    delete_workflow_node_session_params, delete_workflow_node_sessions_sql,
+    get_workflow_node_session_params, get_workflow_node_session_sql, normalize_session_row,
+    upsert_workflow_node_session_params, upsert_workflow_node_session_sql, validate_session,
+    validate_session_value, SqlNodeSessionStore, WorkflowNodeSessionRow,
+};
 pub use workflows::{
     delete_old_workflow_runs, delete_workflow_run, find_latest_run_by_working_path,
     find_resumable_run_by_parent_conversation, get_active_workflow_run, get_paused_workflow_run,

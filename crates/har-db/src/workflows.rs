@@ -13,6 +13,9 @@
 //! | `pool.query('BEGIN')`     | `self.db.with_transaction(\|executor\| …)`  |
 //! | `createLogger('db.workflows')` | `tracing::warn!/error!/info! macros   |
 
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::useless_conversion)]
+#![allow(clippy::redundant_closure)]
 use crate::adapters::SqlDialect;
 use crate::database::Database;
 use crate::error::DbError;
@@ -1290,7 +1293,7 @@ pub async fn delete_old_workflow_runs(
                 );
                 let result = executor.query(&runs_sql, vec![]).await?;
 
-                Ok(serde_json::to_value(result.row_count).map_err(DbError::from)?)
+                serde_json::to_value(result.row_count).map_err(DbError::from)
             })
         }))
         .await

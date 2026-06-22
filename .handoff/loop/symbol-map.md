@@ -468,6 +468,30 @@ NOTE: Rust target corrected to `har_provider` crate (not `providers::registry`).
 
 ---
 
+### WF-33 — workflow-node-sessions.rs (har-db SQL layer)
+
+WF-08 covered the schema type; WF-33 covers the SQL-layer in har-db.
+
+- [x] unit:WF-33 `workflow-node-session.ts::WorkflowNodeSessionRow` → `har_db::workflow_node_sessions::WorkflowNodeSessionRow` — 8 fields; snake_case wire names; last_run_id skip_serializing_if tested
+- [x] unit:WF-33 `workflow-node-session.ts::validate_session` → `har_db::workflow_node_sessions::validate_session()` — all 5 required non-empty checks; collects-all errors; 7 tests (5 rejects + 1 accept + combined)
+- [x] unit:WF-33 `workflow-node-session.ts::validate_session_value` → `har_db::workflow_node_sessions::validate_session_value()` — convenience wrapper over validate_session; tested
+- [x] unit:WF-33 `workflow-node-sessions SQL upsert` → `har_db::workflow_node_sessions::upsert_workflow_node_session_sql()` — INSERT ... ON CONFLICT DO UPDATE all 8 columns; param count $1..$8 tested
+- [x] unit:WF-33 `workflow-node-sessions SQL delete` → `har_db::workflow_node_sessions::delete_workflow_node_sessions_sql()` — WHERE 4 PK fields = $1..$4; param count tested
+- [x] unit:WF-33 `workflow-node-sessions SQL get` → `har_db::workflow_node_sessions::get_workflow_node_session_sql()` — SELECT with same 4-field filter
+- [x] unit:WF-33 `params builders` → `har_db::workflow_node_sessions::{upsert_workflow_node_session_params,delete_workflow_node_session_params,get_workflow_node_session_params}` — correct Vec<Value> count each; tested
+- [x] unit:WF-33 `row normalization` → `har_db::workflow_node_sessions::normalize_session_row()` — IndexMap→WorkflowNodeSession; missing required→None; null last_run_id→None; tested 2 cases
+- [x] unit:WF-33 round-trip serialize/deserialize (with and without last_run_id; different providers same node) → tested 4 fixture cases
+- [x] unit:WF-33 snake_case wire-name preservation → tested: all 8 keys present as snake, no camelCase
+
+### WF-34 — SqlWorkflowStore integration (deferred to store wiring cycle)
+
+- [ ] `SqlWorkflowStore::upsert_workflow_node_session()` — thin wrapper around upsert_* helpers + self.db.query
+- [ ] `SqlWorkflowStore::delete_workflow_node_sessions()` — thin wrapper around delete_* helpers
+- [ ] `SqlWorkflowStore::get_workflow_node_session()` — thin wrapper around get_* helpers
+- [ ] `DeleteSessionsFilter::NodeSessions` variant (if not yet in har-ledger)
+
+---
+
 ## PACKAGE: isolation
 
 ### IS-01 — types.ts
