@@ -5,15 +5,13 @@
 //! # Architecture
 //!
 //! The TypeScript source wraps `@earendil-works/pi-coding-agent`, a Node.js SDK.
-//! All surrounding logic is fully ported. The live SDK session call is the isolated
-//! NEEDS-HUMAN seam (`pi_sdk_not_bound`):
-//!   - `createAgentSession(...)` — live session creation
-//!   - `session.prompt(prompt)` — the actual LLM call
-//!   - `session.subscribe(...)` — event stream
-//!   - `session.abort()` / `session.dispose()` / `session.setModel()`
-//!   - `session.bindExtensions(...)` / `session.extensionRunner`
+//! All surrounding logic is fully ported. The live SDK session is driven via
+//! `run_pi_rpc_session` (rpc_client.rs), which spawns the Pi CLI in `--mode rpc`
+//! and communicates over stdin/stdout. The native-tools bridge (`native-tools-bridge.js`)
+//! is injected as a Pi extension to proxy native tool calls back to Rust via the
+//! `extension_ui_request`/`extension_ui_response` round-trip.
 //!
-//! All observable side-effects BEFORE the SDK call are ported and run:
+//! All observable side-effects BEFORE the RPC session call are ported and run:
 //!   - `ensurePiPackageDirShim()` — writes package.json shim to tmpdir, sets PI_PACKAGE_DIR
 //!   - Config parsing (`parsePiConfig`)
 //!   - Config-level env var application to `process.env`
@@ -31,8 +29,8 @@
 //!   - Semaphore acquire/release (maxConcurrent)
 //!   - `getType()` / `getCapabilities()`
 //!
-//! Until the SDK seam is resolved, `send_query` surfaces `MessageChunk::Result`
-//! with `is_error: true, error_subtype: "pi_sdk_not_bound"` — it does NOT panic.
+//! When `PI_CODING_AGENT_CLI` is not set, `send_query` surfaces `MessageChunk::Result`
+//! with `is_error: true, error_subtype: "pi_binary_not_found"` — it does NOT panic.
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -44,6 +42,8 @@ use har_contract::{
 };
 use serde_json::Value;
 
+use futures_util::StreamExt;
+
 use crate::pi::config::parse_pi_config;
 use crate::pi::model_ref::parse_pi_model_ref;
 use crate::pi::native_tools::build_pi_native_tool_definitions;
@@ -53,6 +53,7 @@ use crate::pi::options_translator::{
 use crate::pi::resource_loader::{
     create_noop_resource_loader, get_or_create_reloaded_extension_loader, NoopResourceLoaderOptions,
 };
+use crate::pi::rpc_client::{run_pi_rpc_session, PiRpcSessionOptions};
 use crate::pi::session_resolver::resolve_pi_session;
 use crate::shared::structured_output::augment_prompt_for_json_schema;
 use crate::PI_CAPABILITIES;
@@ -180,9 +181,9 @@ impl AgentProvider for PiProvider {
     ///
     /// PORT of `sendQuery(prompt, cwd, resumeSessionId?, requestOptions?)` (provider.ts:159-617).
     ///
-    /// # NEEDS-HUMAN seam (`pi_sdk_not_bound`)
+    /// # Session execution via RPC
     ///
-    /// All pre-seam logic runs faithfully:
+    /// All pre-session logic runs faithfully:
     ///   1. ensurePiPackageDirShim() — writes shim, sets PI_PACKAGE_DIR
     ///   2. Parse assistantConfig → PiProviderDefaults
     ///   3. Apply config.env to process env (non-clobbering)
@@ -199,7 +200,8 @@ impl AgentProvider for PiProvider {
     ///  14. Log `pi.session_started`
     ///  15. Structured-output prompt augmentation
     ///  16. Semaphore acquire (if maxConcurrent set)
-    ///  17. pi_sdk_not_bound seam: `createAgentSession`, `session.prompt()`, event bridge
+    ///  17. `run_pi_rpc_session` — spawns Pi CLI in `--mode rpc`, wires the
+    ///      native-tools bridge extension, drives stdin/stdout JSON framing
     ///  18. Semaphore release (in finally)
     fn send_query(
         &self,
@@ -425,7 +427,8 @@ impl AgentProvider for PiProvider {
             //    PORT of the file/inMemory settings block (provider.ts:385-435).
             //    In the seam, we do not call Pi SDK SettingsManager. We perform
             //    the structural merge logic for parity documentation.
-            //    This is the `pi_sdk_not_bound` seam boundary for settings.
+            //    The structural merge logic is performed here for parity; the live
+            //    Pi SDK SettingsManager is invoked downstream in run_pi_rpc_session.
 
             // 8. Extension + interactive flags.
             //    PORT of (provider.ts:440-443).
@@ -515,45 +518,50 @@ impl AgentProvider for PiProvider {
                 return;
             }
 
-            // ─── pi_sdk_not_bound seam ────────────────────────────────────────
+            // ─── Pi RPC session ────────────────────────────────────────────────
             // Source: provider.ts:490-617 (createAgentSession, bindExtensions,
             // setModel, bridgeSession/session.prompt, dispose).
             //
-            // The `@earendil-works/pi-coding-agent` requires a Node.js runtime.
-            // There is no Rust-native Pi SDK binding. Until the seam is resolved,
-            // surface a clear, classified error.
-            tracing::warn!(
-                pi_provider = %parsed.provider,
-                model_id = %parsed.model_id,
-                cwd = %cwd,
-                env_var = ?env_var_name,
-                has_env_override = env_override.is_some(),
-                effective_prompt_len = effective_prompt.len(),
-                "pi.sdk_session_needs_human: PiProvider sdk seam not yet resolved"
-            );
+            // We spawn the Pi CLI in --mode rpc and stream events via stdin/stdout.
+            // The CLI is located via PI_CODING_AGENT_CLI env var (not on PATH).
 
-            let err_msg = format!(
-                "The Pi provider SDK session is not yet bound in the Rust port. \
-                 The @earendil-works/pi-coding-agent requires a Node.js runtime and has no Rust equivalent. \
-                 See harness-agent-rs crates/har-provider/src/pi/provider.rs (NEEDS-HUMAN seam). \
-                 Provider: '{}', model: '{}'.",
-                parsed.provider, parsed.model_id
-            );
+            // Build env_vars from request_env + api key override
+            let mut rpc_env_vars: HashMap<String, String> = HashMap::new();
+            if let Some(req_env) = request_env {
+                for (k, v) in req_env {
+                    rpc_env_vars.insert(k.clone(), v.clone());
+                }
+            }
+            // Inject api key override if resolved
+            if let (Some(var_name), Some(ref key_val)) = (env_var_name, &env_override) {
+                rpc_env_vars.insert(var_name.to_owned(), key_val.clone());
+            }
+
+            // Collect native tools from options (need owned list for rpc_client)
+            let rpc_native_tools = options.as_ref()
+                .and_then(|o| o.native_tools.as_ref())
+                .cloned()
+                .unwrap_or_default();
+
+            let rpc_opts = PiRpcSessionOptions {
+                prompt: effective_prompt.clone(),
+                decision: session_resolution.decision,
+                pi_provider: parsed.provider.clone(),
+                model_id: parsed.model_id.clone(),
+                cwd: cwd.clone(),
+                native_tools: rpc_native_tools,
+                enable_extensions,
+                env_vars: rpc_env_vars,
+                cancel: cancel.clone(),
+            };
+
+            let mut rpc_stream = run_pi_rpc_session(rpc_opts);
+
+            while let Some(chunk) = rpc_stream.next().await {
+                yield chunk;
+            }
 
             drop(permit);
-
-            yield MessageChunk::Result {
-                session_id: None,
-                tokens: None,
-                structured_output: None,
-                is_error: Some(true),
-                error_subtype: Some("pi_sdk_not_bound".to_owned()),
-                errors: Some(vec![err_msg]),
-                cost: None,
-                stop_reason: None,
-                num_turns: None,
-                model_usage: None,
-            };
         })
     }
 
@@ -641,11 +649,11 @@ mod tests {
         assert_eq!(pi_provider_env_var("unknown"), None);
     }
 
-    // ── send_query surfaces pi_sdk_not_bound ──────────────────────────────────
+    // ── send_query without Pi binary surfaces pi_binary_not_found ────────────
 
     #[tokio::test]
     #[serial]
-    async fn send_query_surfaces_pi_sdk_not_bound() {
+    async fn send_query_without_pi_binary_yields_binary_not_found() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
         reset_resource_loader_cache();
@@ -670,7 +678,9 @@ mod tests {
         }
 
         // Should have some system chunks (thinking/tools/skills warnings may or may not appear)
-        // + exactly one Result chunk with pi_sdk_not_bound
+        // + exactly one Result chunk.
+        // Since PI_CODING_AGENT_CLI is not set in test env, find_pi_argv() returns
+        // "pi_binary_not_found" error.
         let result = chunks
             .iter()
             .find(|c| matches!(c, MessageChunk::Result { .. }))
@@ -682,7 +692,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(*is_error, Some(true));
-                assert_eq!(error_subtype.as_deref(), Some("pi_sdk_not_bound"));
+                assert_eq!(error_subtype.as_deref(), Some("pi_binary_not_found"));
             }
             _ => panic!("expected Result"),
         }

@@ -767,7 +767,11 @@ impl har_contract::CancelToken for NoCancel {
 }
 
 #[tokio::test]
-async fn area9_send_query_reaches_pi_sdk_not_bound_seam() {
+async fn area9_send_query_reaches_pi_rpc_client() {
+    // Cycle-23: the pi_sdk_not_bound seam is now filled by run_pi_rpc_session.
+    // Without PI_CODING_AGENT_CLI set, send_query reaches the real RPC client and
+    // surfaces "pi_binary_not_found" (Pi CLI not configured) rather than the old
+    // "pi_sdk_not_bound" stub error.
     use futures_util::StreamExt;
     har_provider::pi::provider::reset_pi_semaphore();
     har_provider::pi::provider::reset_resource_loader_cache();
@@ -798,7 +802,8 @@ async fn area9_send_query_reaches_pi_sdk_not_bound_seam() {
             ..
         } => {
             assert_eq!(*is_error, Some(true));
-            assert_eq!(error_subtype.as_deref(), Some("pi_sdk_not_bound"));
+            // "pi_binary_not_found" = RPC client reached but PI_CODING_AGENT_CLI not set
+            assert_eq!(error_subtype.as_deref(), Some("pi_binary_not_found"));
         }
         _ => unreachable!(),
     }

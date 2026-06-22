@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 6    # resume 2026-06-21; cycles 17-22 done. Owner: bind ALL provider SDKs now (do it right, no band-aid).
-cycles_total: 22
+cycles_this_session: 7    # resume 2026-06-21; cycles 17-23 done. ALL provider SDKs BOUND (owner: do it right, no band-aid).
+cycles_total: 23
 ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
         `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
         units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
@@ -34,6 +34,15 @@ status_cycle21: cycle 21 DONE — **OWNER DIRECTIVE: bind ALL provider SDKs now,
         client to the copilot CLI; ping/handshake/framing verifiable without auth), then cycle 23 **bind Pi** (RPC JSONL +
         ctx.ui + resolve the customTools callback no-downgrade). Researcher agents: opencode a24cb0882282bf083,
         copilot a86aaaf13ec9e69e2, pi adf3f133529e357a7 (full transport reports — continue via SendMessage).
+status_cycle23: cycle 23 DONE — **Pi BOUND** (PR-09 provider `- [x]`); **ALL 3 community SDKs now bound in pure Rust**
+        (opencode c21 HTTP/SSE, copilot c22 JSON-RPC, pi c23 RPC-JSONL). Pi: `pi --mode rpc` + JSONL + ctx.ui bridge +
+        the native-tools bridge (bundled native-tools-bridge.js → extension_ui_request "native_tool_dispatch" → Rust
+        NativeTool handler) — round-trip PROVEN live (real params flow, AgentToolResult shape accepted); native_tools=TRUE
+        no downgrade. Verified vs the real pi (node + dist/cli.js); only LLM completion env-gated. All 3 bindings: NO Node
+        SDK wrapper, NO sidecar — each talks to the SAME real CLI/server the SDK wraps. docs/POST-PORT-UPGRADES.md UP-2
+        updated (option-b defer SUPERSEDED). Workspace 1794 tests, clippy+fmt clean. **NEXT = PR-12 loadMcpConfig**
+        (closes the carried `- [≈]`, rewires claude/codex/copilot/opencode/pi send_query MCP) → har-ledger (CO db MAP→hf,
+        WF-19 IWorkflowStore) → WF-09 dag-executor (keystone) → WF-10/15/16.. → server (axum) → cli.
 status_cycle22: cycle 22 DONE — **Copilot BOUND** (PR-10 provider `- [x]`): pure-Rust JSON-RPC/stdio client to the real
         `@github/copilot` CLI; handshake proven live (protocolVersion=3, byte-identical frames). Gate caught+fixed 5
         no-downgrade gaps (fork-to-fresh HOT path; 3 warning/error texts; tool.call body; structured-output reuse-not-copy)

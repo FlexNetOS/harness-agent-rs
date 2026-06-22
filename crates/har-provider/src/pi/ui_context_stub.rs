@@ -6,10 +6,10 @@
 //! Interactive prompts resolve to None/false; TUI setters are no-ops; `notify()`
 //! forwards to the event stream as an `assistant` chunk (with `flush: true`).
 //!
-//! In the Rust port, the actual Pi SDK `ExtensionUIContext` interface binding
-//! is the `pi_sdk_not_bound` seam. This module ports the `ArchonUIBridge` type
-//! and the `createArchonUIBridge` factory faithfully; `createArchonUIContext`
-//! describes the UI context behavior as a documented spec.
+//! In the Rust port, the `ArchonUIBridge` is wired into the RPC session via
+//! `run_pi_rpc_session`: the bridge receives `extension_ui_request` events from
+//! the Pi CLI and routes them as `ctx.ui.input(...)` calls. This module ports
+//! the `ArchonUIBridge` type and factory faithfully.
 
 use std::sync::{Arc, Mutex};
 
@@ -78,11 +78,10 @@ pub fn create_archon_ui_bridge() -> Arc<ArchonUIBridge> {
 ///   - `getToolsExpanded()` → `false`
 ///   - `setTheme(…)` → `{ success: false, error: 'Theme switching not supported...' }`
 ///
-/// This is at the `pi_sdk_not_bound` seam boundary.
-///
-/// `[≠]` The Pi SDK's `ExtensionUIContext` interface is not re-implementable in
-/// Rust without the SDK types. The behavior contract is fully documented here
-/// for parity verification once the seam is resolved. (ui-context-stub.ts:42-178)
+/// BOUND (cycle 23): the ctx.ui bridge is realized over the `pi --mode rpc`
+/// `extension_ui_request`/`extension_ui_response` round-trip (rpc_client.rs) — pi
+/// emits a UI request, the Rust RPC reader answers it. This spec documents the
+/// behavior contract the live bridge upholds. (ui-context-stub.ts:42-178)
 pub struct ArchonUiContextSpec {
     pub bridge: Arc<ArchonUIBridge>,
 }

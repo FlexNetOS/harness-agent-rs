@@ -2,11 +2,12 @@
 //!
 //! PORT of `packages/providers/src/community/pi/resource-loader.ts`.
 //!
-//! The `DefaultResourceLoader` construction and `reload()` call are Pi SDK
-//! operations (the `pi_sdk_not_bound` seam). This module ports the caching
-//! logic, cache-key computation, and option types faithfully, so the behavior
-//! around extension loading (single-reload-per-key invariant, failure eviction,
-//! concurrency dedup) is parity-testable.
+//! The `DefaultResourceLoader` construction and `reload()` call correspond to
+//! the Pi CLI extension loading path, driven via `run_pi_rpc_session` when
+//! `enable_extensions = true`. This module ports the caching logic, cache-key
+//! computation, and option types faithfully, so the behavior around extension
+//! loading (single-reload-per-key invariant, failure eviction, concurrency dedup)
+//! is parity-testable.
 //!
 //! `[≠]` The process-level extension loader cache (`reloadedExtensionLoaderCache`)
 //! uses `tokio::sync::Mutex<HashMap>` in Rust vs a JS `Map<string, Promise>`.
@@ -170,7 +171,8 @@ pub async fn get_or_create_reloaded_extension_loader(
 
         // Simulate reload() — in the live SDK this calls
         // DefaultResourceLoader.reload() which runs extension discovery.
-        // At the pi_sdk_not_bound seam, we just mark the stub as reloaded.
+        // pi's own resource loader runs under `pi --mode rpc`; here we mark the
+        // Rust-side stub as reloaded (the binding delegates discovery to pi).
         // Any real reload error here would be:
         //   throw new Error(`Pi extension load failed: ${message}. Check …`)
         loader.reloaded = true;

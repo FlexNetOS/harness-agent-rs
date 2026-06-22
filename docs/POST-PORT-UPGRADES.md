@@ -62,7 +62,19 @@ capability downgrade. The seam is exactly isolated to the SDK session lifecycle 
 hides behind it). `COPILOT_CAPABILITIES` flags mirror the source exactly (do NOT edit them; the gap is
 the seam, not the flags).
 
-**OWNER RULING (2026-06-21): option (b).** Ship the documented honest seam; port every other surface
+**UPDATE (2026-06-21, owner: "bind each provider SDK now, do it right, no band-aid"): ALL 3 BOUND in pure Rust.**
+Superseding option (b)'s defer: opencode (cycle 21, spawn `opencode serve` + reqwest HTTP/SSE), copilot (cycle 22,
+spawn the `@github/copilot` CLI + JSON-RPC/stdio), and pi (cycle 23, spawn `pi --mode rpc` + JSONL/stdio) are now
+bound by talking to the SAME real CLI/server each SDK wraps — NO Node-SDK wrapper, NO sidecar. Each verified
+end-to-end against the live process (handshake/endpoints/round-trip), with only the authenticated model completion
+env-gated (no creds). **One unavoidable JS artifact:** pi's native tools are fundamentally in-process JS callbacks
+with no RPC dispatch-back, so a bundled ~40-line `crates/har-provider/src/pi/assets/native-tools-bridge.js` registers
+them in-process and proxies execution to Rust over pi's intentional `extension_ui_request` channel (loaded via
+`--extension`; not a per-query Node process). This preserves `native_tools=true` with zero downgrade — the only
+way short of reimplementing pi's agent loop (which is UP-1's pure-Rust end-state). UP-1's pure-Rust-native backend
+(no CLI/SDK at all) remains the post-port target for all providers.
+
+**OWNER RULING (2026-06-21): option (b) [original deferral, now superseded above].** Ship the documented honest seam; port every other surface
 of each Node-SDK community provider (copilot/pi/opencode) now with full no-downgrade parity; leave the
 SDK session binding unbound behind the honest `copilot_sdk_not_bound`-class error; bind all three SDKs
 in a single later pass (or fold into UP-1's pure-Rust backend). Provider rows stay `- [~]` until that

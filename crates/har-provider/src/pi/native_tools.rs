@@ -3,9 +3,9 @@
 //! PORT of `packages/providers/src/community/pi/native-tools.ts`.
 //!
 //! Adapts Archon `NativeTool`s to Pi tool definition descriptors for the
-//! `customTools` array. The actual Pi SDK `defineTool` call is the
-//! `pi_sdk_not_bound` seam; this module ports the schema validation and
-//! mapping logic faithfully.
+//! `customTools` array. The schema validation and mapping logic is fully ported.
+//! At runtime, these descriptors are passed to `run_pi_rpc_session` which
+//! injects them into the native-tools bridge extension for round-trip dispatch.
 
 use har_contract::NativeTool;
 use serde_json::Value;
@@ -15,9 +15,10 @@ use serde_json::Value;
 /// PORT of the `ToolDefinition` result from `buildPiNativeToolDefinitions`
 /// (native-tools.ts:58-76).
 ///
-/// In the live SDK path, each descriptor would be materialized into a Pi
-/// `ToolDefinition` via `defineTool({ name, label, description, parameters, execute })`.
-/// That materialization is the `pi_sdk_not_bound` seam.
+/// In the live RPC path, each descriptor is serialized into `NATIVE_TOOLS_BRIDGE_NAMES`
+/// and the native-tools bridge registers it with Pi via `ctx.registerTool(...)`.
+/// The bridge's `execute` proxies calls back to Rust via the
+/// `extension_ui_request`/`extension_ui_response` round-trip.
 #[derive(Debug, Clone)]
 pub struct PiNativeToolDef {
     /// Tool name (Pi `defineTool.name` and `.label`).
@@ -112,9 +113,10 @@ fn validate_and_normalize_schema(schema: &Value) -> Result<Value, String> {
 ///
 /// PORT of `buildPiNativeToolDefinitions(nativeTools)` (native-tools.ts:58-76).
 ///
-/// The handler's text result becomes the tool's content. In the live SDK path,
-/// each descriptor is materialized via `defineTool({ ..., execute: async (id, params) => ... })`.
-/// That execution path is the `pi_sdk_not_bound` seam.
+/// The handler's text result becomes the tool's content. In the live RPC path,
+/// these descriptors are serialized via `NATIVE_TOOLS_BRIDGE_NAMES` and the
+/// bridge calls `execute(_toolCallId, params, ...)` → `ctx.ui.input("native_tool_dispatch", ...)` →
+/// Rust dispatch handler in `rpc_client.rs` → `AgentToolResult { content: [{type:'text', text}] }`.
 pub fn build_pi_native_tool_definitions(
     native_tools: &[NativeTool],
 ) -> Result<Vec<PiNativeToolDef>, String> {

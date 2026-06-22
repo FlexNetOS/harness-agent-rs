@@ -13,7 +13,8 @@
 //! module exposes the same decision logic in a testable, SDK-seam-free form:
 //! `resolve_pi_session_logic` captures which branch was taken and what path
 //! would be opened, without calling the live SDK. `resolve_pi_session` uses it
-//! when wired to the SDK (which is the `pi_sdk_not_bound` seam in provider.rs).
+//! and the resulting `SessionResolutionDecision` is passed to `run_pi_rpc_session`
+//! which applies it as the `--session` flag or `--no-session` to the Pi CLI.
 
 use std::io;
 
@@ -128,17 +129,17 @@ pub struct ResolvedPiSession {
 /// Resolve a Pi session manager for a `sendQuery` call.
 ///
 /// This is the entry point called from `provider.rs`. Returns `ResolvedPiSession`
-/// which carries the decision. The actual SDK `SessionManager` construction
-/// happens at the `pi_sdk_not_bound` seam in `provider.rs`.
+/// which carries the decision. The session is then established over the
+/// `pi --mode rpc` binding (rpc_client.rs, via `provider.rs`).
 ///
 /// PORT of `resolvePiSession(cwd, resumeSessionId)` (session-resolver.ts:37-62).
 ///
 /// Error handling: ENOENT/ENOTDIR from `SessionManager.list()` → treat as
 /// "no sessions yet" (graceful fallback). Any other error propagates.
 pub fn resolve_pi_session(cwd: &str, resume_session_id: Option<&str>) -> ResolvedPiSession {
-    // In the live SDK path, this would call `SessionManager.list(cwd)` and
-    // pass the results to `resolve_pi_session_logic`. At the `pi_sdk_not_bound`
-    // seam, we perform only the decision logic without a real file-backed list.
+    // The decision logic runs here; pi's own `SessionManager` (under `pi --mode
+    // rpc`) owns the file-backed session list, so we resolve the decision without
+    // re-listing on the Rust side.
     //
     // For the non-SDK path (used in provider.rs before the seam call), we call
     // the pure logic function with no sessions (simulates fresh-session path).

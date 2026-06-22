@@ -18,9 +18,11 @@
 //! # Architecture
 //!
 //! The TypeScript source wraps `@earendil-works/pi-coding-agent`, a Node.js SDK.
-//! All surrounding logic is fully ported. The live SDK session call is the isolated
-//! NEEDS-HUMAN seam (`pi_sdk_not_bound`): `send_query` surfaces a structured error
-//! rather than panicking, preserving all surrounding logic.
+//! All surrounding logic is fully ported. The live SDK session is driven via
+//! `run_pi_rpc_session` (rpc_client.rs): spawns the Pi CLI in `--mode rpc`,
+//! wires the native-tools bridge extension, drives stdin/stdout JSON framing.
+//! When `PI_CODING_AGENT_CLI` is unset, `send_query` surfaces a structured error
+//! (`pi_binary_not_found`) rather than panicking, preserving all surrounding logic.
 //!
 //! PR-09 cycle-20.
 
@@ -31,6 +33,7 @@ pub mod native_tools;
 pub mod options_translator;
 pub mod provider;
 pub mod resource_loader;
+pub mod rpc_client;
 pub mod session_resolver;
 pub mod ui_context_stub;
 
@@ -50,5 +53,6 @@ pub use resource_loader::{
     create_noop_resource_loader, get_or_create_reloaded_extension_loader,
     reset_reloaded_extension_loader_cache, NoopResourceLoaderOptions,
 };
+pub use rpc_client::{find_pi_argv, run_pi_rpc_session, PiRpcSessionOptions};
 pub use session_resolver::{resolve_pi_session, ResolvedSession};
 pub use ui_context_stub::{create_archon_ui_bridge, ArchonUIBridge};

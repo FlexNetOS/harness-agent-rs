@@ -6,8 +6,8 @@
 //! Note: `buildPiTool` / `buildDefaultPiTools` / `resolvePiTools` in the source
 //! produce Pi SDK `Tool` objects backed by Node.js SDK factories. In the Rust
 //! port these produce `PiToolSpec` descriptors (a data-only record capturing
-//! which tools and their env injection intent), since the live SDK call is the
-//! `pi_sdk_not_bound` seam. The descriptors carry full parity for testing.
+//! which tools and their env injection intent); the descriptors are passed to
+//! `run_pi_rpc_session` which applies them as Pi CLI settings. Full parity tested.
 
 use std::collections::{HashMap, HashSet};
 
@@ -157,8 +157,8 @@ pub type PiToolName = String;
 ///
 /// `[≠]` SDK-specific: Source returns Pi SDK `PiTool` objects; Rust port returns
 /// descriptors. Behavior-equivalent for parity-testable surfaces (tool list,
-/// env-injection intent, unknown-tool reporting). The actual tool dispatch is
-/// the `pi_sdk_not_bound` seam. (options-translator.ts:22-147)
+/// env-injection intent, unknown-tool reporting). The actual tool dispatch runs
+/// over the `pi --mode rpc` binding (rpc_client.rs). (options-translator.ts:22-147)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PiToolSpec {
     /// Canonical lowercase tool name (one of PI_TOOL_NAMES).
@@ -182,8 +182,8 @@ pub struct ResolvedTools {
 /// Build a Pi tool descriptor for a given name and env context.
 ///
 /// PORT of `buildPiTool(name, cwd, spawnHook)` (options-translator.ts:130-147).
-/// The `cwd` is not stored in the descriptor — it would be needed at the SDK
-/// call site, which is the `pi_sdk_not_bound` seam.
+/// The `cwd` is not stored in the descriptor — it is supplied at the `pi --mode
+/// rpc` call site (rpc_client.rs).
 fn build_pi_tool_spec(name: &str, has_env: bool) -> PiToolSpec {
     PiToolSpec {
         name: name.to_owned(),

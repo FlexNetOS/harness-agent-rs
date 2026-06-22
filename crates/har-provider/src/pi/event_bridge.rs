@@ -9,11 +9,11 @@
 //! # SDK seam note
 //!
 //! `bridgeSession` in the source takes a live `AgentSession` (a Pi SDK type).
-//! In the Rust port, `bridgeSession` is represented as a Rust `async fn` that
-//! accepts the same logical inputs in a testable form. The actual live session
-//! call is the `pi_sdk_not_bound` seam in `provider.rs`. The event mapping logic
-//! (`mapPiEvent`, `buildResultChunk`, `usageToTokens`, `serializeToolResult`,
-//! `AsyncQueue`) is fully portable and parity-testable.
+//! In the Rust port, `bridgeSession` is replaced by `run_pi_rpc_session` in
+//! `rpc_client.rs` which reads Pi CLI stdout line-by-line and dispatches each
+//! JSON event through `parse_pi_event_json` + `map_pi_event`. The event mapping
+//! logic (`mapPiEvent`, `buildResultChunk`, `usageToTokens`, `serializeToolResult`,
+//! `AsyncQueue`) is fully portable and parity-tested.
 
 use har_contract::{MessageChunk, TokenUsage};
 use serde_json::Value;
