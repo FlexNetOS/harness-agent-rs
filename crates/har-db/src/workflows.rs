@@ -1293,7 +1293,7 @@ pub async fn delete_old_workflow_runs(
                 );
                 let result = executor.query(&runs_sql, vec![]).await?;
 
-                Ok(serde_json::to_value(result.row_count).map_err(DbError::from)?)
+                serde_json::to_value(result.row_count).map_err(DbError::from)
             })
         }))
         .await

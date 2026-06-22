@@ -150,7 +150,7 @@ NOTE: Distinct from `ArtifactType` — this is a node's on-disk output file desc
 ### UNIT WF-08: Workflow Node Session Schema
 **Source:** `packages/workflows/src/schemas/workflow-node-session.ts`
 **Rust target:** `crates/har-workflow-schema/src/workflow_node_session.rs`
-**Status:** `- [~]` ported, parity unproven (cycle 3)
+**Status:** `- [x]` ported + parity-verified (cycle 3)
 
 NEEDS-HUMAN resolved: workflow-node-session.ts was read. Actual shape:
 - `workflow_name: String`, `node_id: String`, `scope_key: String`, `provider: String`
@@ -470,6 +470,29 @@ never-throws; `get_completed_dag_node_outputs` is `Result<IndexMap<..>, StoreErr
 **Rust target:** `crates/providers/src/shared/structured_output.rs`
 
 - [ ] `validateStructuredOutput(output: unknown, schema: Record, onCompileError: fn) -> { valid: bool, errors: Vec<String> }` — validates against JSON Schema; fail-safe on uncompilable schema (dag-executor.ts:1186-1206)
+
+### UNIT WF-33: Per-Node Session Store (SQL builders + row helpers)
+**Source:** `packages/workflows/src/schemas/workflow-node-session.ts` (schema types, ported as WF-08 in har-workflow-schema) + `packages/core/src/db/workflow-node-sessions.ts` (CRUD SQL patterns)
+**Rust target:** `crates/har-db/src/workflow_node_sessions.rs`
+
+WF-08 handled the **schema type** (`WorkflowNodeSession`) in har-workflow-schema. WF-33 handles the **SQL-layer** — validation, row normalization, and parameterized SQL builders used by SqlWorkflowStore for composite-PK CRUD on `workflow_node_sessions`.
+
+- [x] `WorkflowNodeSessionRow` struct: 8 fields; snake_case wire names; `last_run_id` serializes as null via `skip_serializing_if`; tested round-trip
+- [x] `validate_session(workflow_name, node_id, scope_key, provider, provider_session_id) -> Vec<String>` — non-empty check on all 5 required strings (Zod `.nonempty()` equivalent); collects ALL errors; tested accept + 5 individual rejects + combined reject
+- [x] `validate_session_value(&WorkflowNodeSession) -> Vec<String>` — convenience wrapper over above
+- [x] `upsert_workflow_node_session_sql(dialect, &session) -> String` — `INSERT INTO workflow_node_sessions (...) VALUES ($1..$8) ON CONFLICT (workflow_name,node_id,scope_key,provider) DO UPDATE SET ...` (all 8 columns); param count = $1..$8 tested
+- [x] `delete_workflow_node_sessions_sql(wf, node, scope, provider) -> String` — WHERE all four PK fields = $1..$4; param count tested
+- [x] `get_workflow_node_session_sql() -> String` — SELECT with same 4-field WHERE filter
+- [x] Parameter builders: `upsert_*_params`, `delete_*_params`, `get_*_params` — each returns correct Vec<Value> count
+- [x] `normalize_session_row(&IndexMap<String,Value>) -> Option<WorkflowNodeSession>` — DB row → struct; missing required → None; null last_run_id → None
+- [x] Tests: 24 tests (5 validation accepts/rejects, 3 SQL param counts, 3 round-trip serialize/deserialize, 2 row normalization happy/negative, wire-name snake_case check)
+
+### UNIT WF-34: Per-Node Session Store — SqlWorkflowStore integration
+**Source:** Same as WF-33 (CRUD methods in SqlWorkflowStore impl that calls the helpers above)
+**Rust target:** `crates/har-db/src/workflows.rs` (workflow_node_sessions methods added to existing SqlWorkflowStore impl, NOT a separate crate module — lib.rs wiring handled by orchestrator per task instruction)
+
+- [ ] Integration into `SqlWorkflowStore::upsert_workflow_node_session()` / `delete_workflow_node_sessions()` / `get_workflow_node_session()` — thin wrappers around WF-33 helpers + `self.db.query()` calls
+- [ ] `DeleteSessionsFilter::NodeSessions` variant on the existing filter enum (if not yet present)
 
 ---
 
