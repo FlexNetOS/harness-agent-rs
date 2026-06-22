@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 11   # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + 24 (PR-12 loadMcpConfig) + 25 (WF-19 store trait) + 26 (CO-01 db dialect layer) + 27 (CO-01 Database trait + SQLite adapter).
-cycles_total: 27
+cycles_this_session: 3    # resume 2026-06-22 (owner: "pick 7 new tasks this session"); units T1=CO-03, T2=CO-01b, T3=CO-02 DONE+verified+committed. T4-T7 PENDING (interrupted: usage exhausted).
+cycles_total: 30          # 27 + 3 (cycle-28 session units T1/T2/T3)
 ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
         cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
         query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
@@ -17,6 +17,51 @@ ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOU
         cycle 24 added PR-12 loadMcpConfig (full `- [x]`), closing the carried MCP `- [≈]` (inline stopgap) and
         the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14, WF-19; PA-01/06/07;
         GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+status_cycle28: cycle 28 session (2026-06-22) — owner directive "/harness:rust-port-merge resume and pick 7 new task".
+        Picked a coherent 7-unit slice = **complete the DB backend + land a verified `impl WorkflowStore`** (the WF-09
+        keystone dependency). Spec card: findings/cycle28-spec.md (7 task cards, owner spec-before-implementing rule).
+        **3 of 7 DONE + parity-verified + committed (foundation):**
+        • **T1 = CO-03 Postgres bundled schema** `- [x]` (commit 9ec006f) — get_schema_sql() embeds vendored
+          migrations/000_combined.sql (byte-equal cmp, include_str!); 17 remote_agent_* tables; pg-only (sole getSchemaSQL
+          caller). 3 tests.
+        • **T2 = CO-01b PostgresAdapter** `- [x]` (commit e566ded) — sqlx PgPool, advisory-lock schema init (1796) +
+          installNotifyTrigger (1797, WORKFLOW_EVENT_NOTIFY_SQL verbatim, non-fatal) + DbNotificationListener::listen via
+          PgListener. Added sqlx features postgres/json/bigdecimal. **GATE FAILED FIRST on 4 real divergences** the verifier
+          caught+fixed (NUMERIC decode panic→BigDecimal+normalized; INT8→string not Number; OID→Number split;
+          string→typed-column bind downgrade→UUID-sniff+native jsonb in build_args) → RE-VERIFY PASS (full type/rowCount/
+          RETURNING/LISTEN-NOTIFY/transaction battery vs live TS pg over docker postgres:16). 43 har-db tests (39 unit + 4
+          DATABASE_URL-gated live). findings/parity-cycle28-pg.md; durable oracle examples/oracle_cycle28_pg.rs + tests/postgres_live.rs.
+        • **T3 = CO-02 connection auto-detect** `- [x]` (commit db0071d) — get_database singleton (DATABASE_URL→pg else
+          SQLite at archon_home/archon.db; ARCHON_DOCKER warn), get_dialect, get_database_type (env-only), get_db_notification_listener
+          (option-4a separate listener singleton: pg Some / sqlite None), close_database, reset_database, legacy pool forwarder.
+          Construct-once ATOMIC (lock held across async ctor — no TOCTOU). **GATE PASS, no defects** — byte-exact strings (3 log
+          events + 107-char docker hint + 145-char dialect-not-init msg) + LIVE pg branch exercised end-to-end. findings/parity-cycle28-conn.md;
+          tests/connection_live.rs. Landed in crates/har-db/src/connection.rs (LEDGER CORRECTION: crates/core doesn't exist).
+        **Carries (`- [≈]`):** pg Date→ISO, numeric/uuid/int8→string, async ctor (sqlx pools build async), throw→Result, dbPath→db_path field.
+        Workspace green: cargo build + clippy --all-targets -D warnings + fmt clean; har-db 52 unit (+live when DATABASE_URL set).
+        docker pg probe (har_pg_probe) STOPPED/cleaned at wrap-up. Commits LOCAL on main, NOT pushed (owner defer-push).
+        **NEXT (4 remaining units, all PENDING) — store-impl modules over the now-complete adapter+connection+schema:**
+        • **T4 = CO-04 workflows.ts (1088 lines, the behavior-rich core)** — port each exported fn as a method on a NEW
+          `SqlWorkflowStore { db: Arc<dyn Database>, dialect }` (create crates/har-db/src/store.rs scaffolding + workflows.rs).
+          Method sigs MUST match the WF-19 `WorkflowStore` trait in crates/har-ledger/src/store.rs (reuse its param/result
+          structs; add har-ledger + har-workflow-schema deps to har-db). LOAD-BEARING: resumeWorkflowRun = transactional
+          compare-and-swap on status (read source + workflows.resume-cas.integration.test.ts); getCompletedDagNodeOutputs =
+          insertion-ordered IndexMap + THROWS (Result, don't swallow); getActiveWorkflowRunByPath self-tiebreaker. Use SqlDialect
+          builders via self.db.sql() for now()/nowMinusDays()/jsonMerge() so BOTH backends get correct SQL. Prefer SQLite-backed
+          in-process behavioral tests (SqliteAdapter, no server) for CAS+CRUD; pg variant DATABASE_URL-gated.
+          (The T4 porter was launched then INTERRUPTED before starting — re-launch the same prompt; it's preserved in this turn's history.)
+        • **T5 = CO-05 workflow-events.ts (222 ln)** — createWorkflowEvent (fire-and-forget, MUST-NOT-THROW → swallow+log, return ());
+          getWorkflowEventsSince (ordered). Own module workflow_events.rs + impl SqlWorkflowStore block.
+        • **T6 = CO-06 workflow-node-sessions.ts (121 ln)** — get/upsert/delete node sessions; composite PK
+          (workflow_name,node_id,scope_key,provider) ON CONFLICT upsert; provider-filter delete. Own module + impl block.
+        • **T7 = CO-08 codebases.ts (183 ln) + WIRE `impl WorkflowStore for SqlWorkflowStore`** — getCodebase/getCodebaseEnvVars
+          (the store's remaining methods) + CRUD; then assemble the COMPLETE object-safe `impl WorkflowStore` delegating to
+          T4/T5/T6/T7 inherent methods → end-to-end store smoke battery SQLite-diffed vs bun. THIS closes the WorkflowStore impl
+          that unblocks **WF-09 dag-executor (keystone)**.
+        PARALLELISM NOTE: T5+T6 are independent siblings (can port in parallel) but DON'T let parallel agents edit lib.rs — wire
+        lib.rs yourself after. T7 depends on T4/T5/T6. Conversations (CO-07) deferred (orchestrator-facing, not in store trait).
+        VERIFY INFRA: docker available; `docker run -d --rm --name har_pg_probe -e POSTGRES_PASSWORD=postgres -p 55432:5432
+        postgres:16-alpine` → DATABASE_URL=postgresql://postgres:postgres@localhost:55432/postgres. bun 1.3.14 for sqlite/TS oracle.
 status_cycle27: cycle 27 DONE — **CO-01 `Database` trait + SQLite adapter `- [x]`** (CO-01 driver-bound SQLite slice done;
         still 38/79 FULL units — CO-01 not yet a full unit, pg adapter + connection auto-detect remain). Driver = **sqlx 0.9.0**
         (cached + network up; `cc` present for bundled C-SQLite), features `runtime-tokio`+`tls-rustls-ring`+`sqlite`+`uuid`+`chrono`

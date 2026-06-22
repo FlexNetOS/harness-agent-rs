@@ -4,11 +4,47 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-22
-branch: main — local commits ahead of origin/main (not pushed this cycle; push when owner asks)
-mode: ITERATE — cycles_total=27 (this session 11: cycles 17-27). ALL provider SDKs BOUND + PR-12 + WF-19 trait + CO-01 db dialect layer + CO-01 Database trait + SQLite adapter.
-resume_command: /harness:rust-port-merge   (or /session-relay-resume)
+branch: main — local commits ahead of origin/main (not pushed; push when owner asks). cycle-28 commits: 9ec006f, e566ded, db0071d (+ Cargo.lock).
+mode: ITERATE — cycles_total=30. cycle-28 session (owner: "pick 7 new tasks") landed 3 of 7: CO-03 schema, CO-01b PostgresAdapter, CO-02 connection. T4-T7 PENDING (usage exhausted, clean stop).
+resume_command: /harness:rust-port-merge resume   (or /session-relay-resume)
 
-## Where we are: 38/79 full units + ALL provider ports BOUND; CO-01 db layer (dialect + Database trait + SQLite adapter) DONE
+## CYCLE 28 (this session, 2026-06-22): DB-backend completion — 3 of 7 tasks DONE+verified+committed
+
+Owner directive: "/harness:rust-port-merge resume and pick 7 new task for this session." Picked a coherent 7-unit slice =
+**complete the DB backend + land a verified `impl WorkflowStore`** (the WF-09 keystone dependency). Spec: findings/cycle28-spec.md.
+
+**FOUNDATION DONE (T1-T3, all parity-verified, committed LOCAL):**
+- **T1 CO-03 Postgres bundled schema** `- [x]` (9ec006f) — `get_schema_sql()` embeds vendored `migrations/000_combined.sql`
+  (byte-equal `cmp`, `include_str!`); 17 `remote_agent_*` tables; pg-only. crates/har-db/src/schema.rs + bundled_schema.sql.
+- **T2 CO-01b PostgresAdapter** `- [x]` (e566ded) — sqlx `PgPool` + advisory-lock schema init (1796) + installNotifyTrigger
+  (1797, WORKFLOW_EVENT_NOTIFY_SQL verbatim, non-fatal) + DbNotificationListener::listen via `PgListener`. sqlx features
+  postgres/json/bigdecimal added. **GATE FAILED FIRST on 4 real divergences** (NUMERIC decode panic→BigDecimal+normalized;
+  INT8→string not Number; OID→Number split; string→typed-column bind downgrade→UUID-sniff+native jsonb) → RE-VERIFY PASS vs
+  live TS pg over docker postgres:16. 43 tests (39 unit + 4 DATABASE_URL-gated live). examples/oracle_cycle28_pg.rs, tests/postgres_live.rs.
+- **T3 CO-02 connection auto-detect** `- [x]` (db0071d) — get_database singleton (DATABASE_URL→pg / else SQLite at
+  archon_home/archon.db; ARCHON_DOCKER warn), get_dialect, get_database_type (env-only), get_db_notification_listener (option-4a),
+  close/reset, legacy pool. Construct-once ATOMIC (lock held across async ctor). **GATE PASS no defects** — byte-exact strings +
+  LIVE pg branch end-to-end. crates/har-db/src/connection.rs (LEDGER CORRECTION: crates/core doesn't exist). tests/connection_live.rs.
+
+Carries `- [≈]`: pg Date→ISO, numeric/uuid/int8→string, async ctor, throw→Result, dbPath→db_path. Workspace green (build+clippy
+--all-targets -D warnings+fmt). docker pg probe cleaned up at wrap. Commits NOT pushed (owner defer-push).
+
+**NEXT — 4 remaining tasks (T4-T7), all PENDING, over the now-complete adapter+connection+schema. Full per-task instructions
+in loop_state.md status_cycle28. Summary:**
+- **T4 CO-04 workflows.ts (1088 ln, behavior-rich)** — NEW `SqlWorkflowStore { db: Arc<dyn Database>, dialect }` in store.rs +
+  workflows.rs; method sigs MATCH the WF-19 `WorkflowStore` trait (crates/har-ledger/src/store.rs — reuse its structs; add
+  har-ledger + har-workflow-schema deps). LOAD-BEARING: resume CAS (transactional, read workflows.resume-cas.integration.test.ts);
+  getCompletedDagNodeOutputs (IndexMap + THROWS); getActiveWorkflowRunByPath self-tiebreaker. SqlDialect builders via self.db.sql().
+  SQLite-backed in-process behavioral tests for CAS+CRUD. (T4 porter prompt was launched+interrupted — re-use it from this turn's history.)
+- **T5 CO-05 workflow-events.ts (222 ln)** — createWorkflowEvent (never-throws, swallow+log, return ()) + getWorkflowEventsSince (ordered).
+- **T6 CO-06 workflow-node-sessions.ts (121 ln)** — get/upsert/delete; composite-PK ON CONFLICT upsert; provider-filter delete.
+- **T7 CO-08 codebases.ts (183 ln) + WIRE `impl WorkflowStore for SqlWorkflowStore`** — getCodebase/getCodebaseEnvVars + CRUD,
+  then assemble the COMPLETE object-safe trait impl delegating to T4/T5/T6/T7 → store smoke battery SQLite-diffed vs bun. Closes
+  the WorkflowStore impl → unblocks **WF-09 dag-executor (keystone)**.
+PARALLELISM: T5+T6 independent (parallel OK, but wire lib.rs yourself — don't let parallel agents race on it). T7 needs T4/5/6.
+CO-07 conversations deferred (orchestrator-facing). VERIFY INFRA: docker `postgres:16-alpine` on :55432, bun 1.3.14.
+
+## Where we are: 41/79 full units + ALL provider ports BOUND; CO-01 (dialect+Database+SQLite+Postgres adapters), CO-02, CO-03 DONE
 
 **cycle 27 (CO-01 `Database` trait + SQLite adapter) — `- [x]` (CO-01 driver-bound SQLite slice; still 38/79 full units;
 pg adapter + connection auto-detect remain).** Driver = **sqlx 0.9.0** (`runtime-tokio`+`tls-rustls-ring`+`sqlite`+`uuid`+

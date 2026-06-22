@@ -1132,10 +1132,10 @@ Driver-bound layer (cycle 27 — sqlx 0.9 / sqlite): PARITY-VERIFIED 2026-06-22 
 - [x] `Database` trait `query` / `with_transaction` signatures — object-safe `#[async_trait]`; TS generic `<T>`/`<U>` erased to `serde_json::Value` (`- [≈]`; TS `as T[]` is an unchecked runtime cast). `with_transaction` takes a boxed `for<'tx> FnOnce(&'tx dyn DbExecutor) -> BoxFuture` (object-safe, no method generic). `DbExecutor` narrow inner trait exposes `query` only. (har-db/src/database.rs)
 - [x] SQLite adapter `query`/`withTransaction` impl (CO-01a) ← sqlite.ts:17-517 — sqlx-sqlite over bundled C-SQLite. PRAGMA WAL/busy_timeout=5000/foreign_keys=ON; createSchema (BYTE-FAITHFUL inlined CREATE TABLE/INDEX block) + migrate_columns (PRAGMA table_info via direct fetch path bypassing public dispatch — mirrors source `db.prepare().all()`; conditional ALTER TABLE, per-table warn-not-throw). query dispatch: SELECT/WITH→rows; RETURNING+INSERT→fetch; RETURNING on UPDATE/DELETE→throw EXACT message built from CONVERTED (`?`) SQL (D1 fix); else execute rowCount=changes; PRAGMA/EXPLAIN fall through to mutation path rows=[]/rowCount=0 (D2 fix, bun-parity). with_transaction BEGIN/COMMIT/ROLLBACK (rollback-fail logged, original err rethrown). **convertPlaceholders ELIMINATED** — sqlx-sqlite resolves `$N` by index (out-of-order `$2…$1` + repeated `$1` PROVEN bun-identical); `::jsonb`/`::INTERVAL` strip moot for SQLite-routed SQL. 31 har-db tests. (har-db/src/sqlite.rs, error.rs)
 
-Deferred to cycle 28 (pg driver + connection — NOT stubbed, genuine scope boundary; connection.ts constructs BOTH adapters so needs pg first):
-- [ ] PostgreSQL adapter `query`/`withTransaction` impl: `packages/core/src/db/adapters/postgres.ts` (CO-01b) + `installNotifyTrigger`
-- [ ] `DbNotificationListener` Postgres impl (LISTEN/NOTIFY on held connection — sqlx `PgListener`)
-- [ ] `getDatabaseType()` — env-based selection (core/index.ts; api.ts imports) [lands with connection.ts auto-detect, CO-02]
+Postgres driver layer (cycle 28 T2 — sqlx 0.9 / postgres): PARITY-VERIFIED 2026-06-22 (differential vs live TS `pg` over docker postgres:16, full type/rowCount/RETURNING/LISTEN-NOTIFY/transaction battery; FAILED FIRST on 4 real divergences, fixed+re-passed) — see findings/parity-cycle28-pg.md
+- [x] PostgreSQL adapter `query`/`withTransaction` impl (CO-01b) ← postgres.ts:17-232 — sqlx `PgPool` (max=10, idle=none, acquire-timeout=10s). schema init eager in async ctor (advisory `pg_advisory_xact_lock(1796)`, `get_schema_sql()`, COMMIT/ROLLBACK-on-err `db.postgres_schema_init_*`) + `installNotifyTrigger` (lock 1797, WORKFLOW_EVENT_NOTIFY_SQL verbatim, non-fatal WARN). Native `$N` binding (no convertPlaceholders). GATE-fixed: NUMERIC decode (BigDecimal+normalized), INT8→string (node-pg bigint-as-string, split from OID→Number), string→typed-column bind (UUID-sniff + native jsonb in build_args). `- [≈]`: Date→ISO, numeric/uuid/int8→string, async ctor, pool-error-hook relocation. (har-db/src/postgres.rs)
+- [x] `DbNotificationListener` Postgres impl ← postgres.ts:189-231 — sqlx `PgListener`, channel-name validated `^[a-z_][a-z0-9_]*$/i` (exact `Invalid LISTEN channel name: {channel}`), spawned forwarder + mpsc-stop unsubscribe closure, destroy-not-recycle. LISTEN/NOTIFY round-trip proven live (trigger→pg_notify→on_notify). (har-db/src/postgres.rs)
+- [x] `getDatabaseType()` — env-based selection — landed with CO-02 connection auto-detect (cycle 28 T3). 43 har-db tests (39 unit + 4 DATABASE_URL-gated live). Durable oracle: examples/oracle_cycle28_pg.rs, tests/postgres_live.rs.
 
 ### UNIT CO-02: Database Connection
 **Source:** `packages/core/src/db/connection.ts`
@@ -1143,32 +1143,38 @@ Deferred to cycle 28 (pg driver + connection — NOT stubbed, genuine scope boun
 **Ledger correction:** ledger named `crates/core/src/db/connection.rs` but `crates/core` does not
 exist — har-db owns the CO adapters (cycles 26/27/28), so connection lands in `crates/har-db/src/connection.rs`.
 
-- [~] `getDatabase()` — singleton auto-detect (DATABASE_URL→Postgres / else SQLite at getArchonHome()/archon.db);
+- [x] `getDatabase()` — singleton auto-detect (DATABASE_URL→Postgres / else SQLite at getArchonHome()/archon.db);
       exact log events `db.connection_postgresql_selected` / `db.connection_sqlite_selected` / `db.docker_using_sqlite`
       (WARN, exact hint); at-most-one adapter under concurrent first-callers (tokio Mutex held across async ctor).
       `- [≈]` async getter vs sync TS getter (sqlx pools/schema-init are async).
-- [~] `getDialect()` — cached Dialect, inits DB if needed, exact "Database dialect not initialized…" throw →
+- [x] `getDialect()` — cached Dialect, inits DB if needed, exact "Database dialect not initialized…" throw →
       `DbError::DialectNotInitialized` (byte-exact message). `- [≈]` async + throw→Result.
-- [~] `getDatabaseType()` — env-only, NO init → `DatabaseType::{Postgresql,Sqlite}` (`as_str()` = "postgresql"/"sqlite",
+- [x] `getDatabaseType()` — env-only, NO init → `DatabaseType::{Postgresql,Sqlite}` (`as_str()` = "postgresql"/"sqlite",
       exact). Empty DATABASE_URL = JS-falsy → Sqlite.
-- [~] `getDbNotificationListener()` — None unless type==postgresql AND backend supports listen. Seam: **option 4a**
+- [x] `getDbNotificationListener()` — None unless type==postgresql AND backend supports listen. Seam: **option 4a**
       (separate `Arc<dyn DbNotificationListener>` singleton, same pg adapter, populated only on pg branch). sqlite→None
       (no init). `- [≈]` async.
-- [~] `closeDatabase()` (async) — close() then clear singleton (db+dialect+listener→None).
-- [~] `resetDatabase()` — clear WITHOUT closing (sync test seam; `try_lock` to keep sync signature inside a runtime).
-- [~] legacy `pool` — `pool::query(sql, Option<params>)` / `pool::end()` forwarders (`<T>`→Value erasure).
+- [x] `closeDatabase()` (async) — close() then clear singleton (db+dialect+listener→None).
+- [x] `resetDatabase()` — clear WITHOUT closing (sync test seam; `try_lock` to keep sync signature inside a runtime).
+- [x] legacy `pool` — `pool::query(sql, Option<params>)` / `pool::end()` forwarders (`<T>`→Value erasure).
 - [≈] `initDatabase(url?)` — TS connection.ts exposes NO `initDatabase`; auto-detect IS the init path (getDatabase).
 - [x] WAL mode for SQLite — already done in SqliteAdapter::open (cycle 27).
 
-**Status:** ported `- [~]` (parity unproven). Build/clippy(--all-targets -D warnings)/fmt clean; 9 connection tests
-+ 52 har-db total pass. Live-pg path is DATABASE_URL-gated (not exercised in default run).
+**Status:** `- [x]` PARITY-VERIFIED 2026-06-22 (cycle 28 T3) — differential vs live TS connection.ts: byte-exact
+log events + 107-char docker hint + 145-char dialect-not-init msg; construct-once atomic (no TOCTOU, lock held
+across async ctor); LIVE pg branch exercised end-to-end (SELECT 1 + listener .listen() receives pg_notify) + sqlite
+None. PASS, no defects. findings/parity-cycle28-conn.md; tests/connection_live.rs. 53 tests w/ DATABASE_URL (48 unit + live).
 
 ### UNIT CO-03: Database Schema (bundled SQL)
 **Source:** `packages/core/src/db/bundled-schema.ts`, `bundled-schema.generated.ts`
-**Rust target:** MAP→`sqlx::migrate!` with migration files in `migrations/`
+**Rust target:** `crates/har-db/src/schema.rs` + vendored `crates/har-db/src/bundled_schema.sql`
+**Status:** `- [x]` (cycle 28 T1) — `get_schema_sql()` port of `bundled-schema.ts:17-24`. Vendors
+`migrations/000_combined.sql` (byte-equal `cmp`) into the crate, `include_str!`s it. Binary/source build
+branches collapse to the compile-time embed (`- [≈]`). PG-dialect, 17 `remote_agent_*` tables. SQLite keeps
+its c27 inlined schema (this is the sole `getSchemaSQL` caller = pg). 3 tests (embed + idempotency style).
 
-- [ ] Schema version + migration (bundled-schema.ts)
-- [ ] Tables: conversations, codebases, messages, sessions, users, env_vars, isolation_environments, workflow_events, workflow_node_sessions, workflow_run (bundled-schema.generated.ts; inferred from db/*.ts names)
+- [x] `getSchemaSQL()` → `get_schema_sql() -> &'static str` (compile-time embed of 000_combined.sql, byte-equal)
+- [x] Tables: 17 `remote_agent_*` (codebases, codebase_env_vars, users, user_identities, conversations, sessions, isolation_environments, workflow_runs, workflow_events, workflow_node_sessions, messages, user_github_tokens, auth_*) — embedded verbatim, exercised live by the pg adapter init (T2)
 
 ### UNIT CO-04: Workflow DB Operations
 **Source:** `packages/core/src/db/workflows.ts`
