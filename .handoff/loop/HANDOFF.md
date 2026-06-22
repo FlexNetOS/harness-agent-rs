@@ -4,11 +4,23 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-21
-branch: main (commit 0d7b728) — PUSHED to origin/main
-mode: ITERATE — stopped after cycle 20 (cycles_total=20, this session 4: cycles 17,18,19,20)
+branch: main (commit 2bea03e) — PUSHED to origin/main
+mode: ITERATE — cycles_total=23 (this session 7: cycles 17-23). ALL provider SDKs BOUND.
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 36/79 full units + ALL 3 community providers' ported-surfaces verified
+## Where we are: 36/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+
+**Provider track COMPLETE.** claude+codex (CLI via cli_stream) and the 3 community Node-SDK providers
+(copilot/opencode/pi) are all bound in PURE RUST, each verified end-to-end against the REAL CLI/server it
+wraps — NO Node-SDK wrapper, NO sidecar (owner directive: do it right, no band-aid). Bindings:
+- **OpenCode (c21):** spawn `opencode serve` (embedded HTTP) + reqwest HTTP/SSE. Verified vs live server.
+- **Copilot (c22):** spawn `@github/copilot` CLI + JSON-RPC 2.0 / stdio (LSP framing). Handshake proven live (protoVer=3).
+- **Pi (c23):** spawn `pi --mode rpc` + JSONL/stdio + ctx.ui bridge + the native-tools bridge (bundled
+  `assets/native-tools-bridge.js` → `extension_ui_request "native_tool_dispatch"` → Rust NativeTool handler).
+  Round-trip proven live; `native_tools=true` no downgrade. The ONE JS artifact (pi tools are in-process JS callbacks).
+Only the authenticated model-completion leg is env-gated SKIP everywhere (no creds). docs/POST-PORT-UPGRADES.md UP-2 updated.
+
+## (earlier this session) 36/79 full units + community ported-surfaces verified
 
 This session (2026-06-21) resumed from 34/79 and ran 4 cycles, each differentially parity-verified vs
 live source (bun 1.3.14). Every gate FAILed on first pass and was fixed + re-verified (the re-verify
@@ -45,12 +57,8 @@ UP-2. The seam is verified isolated each cycle (nothing portable hides behind it
 like agent-materialization fire BEFORE the seam).
 
 ## Resume — next units (dependency order toward WF-09 dag-executor)
-ALL provider ports (PR-01..11) are now done as ported-surfaces. The 3 community providers (copilot/opencode/pi)
-have `- [~]` send_query rows pending ONE deferred task: the SDK-binding pass. Pick the next unit:
-1. **The SDK-binding pass** (binds copilot+opencode+pi Node SDKs → flips their 3 provider `send_query` rows
-   `- [~]`→`- [x]`; owner chose defer-and-bind-later, UP-2 b). Decide the binding mechanism (Node sidecar vs
-   other) — this is an OWNER decision when it's tackled. Until then the 3 seams are honest+isolated (no downgrade).
-2. **PR-12 loadMcpConfig** (`packages/providers/src/mcp/config.ts`): port fully + rewire into
+ALL provider ports (PR-01..11) are DONE and fully bound (CLI + the 3 Node SDKs). Next unit:
+1. **PR-12 loadMcpConfig** (`packages/providers/src/mcp/config.ts`): port fully + rewire into
    claude/codex/copilot/opencode/pi `send_query` — closes the carried `- [≈]` (the inline stopgap `load_mcp_config`)
    and the `&[]` mcp_server_names gap. See loop_state "Open follow-ups". Pure-logic, good differential target.
 3. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
