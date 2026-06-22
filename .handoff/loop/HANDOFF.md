@@ -201,3 +201,6 @@ cd ~/Desktop/meta/harness-agent-rs && cargo clippy --all-targets -- -D warnings 
 - New deps this session: `jsonrepair-rs 0.2.1`, `rand`, `url`, `hex`, `futures-util`.
 - ICM: `icm recall "harness-agent-rs Archon port"`; `icm recall "parity lessons" -t decisions-harness-agent-rs`.
 - Commits this session (LOCAL on main, not pushed): bb89035 (c17), 8050671 (c18), a325096 (c19).
+
+## CYCLE 28 continued — T4 DONE
+- **T4 CO-04 workflows.ts ** — SqlWorkflowStore store.rs + workflows.rs (664 lines CRUD/CAS impl). Gate: build/clippy clean, +37 tests.

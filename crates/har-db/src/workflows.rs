@@ -13,6 +13,9 @@
 //! | `pool.query('BEGIN')`     | `self.db.with_transaction(\|executor\| …)`  |
 //! | `createLogger('db.workflows')` | `tracing::warn!/error!/info! macros   |
 
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::useless_conversion)]
+#![allow(clippy::redundant_closure)]
 use crate::adapters::SqlDialect;
 use crate::database::Database;
 use crate::error::DbError;
