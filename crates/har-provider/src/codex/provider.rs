@@ -28,7 +28,6 @@
 
 use std::collections::HashMap;
 use std::io::Write as IoWrite;
-use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -317,167 +316,13 @@ pub fn build_codex_mcp_config_overrides(servers: &Map<String, Value>) -> Option<
 }
 
 // ─── MCP config file loading ──────────────────────────────────────────────────
-
-/// Loaded MCP config data. Source: `LoadedMcpConfig` (mcp/config.ts:6-10).
-#[derive(Debug, Default)]
-pub struct LoadedMcpConfig {
-    pub servers: Map<String, Value>,
-    pub server_names: Vec<String>,
-    pub missing_vars: Vec<String>,
-}
-
-/// Expand env var references in a single string value.
-fn expand_env_var_string(
-    s: &str,
-    missing_vars: &mut Vec<String>,
-    env_source: &HashMap<String, Option<String>>,
-) -> String {
-    // Pattern: $VAR_NAME or ${VAR_NAME}
-    let mut result = String::new();
-    let mut remaining = s;
-    while let Some(idx) = remaining.find('$') {
-        result.push_str(&remaining[..idx]);
-        let after = &remaining[idx + 1..];
-        if after.starts_with('{') {
-            // ${VAR_NAME}
-            if let Some(close) = after.find('}') {
-                let var_name = &after[1..close];
-                let val = env_source.get(var_name).and_then(|v| v.as_deref());
-                if val.is_none() {
-                    missing_vars.push(var_name.to_owned());
-                }
-                result.push_str(val.unwrap_or(""));
-                remaining = &after[close + 1..];
-            } else {
-                // No closing brace — treat as literal
-                result.push('$');
-                remaining = after;
-            }
-        } else {
-            // $VAR_NAME — capture identifier chars
-            let end = after
-                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                .unwrap_or(after.len());
-            let var_name = &after[..end];
-            if !var_name.is_empty()
-                && var_name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
-            {
-                let val = env_source.get(var_name).and_then(|v| v.as_deref());
-                if val.is_none() {
-                    missing_vars.push(var_name.to_owned());
-                }
-                result.push_str(val.unwrap_or(""));
-                remaining = &after[end..];
-            } else {
-                result.push('$');
-                remaining = after;
-            }
-        }
-    }
-    result.push_str(remaining);
-    result
-}
-
-/// Expand env vars in a JSON value recursively.
-///
-/// Source: `expandEnvVars` (mcp/config.ts:50-100).
-fn expand_env_vars_in_value(
-    val: &Value,
-    missing_vars: &mut Vec<String>,
-    env_source: &HashMap<String, Option<String>>,
-) -> Value {
-    match val {
-        Value::String(s) => Value::String(expand_env_var_string(s, missing_vars, env_source)),
-        Value::Object(obj) => {
-            let mut expanded = Map::new();
-            for (k, v) in obj {
-                expanded.insert(
-                    k.clone(),
-                    expand_env_vars_in_value(v, missing_vars, env_source),
-                );
-            }
-            Value::Object(expanded)
-        }
-        Value::Array(arr) => Value::Array(
-            arr.iter()
-                .map(|v| expand_env_vars_in_value(v, missing_vars, env_source))
-                .collect(),
-        ),
-        _ => val.clone(),
-    }
-}
-
-/// Load MCP config from a JSON file, expanding env vars.
-///
-/// Port of `loadMcpConfig(mcpPath, cwd, envSource)` (mcp/config.ts).
-///
-/// The `env_source` is built from `process.env` overlaid with `requestOptions.env`.
-pub async fn load_mcp_config(
-    mcp_path: &str,
-    cwd: &str,
-    env_source: &HashMap<String, Option<String>>,
-) -> Result<LoadedMcpConfig, String> {
-    // Resolve relative paths against cwd
-    let resolved_path = if Path::new(mcp_path).is_absolute() {
-        mcp_path.to_owned()
-    } else {
-        Path::new(cwd).join(mcp_path).to_string_lossy().into_owned()
-    };
-
-    let contents = tokio::fs::read_to_string(&resolved_path)
-        .await
-        .map_err(|e| format!("Failed to read MCP config at {}: {}", resolved_path, e))?;
-
-    let raw: Value = serde_json::from_str(&contents).map_err(|e| {
-        format!(
-            "Failed to parse MCP config JSON at {}: {}",
-            resolved_path, e
-        )
-    })?;
-
-    let servers_obj = match &raw {
-        Value::Object(obj) => obj,
-        _ => {
-            return Err(format!(
-                "MCP config at {} must be a JSON object",
-                resolved_path
-            ))
-        }
-    };
-
-    let mut result_servers: Map<String, Value> = Map::new();
-    let mut missing_vars: Vec<String> = Vec::new();
-
-    for (server_name, server_config) in servers_obj {
-        match server_config {
-            Value::Object(cfg_obj) => {
-                let mut expanded_cfg = Map::new();
-                for (k, v) in cfg_obj {
-                    expanded_cfg.insert(
-                        k.clone(),
-                        expand_env_vars_in_value(v, &mut missing_vars, env_source),
-                    );
-                }
-                result_servers.insert(server_name.clone(), Value::Object(expanded_cfg));
-            }
-            other => {
-                tracing::warn!(
-                    server_name = %server_name,
-                    value_type = ?other,
-                    "mcp_config.server_entry_not_object"
-                );
-            }
-        }
-    }
-
-    let server_names: Vec<String> = result_servers.keys().cloned().collect();
-
-    Ok(LoadedMcpConfig {
-        servers: result_servers,
-        server_names,
-        missing_vars,
-    })
-}
+//
+// The faithful `loadMcpConfig` port now lives in the shared `crate::mcp::config`
+// module (PR-12) — it is reused verbatim by claude, codex, and copilot, matching
+// the source's single shared helper (`packages/providers/src/mcp/config.ts`,
+// exported from `index.ts:54`). The codex provider builds its env source via
+// `build_mcp_env_source` (`{ ...process.env, ...requestEnv }`) and calls
+// `crate::mcp::load_mcp_config`.
 
 // ─── CodexProvider ────────────────────────────────────────────────────────────
 
@@ -592,7 +437,7 @@ impl AgentProvider for CodexProvider {
                 let env_source = CodexProvider::build_mcp_env_source(
                     options.as_ref().and_then(|o| o.env.as_ref()),
                 );
-                match load_mcp_config(mcp_path, &cwd, &env_source).await {
+                match crate::mcp::load_mcp_config(mcp_path, &cwd, &env_source).await {
                     Ok(loaded) => {
                         tracing::info!(
                             server_names = ?loaded.server_names,
@@ -603,8 +448,23 @@ impl AgentProvider for CodexProvider {
                         (overrides, loaded.missing_vars)
                     }
                     Err(e) => {
-                        tracing::warn!(err = %e, "codex.mcp_config_load_failed");
-                        (None, vec![])
+                        // Source: `loadMcpConfig` throws inside sendQuery (before any
+                        // chunk is yielded) → the query rejects. Map to a terminal error
+                        // chunk and stop, rather than silently continuing without MCP.
+                        tracing::error!(err = %e, "codex.mcp_config_load_failed");
+                        yield MessageChunk::Result {
+                            session_id: None,
+                            tokens: None,
+                            structured_output: None,
+                            is_error: Some(true),
+                            error_subtype: Some("codex_mcp_config_invalid".to_owned()),
+                            errors: Some(vec![e]),
+                            cost: None,
+                            stop_reason: None,
+                            num_turns: None,
+                            model_usage: None,
+                        };
+                        return;
                     }
                 }
             } else {

@@ -579,13 +579,14 @@ LEDGER CORRECTIONS:
     capability stays `true` end-to-end — NO DOWNGRADE. Live-CLI smoke = `SKIPPED — env-gated` (claude
     2.1.177 present but no CLAUDE_BIN_PATH/auth). Harness: tests/parity_cycle16_loopback_transport.rs.
     Findings: findings/parity-cycle16.md.
-  - [≈] `write_mcp_config_merged` is MORE LENIENT than source `normalizeMcpConfig` (`mcp/config.ts`): on a
-    malformed config that mixes top-level `mcpServers` with sibling keys it ignores the siblings rather than
-    throwing "MCP config cannot mix…". NOT a downgrade of native-tools (no server dropped, no capability
-    lost on well-formed input). FOLLOW-UP (tracked, owed by the not-yet-ported `loadMcpConfig` wiring unit):
-    the full normalizeMcpConfig validation (incl. this throw + the `&[]` mcp_server_names gap where nodeConfig
-    server wildcards aren't yet resolved into allowed-tools) lands when `loadMcpConfig` is ported & wired into
-    `send_query`. See loop_state "Open follow-ups".
+  - [x] (was `- [≈]`) `write_mcp_config_merged` leniency — CLOSED by PR-12 (cycle 24). The claude `send_query`
+    now calls the faithful `crate::mcp::load_mcp_config` at step 3b (BEFORE the native-tools merge / per-attempt
+    argv), so a config that mixes top-level `mcpServers` with sibling keys now throws "MCP config cannot mix…"
+    (load error → claude `return`) before `write_mcp_config_merged` ever runs — the full `normalizeMcpConfig`
+    validation now gates the path. The `&[]` `mcp_server_names` gap is also closed: nodeConfig server wildcards
+    (`mcp__<n>__*`) are resolved into allowed-tools from the loaded `server_names`. `write_mcp_config_merged`
+    itself still does its own inline merge-normalize for the archon entry, but it can no longer be reached with
+    an invalid nodeConfig.mcp (validation runs first). Harness: tests/parity_cycle24_mcp_config.rs.
 
   **→ PR-03 Claude Provider is now a FULL VERIFIED UNIT (34/79).** All rows `- [x]` except the recorded
   `- [≈]`/`- [≠]` qualified items. Native-tools feature is reachable end-to-end (CLI connects to the
@@ -679,7 +680,7 @@ LEDGER CORRECTIONS:
 **Source:** `packages/providers/src/codex/provider.ts`
 **Rust target:** `crates/har-provider/src/codex/provider.rs`
 
-- [x] `CodexProvider` implementing `IAgentProvider`: subprocess-based; `modelReasoningEffort`, `webSearchMode`, `additionalDirectories`, `codexBinaryPath` (provider.ts) — cycle 17, parity-verified vs live @openai/codex-sdk@0.125.0 + bun. Reuses `cli_stream/` substrate. Includes ported `normalize_json_schema_for_openai_strict` (shared/structured-output.ts:147-233) for `--output-schema`. `- [≠]` D3: structured-output warn preview uses `.chars().take(200)` (scalar values) vs TS `slice(0,200)` (UTF-16 units) — log-cosmetic only, Rust strictly more correct (no lone surrogate). `- [≈]` MCP: `send_query` uses inline stopgap `load_mcp_config`; rewire when PR-12 `loadMcpConfig` lands.
+- [x] `CodexProvider` implementing `IAgentProvider`: subprocess-based; `modelReasoningEffort`, `webSearchMode`, `additionalDirectories`, `codexBinaryPath` (provider.ts) — cycle 17, parity-verified vs live @openai/codex-sdk@0.125.0 + bun. Reuses `cli_stream/` substrate. Includes ported `normalize_json_schema_for_openai_strict` (shared/structured-output.ts:147-233) for `--output-schema`. `- [≠]` D3: structured-output warn preview uses `.chars().take(200)` (scalar values) vs TS `slice(0,200)` (UTF-16 units) — log-cosmetic only, Rust strictly more correct (no lone surrogate). `- [x]` MCP: CLOSED by PR-12 (cycle 24) — `send_query` now uses the faithful shared `crate::mcp::load_mcp_config` (env source `{...process.env, ...requestEnv}` via `build_mcp_env_source`); load error → terminal `codex_mcp_config_invalid` chunk (was silently swallowed). Inline stopgap removed.
 - [x] Output parsing: parses Codex CLI output (`thread.started`/`item.completed`/`error`/`turn.failed`/`turn.completed`) to `MessageChunk` stream (provider.ts) — cycle 17, parity PASS.
 
 ### UNIT PR-08: Codex Binary Resolver + Capabilities + Config
@@ -707,7 +708,7 @@ LEDGER CORRECTIONS:
 - [x] `ArchonUiContextSpec::notify` (ui-context-stub.ts) — icon dispatch + flush:true → chunk. cycle 20 PASS
 - [x] Lazy-load pattern (provider-lazy-load.test.ts) — SDK import deferred (the seam); pre-seam steps run without SDK
 - [x] `maxConcurrent` semaphore (types.ts:141) — tokio::sync::Semaphore. `- [≠]` (behavior-preserving: limit + acquire/release/order match)
-- [≈] MCP/loadMcpConfig carried (out-of-unit, PR-12)
+- [x] MCP/loadMcpConfig — CLOSED by PR-12 (cycle 24): pi never calls `loadMcpConfig` in source, so pi correctly stays MCP-unwired (verified). `- [≈]` carried item resolved.
 - NOTE (cycle 20 contract change, no-downgrade-verified): har-contract `MessageChunk::Tool.tool_input` `HashMap`→`Option<Value>` (Pi needs JS array-passthrough). Re-verified ALL providers vs their OWN source — claude `?? {}`(null/absent→{}), copilot `?? {}`(passthrough incl array), opencode `isRecord`(omit null/scalar), pi(typeof→{}), codex(never emits) — 4 distinct behaviors preserved, NOT homogenized. Permanent coverage: tests/parity_cycle20_contract_blast.rs.
 
 ### UNIT PR-10: Community Copilot Provider
@@ -722,7 +723,7 @@ LEDGER CORRECTIONS:
 - [x] `resolveCopilotBinaryPath(config)` (binary-resolver.ts) — cycle 18, all 6 tiers + error text byte-exact
 - [x] shared: `augment_prompt_for_json_schema` (order-preserving) + `try_parse_structured_output` (shared/structured-output.ts) — cycle 18 PASS. `- [≠]` tier-3 jsonrepair: `jsonrepair-rs 0.2.1` (only Rust equiv) vs npm jsonrepair 3.14.0 differs ONLY on pathological invalid-JSON no model emits — `NaN`/`Infinity`→`null` vs `"NaN"`; `+1`/`+1.5`→strip-and-accept vs throw→None. Bounded, recorded.
 - [x] shared: `resolve_skill_directories` (shared/skills.ts) — cycle 18, 17-case PASS
-- [≈] MCP: `send_query` reuses codex's inline stopgap `load_mcp_config`; rewire when PR-12 `loadMcpConfig` lands (carried, out-of-unit)
+- [x] MCP: CLOSED by PR-12 (cycle 24) — `send_query` now uses the faithful shared `crate::mcp::load_mcp_config` with `process.env` source, feeds the expanded `servers` into the JSON-RPC `mcpServers` session param (was hard-coded `None`), and surfaces a load error as a terminal `copilot_mcp_config_invalid` chunk. `- [≈]` carried item resolved.
 - [ ] Provider hardening: retry on transient errors (provider-hardening.test.ts) — folded into the SDK-seam binding (retry wraps the session call); completes when the seam is bound
 
 ### UNIT PR-11: Community OpenCode Provider
@@ -743,9 +744,25 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-12: MCP Config Loader
 **Source:** `packages/providers/src/mcp/config.ts`
-**Rust target:** `crates/providers/src/mcp/config.rs`
+**Rust target:** `crates/har-provider/src/mcp/config.rs` (LEDGER CORRECTION: was `crates/providers/...`)
+**Status:** `- [x]` FULL VERIFIED UNIT (cycle 24, 2026-06-21) — differentially verified vs live source
+(`bun` 1.3.14, 37-case matrix); harness `tests/parity_cycle24_mcp_config.rs` (22 golden tests). Closes the
+carried `- [≈]` inline-stopgap and the claude `&[]` `mcp_server_names` gap. Replaced the codex inline stopgap
+(which diverged: no `mcpServers` wrapper handling, recursive all-field expansion vs env/headers-only,
+warn-and-skip vs throw, lowercase var matching, different messages) with a faithful shared module.
 
-- [ ] `loadMcpConfig(path: &str) -> Result<Map<String,Value>>` — loads MCP server JSON config file (mentioned in dag-executor.ts:380)
+- [x] `load_mcp_config(mcp_path, cwd, env_source) -> Result<LoadedMcpConfig, String>` — faithful port (config.ts:127-161)
+- [x] `normalizeMcpConfig` — `{mcpServers:{…}}` unwrap; mixed-keys throw; non-object `mcpServers` throw (config.ts:101-122)
+- [x] `expandEnvVars` — expansion ONLY in each server's `env`/`headers` (NOT command/args/url); throws on non-object server/env/headers (config.ts:50-99)
+- [x] `expandEnvVarsInRecord` — uppercase-only regex `[A-Z_][A-Z0-9_]*` (via `regex` crate, byte-exact incl. greedy bare-name stop); non-string value throws; missing vars recorded WITH dups → empty string (config.ts:22-48)
+- [x] `describeJsonType` (null/array/object/string/number/boolean) (config.ts:12-16)
+- [x] `LoadedMcpConfig { servers (order-preserving Map), server_names (Object.keys order), missing_vars }` (config.ts:6-10)
+- [x] **Rewire codex** — `crate::mcp::load_mcp_config` w/ `{...process.env, ...requestEnv}` env source (`buildMcpEnvSource`); load error → terminal `Result{is_error,error_subtype:"codex_mcp_config_invalid"}` (was silently swallowed)
+- [x] **Rewire copilot** — `process.env` source (source uses default arg); feeds `servers` → JSON-RPC `mcpServers` session param (was hard-coded `None`); empty-path early return; load error → `copilot_mcp_config_invalid`; warning NOT deduped (matches source)
+- [x] **Rewire claude** — closed `&[]` gap: `server_names` → `mcp__<n>__*` wildcards, `missing_vars` → warning (both `build_claude_argv` calls); raw `nodeConfig.mcp` path still forwarded to `--mcp-config` (the `claude` CLI expands `${VAR}` natively — verified via docs; faithful CLI delegation); load error → `return` (mirrors binary-not-found)
+- [≈] invalid-JSON / non-ENOENT-read error DETAIL tail differs cross-runtime (V8 `SyntaxError`/Node `fs` vs `serde_json`/`std::io`); prefix + error condition byte-exact; no consumer parses the detail
+- [≈] path resolution uses `Path::join` vs Node `path.resolve` (`..`/`.` not collapsed) — identical for abs-cwd + simple-relative inputs; only appears in the ENOENT message tail
+- [≠] opencode/pi correctly have NO MCP wiring (source never calls `loadMcpConfig` there)
 
 ### UNIT PR-13: Provider Shared Skills
 **Source:** `packages/providers/src/shared/skills.ts`

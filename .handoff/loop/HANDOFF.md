@@ -4,11 +4,21 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-21
-branch: main (commit 2bea03e) — PUSHED to origin/main
-mode: ITERATE — cycles_total=23 (this session 7: cycles 17-23). ALL provider SDKs BOUND.
+branch: main — local commits ahead of origin/main (not pushed this cycle; push when owner asks)
+mode: ITERATE — cycles_total=24 (this session 8: cycles 17-24). ALL provider SDKs BOUND + PR-12 loadMcpConfig done.
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 36/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+## Where we are: 37/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+
+**cycle 24 (PR-12 loadMcpConfig) — FULL `- [x]`.** Faithful shared port of `packages/providers/src/mcp/config.ts`
+into `crates/har-provider/src/mcp/config.rs` (new `mcp` module), replacing the codex inline stopgap (which
+diverged: no `mcpServers` wrapper, recursive all-field expansion vs env/headers-only, warn-and-skip vs throw,
+lowercase var matching, different messages). Source uses it in ONLY claude/codex/copilot (opencode/pi correctly
+don't). Closed the carried MCP `- [≈]` (inline stopgap) AND the claude `&[]` mcp_server_names gap. Copilot now
+feeds expanded `servers` into the JSON-RPC `mcpServers` session param; load errors propagate as terminal chunks
+(was a silent swallow in codex). Differentially verified vs live bun (37-case matrix) — PASS, 0 divergences.
+Harness: tests/parity_cycle24_mcp_config.rs (22 golden). Workspace 1831 passed / 15 ignored, clippy + fmt clean.
+**NEXT = har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09 dag-executor (keystone) → WF-10/15/16 → server → cli.**
 
 **Provider track COMPLETE.** claude+codex (CLI via cli_stream) and the 3 community Node-SDK providers
 (copilot/opencode/pi) are all bound in PURE RUST, each verified end-to-end against the REAL CLI/server it
@@ -57,13 +67,11 @@ UP-2. The seam is verified isolated each cycle (nothing portable hides behind it
 like agent-materialization fire BEFORE the seam).
 
 ## Resume — next units (dependency order toward WF-09 dag-executor)
-ALL provider ports (PR-01..11) are DONE and fully bound (CLI + the 3 Node SDKs). Next unit:
-1. **PR-12 loadMcpConfig** (`packages/providers/src/mcp/config.ts`): port fully + rewire into
-   claude/codex/copilot/opencode/pi `send_query` — closes the carried `- [≈]` (the inline stopgap `load_mcp_config`)
-   and the `&[]` mcp_server_names gap. See loop_state "Open follow-ups". Pure-logic, good differential target.
-3. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
+ALL provider ports (PR-01..11) are DONE and fully bound (CLI + 3 Node SDKs); **PR-12 loadMcpConfig DONE (cycle 24)**.
+The whole `packages/providers` track is now full-parity. Next units:
+1. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
    coord→`weave`/`grit`, memory→`icm` — integrate substrates, don't reimplement a DB.
-4. **WF-09 dag-executor** (keystone state machine), then WF-10/15/16.. workflows → server (axum) → cli.
+2. **WF-09 dag-executor** (keystone state machine), then WF-10/15/16.. workflows → server (axum) → cli.
 
 ## Method that works (proven over 19 cycles — KEEP DOING)
 - One cohesive unit/cycle: porter (sonnet) → `cargo clippy --all-targets` + test → **differential**

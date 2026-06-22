@@ -8,11 +8,29 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 7    # resume 2026-06-21; cycles 17-23 done. ALL provider SDKs BOUND (owner: do it right, no band-aid).
-cycles_total: 23
-ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
-        `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
-        units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+cycles_this_session: 8    # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + cycle 24 (PR-12 loadMcpConfig).
+cycles_total: 24
+ledger: parity **37/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+        cycle 24 added PR-12 loadMcpConfig (full `- [x]`), closing the carried MCP `- [≈]` (inline stopgap) and
+        the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14; PA-01/06/07;
+        GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+status_cycle24: cycle 24 DONE — **PR-12 loadMcpConfig FULL `- [x]`** (37/79). Ported the source's single shared
+        `loadMcpConfig` helper into a faithful **`crates/har-provider/src/mcp/config.rs`** (new `mcp` module),
+        replacing the codex inline stopgap that had diverged 5 ways (no `mcpServers` wrapper handling; recursive
+        all-field env-expansion vs source's env/headers-ONLY; warn-and-skip vs throw on non-object server;
+        lowercase var-name matching vs source's uppercase-only `[A-Z_][A-Z0-9_]*`; different error messages).
+        Rewired the 3 source callers (claude/codex/copilot — opencode/pi correctly DON'T use it): codex env source
+        `{...process.env, ...requestEnv}`; claude/copilot `process.env` (source default arg). **Closed the carried
+        `- [≈]` (inline stopgap) AND the claude `&[]` mcp_server_names gap** (server_names→`mcp__<n>__*` wildcards,
+        missing_vars→warning, both build_claude_argv calls). Copilot now feeds expanded `servers` into the JSON-RPC
+        `mcpServers` session param (was hard-coded `None`). Load errors now propagate as terminal error chunks
+        (codex/copilot `*_mcp_config_invalid`) / claude `return` — was a SILENT swallow (downgrade) in codex.
+        Differentially verified vs live bun (37-case matrix, harness-agent-rs parity-verifier) — PASS, 0 divergences;
+        only `- [≈]` = cross-runtime JSON-parse error DETAIL tail (prefix+condition byte-exact). Claude raw mcp-config
+        path still forwarded to `--mcp-config` (the `claude` CLI expands `${VAR}` natively — verified via docs; faithful
+        CLI delegation, NOT a downgrade). Durable harness: tests/parity_cycle24_mcp_config.rs (22 golden tests).
+        Workspace **1831 passed / 15 ignored** (58 suites), clippy + fmt clean. **NEXT = har-ledger (CO db MAP→hf,
+        WF-19 IWorkflowStore) → WF-09 dag-executor (keystone state machine) → WF-10/15/16.. → server (axum) → cli.**
 last_item: cycle 19 — **OpenCode community provider** (PR-11). Ported crates/har-provider/src/opencode/ (config,
            errors, tokens, agent_config, agent_fs, runtime, session, multi_agent, provider — 12 source files).
            OpenCode wraps the @opencode-ai/sdk NODE SDK → cli_stream/ N/A; per UP-2(b) the live SDK session
@@ -68,14 +86,14 @@ session_summary_2026-06-21: resumed at 34/79; baseline re-verified PASS; ran cyc
 last_update: 2026-06-21T18:00:00Z
 
 ## Open follow-ups (tracked — not downgrades, owed by not-yet-ported sibling units)
-- **loadMcpConfig full wiring into send_query** (owes two items surfaced cycles 15-16):
-  (1) `normalizeMcpConfig`'s "cannot mix top-level mcpServers with other keys" THROW — `write_mcp_config_merged`
-      is currently more lenient (`- [≈]`, ignores siblings); the throw belongs to the ported loadMcpConfig.
-  (2) the `&[]` mcp_server_names gap: `send_query` passes empty mcp_server_names to build_claude_argv, so a
-      nodeConfig.mcp server's `mcp__<name>__*` wildcards aren't yet resolved into --allowed-tools (PRE-EXISTING,
-      predates cycle 16; native-tools archon wildcard IS added). Resolve when loadMcpConfig is ported & the
-      async file-load + server-name extraction is wired into send_query. Source: packages/providers/src/mcp/config.ts
-      (already partially read cycle 15). NOT a native-tools downgrade — archon path is complete.
+- **loadMcpConfig full wiring into send_query** — ✅ **CLOSED cycle 24 (PR-12).** Both items resolved:
+  (1) `normalizeMcpConfig`'s "cannot mix top-level mcpServers…" THROW now fires via `crate::mcp::load_mcp_config`,
+      called at claude `send_query` step 3b BEFORE `write_mcp_config_merged` — so the lenient merge can no longer
+      be reached with an invalid nodeConfig.mcp (the validation gates the path first).
+  (2) the `&[]` mcp_server_names gap is closed — `send_query` now loads the config and passes real `server_names`
+      (→ `mcp__<name>__*` wildcards in --allowed-tools) + `missing_vars` (→ warning) to both build_claude_argv calls.
+  Faithful shared port in `crates/har-provider/src/mcp/config.rs`; differentially verified (37-case matrix);
+  harness tests/parity_cycle24_mcp_config.rs. (No remaining MCP follow-ups.)
 
 ## Cycle-13 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-03 deterministic core: `crates/har-provider/src/cli_stream/` + `crates/har-provider/src/claude/argv.rs` + `crates/har-provider/src/claude/parser.rs`.
