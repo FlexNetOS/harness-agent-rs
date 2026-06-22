@@ -1139,10 +1139,29 @@ Deferred to cycle 28 (pg driver + connection — NOT stubbed, genuine scope boun
 
 ### UNIT CO-02: Database Connection
 **Source:** `packages/core/src/db/connection.ts`
-**Rust target:** MAP→`sqlx::Pool`; connection module in `crates/core/src/db/connection.rs`
+**Rust target:** MAP→`sqlx::Pool`; connection module in `crates/har-db/src/connection.rs`
+**Ledger correction:** ledger named `crates/core/src/db/connection.rs` but `crates/core` does not
+exist — har-db owns the CO adapters (cycles 26/27/28), so connection lands in `crates/har-db/src/connection.rs`.
 
-- [ ] `initDatabase(url?)` / `closeDatabase()` (connection.ts; cli.ts imports)
-- [ ] WAL mode for SQLite (connection.ts comment at dag-executor.ts:851)
+- [~] `getDatabase()` — singleton auto-detect (DATABASE_URL→Postgres / else SQLite at getArchonHome()/archon.db);
+      exact log events `db.connection_postgresql_selected` / `db.connection_sqlite_selected` / `db.docker_using_sqlite`
+      (WARN, exact hint); at-most-one adapter under concurrent first-callers (tokio Mutex held across async ctor).
+      `- [≈]` async getter vs sync TS getter (sqlx pools/schema-init are async).
+- [~] `getDialect()` — cached Dialect, inits DB if needed, exact "Database dialect not initialized…" throw →
+      `DbError::DialectNotInitialized` (byte-exact message). `- [≈]` async + throw→Result.
+- [~] `getDatabaseType()` — env-only, NO init → `DatabaseType::{Postgresql,Sqlite}` (`as_str()` = "postgresql"/"sqlite",
+      exact). Empty DATABASE_URL = JS-falsy → Sqlite.
+- [~] `getDbNotificationListener()` — None unless type==postgresql AND backend supports listen. Seam: **option 4a**
+      (separate `Arc<dyn DbNotificationListener>` singleton, same pg adapter, populated only on pg branch). sqlite→None
+      (no init). `- [≈]` async.
+- [~] `closeDatabase()` (async) — close() then clear singleton (db+dialect+listener→None).
+- [~] `resetDatabase()` — clear WITHOUT closing (sync test seam; `try_lock` to keep sync signature inside a runtime).
+- [~] legacy `pool` — `pool::query(sql, Option<params>)` / `pool::end()` forwarders (`<T>`→Value erasure).
+- [≈] `initDatabase(url?)` — TS connection.ts exposes NO `initDatabase`; auto-detect IS the init path (getDatabase).
+- [x] WAL mode for SQLite — already done in SqliteAdapter::open (cycle 27).
+
+**Status:** ported `- [~]` (parity unproven). Build/clippy(--all-targets -D warnings)/fmt clean; 9 connection tests
++ 52 har-db total pass. Live-pg path is DATABASE_URL-gated (not exercised in default run).
 
 ### UNIT CO-03: Database Schema (bundled SQL)
 **Source:** `packages/core/src/db/bundled-schema.ts`, `bundled-schema.generated.ts`

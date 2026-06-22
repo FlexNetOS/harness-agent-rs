@@ -23,6 +23,7 @@
 //! // turso-backed impl behind the same interface once turso hits 1.0.
 
 pub mod adapters;
+pub mod connection;
 pub mod database;
 pub mod error;
 pub mod postgres;
@@ -32,6 +33,10 @@ pub mod sqlite;
 pub use adapters::{
     DbNotificationListener, Dialect, NotificationError, PostgresDialect, QueryResult, SqlDialect,
     SqliteDialect,
+};
+pub use connection::{
+    close_database, get_database, get_database_type, get_db_notification_listener, get_dialect,
+    pool, reset_database, DatabaseType,
 };
 pub use database::{Database, DbExecutor};
 pub use error::DbError;

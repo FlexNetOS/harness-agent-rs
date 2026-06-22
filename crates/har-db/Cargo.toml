@@ -16,7 +16,11 @@ sqlx = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
+# connection.ts auto-detect: getArchonHome()/archon.db on the SQLite branch.
+har-paths = { path = "../har-paths" }
 
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
+# Env-mutating connection tests must run serially.
+serial_test = "3"

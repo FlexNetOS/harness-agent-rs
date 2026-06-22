@@ -40,6 +40,19 @@ pub enum DbError {
         query_prefix: String,
     },
 
+    /// The SQL dialect is not initialized — the database connection failed
+    /// during initialization.
+    ///
+    /// Port of the `throw new Error(…)` in `connection.ts:71-74`. The message is
+    /// byte-exact (the parity test pins the full string). The TS source builds it
+    /// by concatenating two literals, yielding a single space between
+    /// `"initialization."` and `"Check"`.
+    #[error(
+        "Database dialect not initialized. This indicates the database connection failed during \
+         initialization. Check logs for database connection errors."
+    )]
+    DialectNotInitialized,
+
     /// An I/O or path error (e.g., directory creation failed on open).
     #[error("db I/O error: {0}")]
     Io(#[from] std::io::Error),
