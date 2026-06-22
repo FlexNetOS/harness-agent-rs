@@ -24,6 +24,7 @@ pub mod claude;
 pub mod cli_stream;
 pub mod codex;
 pub mod copilot;
+pub mod mcp;
 pub mod opencode;
 pub mod pi;
 pub mod shared;

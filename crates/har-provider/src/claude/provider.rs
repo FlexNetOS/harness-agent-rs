@@ -405,6 +405,36 @@ impl AgentProvider for ClaudeProvider {
             let request_env = options.as_ref().and_then(|o| o.env.as_ref());
             let subprocess_env = ClaudeProvider::build_subprocess_env(request_env);
 
+            // 3b. Load MCP config once (provider.ts:319-321 `applyNodeConfig`).
+            //     Source: `const { servers, serverNames, missingVars } = await loadMcpConfig(mcpPath, cwd)`
+            //     with the DEFAULT env source (`process.env`). The CLI port delegates to
+            //     the `claude` binary, which expands `${VAR}` in the `--mcp-config` file
+            //     natively — so the raw `nodeConfig.mcp` path is forwarded as-is (the
+            //     faithful CLI-delegation behavior, verified in PR-03). We only need the
+            //     loaded `serverNames` (→ `mcp__<name>__*` allowed-tool wildcards) and
+            //     `missingVars` (→ the env-var warning). A load failure mirrors the source
+            //     `throw` — abort the query (consistent with the binary-not-found path above).
+            let (mcp_server_names, mcp_missing_vars): (Vec<String>, Vec<String>) = {
+                let mcp_path = options
+                    .as_ref()
+                    .and_then(|o| o.node_config.as_ref())
+                    .and_then(|n| n.mcp.as_deref());
+                if let Some(mcp_path) = mcp_path {
+                    let env_source = crate::mcp::process_env_source();
+                    match crate::mcp::load_mcp_config(mcp_path, &cwd, &env_source).await {
+                        Ok(loaded) => (loaded.server_names, loaded.missing_vars),
+                        Err(e) => {
+                            tracing::error!(err = %e, "claude.mcp_config_load_failed");
+                            // Source throws here → sendQuery rejects. Mirror the
+                            // binary-not-found hard-failure handling: abort the stream.
+                            return;
+                        }
+                    }
+                } else {
+                    (vec![], vec![])
+                }
+            };
+
             // 4. Compute node-config warnings once (provider.ts:873-882)
             //    In the Rust model, all argv building is deterministic (no async).
             //    We call build_claude_argv once here to extract warnings, then again per attempt.
@@ -418,8 +448,8 @@ impl AgentProvider for ClaudeProvider {
                     &assistant_defaults,
                     resume_session_id.as_deref(),
                     cli_path_str.as_deref(),
-                    &[],   // mcp_server_names — empty for warning collection only
-                    &[],   // mcp_missing_vars — empty for warning collection only
+                    &mcp_server_names, // loaded server names → MCP wildcards + warnings
+                    &mcp_missing_vars, // loaded missing vars → env-var warning
                     None,  // native_tools_mcp_config_path — server not started yet
                 )
             };
@@ -526,8 +556,8 @@ impl AgentProvider for ClaudeProvider {
                     &assistant_defaults,
                     resume_session_id.as_deref(),
                     cli_path_str.as_deref(),
-                    &[],   // MCP server names — caller-loaded (nodeConfig.mcp servers)
-                    &[],   // MCP missing vars — same
+                    &mcp_server_names, // loaded nodeConfig.mcp server names → MCP wildcards
+                    &mcp_missing_vars, // loaded missing env vars → warning
                     native_mcp_config_path_str.as_deref(), // R8 native tools: merged mcp-config
                 );
 

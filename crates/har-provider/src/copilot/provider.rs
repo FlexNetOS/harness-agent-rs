@@ -334,40 +334,43 @@ fn resolve_tool_restrictions(node_config: Option<&har_contract::NodeConfig>) -> 
 
 /// Translated MCP server config for Copilot session.
 ///
-/// Port of `applyMcpServers` (provider.ts:208-228).
-///
-/// # NEEDS-HUMAN note
-/// The full implementation calls `loadMcpConfig(mcpPath, cwd)` which reads a JSON
-/// file and expands env vars. The result is a `Record<string, MCPServerConfig>` passed
-/// to `SessionConfig.mcpServers`. In Rust this is deferred until the SDK seam is
-/// resolved. The warning for missing env vars IS produced here.
+/// Port of `applyMcpServers` (provider.ts:208-228). The shared `loadMcpConfig`
+/// (PR-12, `crate::mcp`) reads the JSON file and expands env vars; the resulting
+/// server map is set on `SessionConfig.mcpServers` (now that the SDK is bound via
+/// the JSON-RPC `mcpServers` session param, jsonrpc_client.rs:572). The missing-var
+/// warning is produced here. A load error mirrors the source `throw` — it aborts
+/// the query (carried as `error`, surfaced as a terminal error chunk by the caller).
 struct McpConfig {
+    /// Expanded server map → `SessionConfig.mcpServers` (`None` when no `nodeConfig.mcp`).
+    servers: Option<serde_json::Value>,
     warnings: Vec<ProviderWarning>,
+    /// Set when `loadMcpConfig` threw — source propagates this as a query failure.
+    error: Option<String>,
 }
 
 async fn resolve_mcp_config(
     node_config: Option<&har_contract::NodeConfig>,
     cwd: &str,
-    merged_env: &HashMap<String, String>,
 ) -> McpConfig {
-    let mcp_path = node_config.and_then(|nc| nc.mcp.as_deref());
-    if mcp_path.is_none() {
-        return McpConfig { warnings: vec![] };
-    }
-    let mcp_path = mcp_path.unwrap();
+    // Source: `if (typeof mcpPath !== 'string' || mcpPath.length === 0) return;`
+    let mcp_path = match node_config.and_then(|nc| nc.mcp.as_deref()) {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            return McpConfig {
+                servers: None,
+                warnings: vec![],
+                error: None,
+            }
+        }
+    };
 
-    // Build env source for expansion
-    let env_source: HashMap<String, Option<String>> = merged_env
-        .iter()
-        .map(|(k, v)| (k.clone(), Some(v.clone())))
-        .collect();
-
-    // Load and expand MCP config — reuse the codex provider's load_mcp_config.
-    // The result (servers) is not yet passed to the SDK (NEEDS-HUMAN), but we
-    // still load it to produce the missing-vars warning faithfully.
-    let mut warnings = Vec::new();
-    match crate::codex::provider::load_mcp_config(mcp_path, cwd, &env_source).await {
+    // Source calls `loadMcpConfig(mcpPath, cwd)` with the DEFAULT env source —
+    // i.e. `process.env` (NOT the merged request env, unlike codex's
+    // `buildMcpEnvSource`). Match that exactly.
+    let env_source = crate::mcp::process_env_source();
+    match crate::mcp::load_mcp_config(mcp_path, cwd, &env_source).await {
         Ok(loaded) => {
+            let mut warnings = Vec::new();
             if !loaded.missing_vars.is_empty() {
                 warnings.push(ProviderWarning {
                     message: format!(
@@ -382,12 +385,21 @@ async fn resolve_mcp_config(
                 missing_vars = ?loaded.missing_vars,
                 "copilot.mcp_loaded"
             );
+            McpConfig {
+                servers: Some(serde_json::Value::Object(loaded.servers)),
+                warnings,
+                error: None,
+            }
         }
         Err(e) => {
-            tracing::warn!(err = %e, mcp_path = %mcp_path, "copilot.mcp_config_load_failed");
+            tracing::error!(err = %e, mcp_path = %mcp_path, "copilot.mcp_config_load_failed");
+            McpConfig {
+                servers: None,
+                warnings: vec![],
+                error: Some(e),
+            }
         }
     }
-    McpConfig { warnings }
 }
 
 // ─── Skills ───────────────────────────────────────────────────────────────────
@@ -751,12 +763,34 @@ impl AgentProvider for CopilotProvider {
             }
 
             // 6b. MCP config (provider.ts:344-348)
-            let mcp_result = resolve_mcp_config(
+            let McpConfig {
+                servers: mcp_servers_param,
+                warnings: mcp_warnings,
+                error: mcp_error,
+            } = resolve_mcp_config(
                 options.as_ref().and_then(|o| o.node_config.as_ref()),
                 &cwd,
-                &merged_env,
             ).await;
-            warnings.extend(mcp_result.warnings);
+            if let Some(e) = mcp_error {
+                // Source: `loadMcpConfig` throws inside `applyMcpServers` → sendQuery
+                // rejects before any warnings are flushed and before session creation.
+                // Map that to a terminal error chunk and stop (no warnings flushed —
+                // matches the source throw aborting the remaining translation steps).
+                yield MessageChunk::Result {
+                    session_id: None,
+                    tokens: None,
+                    structured_output: None,
+                    is_error: Some(true),
+                    error_subtype: Some("copilot_mcp_config_invalid".to_owned()),
+                    errors: Some(vec![e]),
+                    cost: None,
+                    stop_reason: None,
+                    num_turns: None,
+                    model_usage: None,
+                };
+                return;
+            }
+            warnings.extend(mcp_warnings);
 
             // 6c. Skills (provider.ts:350-356)
             let skills_result = resolve_skills(
@@ -867,7 +901,7 @@ impl AgentProvider for CopilotProvider {
                 system_message: system_message_wire,
                 available_tools: _tool_restrictions.available_tools,
                 excluded_tools: _tool_restrictions.excluded_tools,
-                mcp_servers: None, // MCP handled externally via sidecar
+                mcp_servers: mcp_servers_param, // expanded servers (provider.ts:226)
                 skill_directories: if skills_result.paths.is_empty() {
                     None
                 } else {

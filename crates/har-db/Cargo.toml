@@ -1,0 +1,30 @@
+[package]
+name = "har-db"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "CO database adapter layer (ported from Archon core/db/adapters). Cycle 27: Database trait + SqliteAdapter over sqlx-sqlite. Postgres adapter deferred to cycle 28."
+
+[dependencies]
+uuid = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+sqlx = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+indexmap = { workspace = true }
+# connection.ts auto-detect: getArchonHome()/archon.db on the SQLite branch.
+har-paths = { path = "../har-paths" }
+# workflows.rs depends on har-ledger (WorkflowStore trait) and har-workflow-schema (types).
+har-ledger = { path = "../har-ledger" }
+har-workflow-schema = { path = "../har-workflow-schema" }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = { workspace = true }
+# Env-mutating connection tests must run serially.
+serial_test = "3"

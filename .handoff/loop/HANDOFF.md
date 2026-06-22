@@ -3,12 +3,110 @@
 > Mid-loop checkpoint at cycle budget. A fresh session reads this + loop_state.md and resumes the
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
-closed_utc: 2026-06-21
-branch: main (commit 2bea03e) — PUSHED to origin/main
-mode: ITERATE — cycles_total=23 (this session 7: cycles 17-23). ALL provider SDKs BOUND.
-resume_command: /harness:rust-port-merge   (or /session-relay-resume)
+closed_utc: 2026-06-22
+branch: main — local commits ahead of origin/main (not pushed; push when owner asks). cycle-28 commits: 9ec006f, e566ded, db0071d (+ Cargo.lock).
+mode: ITERATE — cycles_total=30. cycle-28 session (owner: "pick 7 new tasks") landed 3 of 7: CO-03 schema, CO-01b PostgresAdapter, CO-02 connection. T4-T7 PENDING (usage exhausted, clean stop).
+resume_command: /harness:rust-port-merge resume   (or /session-relay-resume)
 
-## Where we are: 36/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+## CYCLE 28 (this session, 2026-06-22): DB-backend completion — 3 of 7 tasks DONE+verified+committed
+
+Owner directive: "/harness:rust-port-merge resume and pick 7 new task for this session." Picked a coherent 7-unit slice =
+**complete the DB backend + land a verified `impl WorkflowStore`** (the WF-09 keystone dependency). Spec: findings/cycle28-spec.md.
+
+**FOUNDATION DONE (T1-T3, all parity-verified, committed LOCAL):**
+- **T1 CO-03 Postgres bundled schema** `- [x]` (9ec006f) — `get_schema_sql()` embeds vendored `migrations/000_combined.sql`
+  (byte-equal `cmp`, `include_str!`); 17 `remote_agent_*` tables; pg-only. crates/har-db/src/schema.rs + bundled_schema.sql.
+- **T2 CO-01b PostgresAdapter** `- [x]` (e566ded) — sqlx `PgPool` + advisory-lock schema init (1796) + installNotifyTrigger
+  (1797, WORKFLOW_EVENT_NOTIFY_SQL verbatim, non-fatal) + DbNotificationListener::listen via `PgListener`. sqlx features
+  postgres/json/bigdecimal added. **GATE FAILED FIRST on 4 real divergences** (NUMERIC decode panic→BigDecimal+normalized;
+  INT8→string not Number; OID→Number split; string→typed-column bind downgrade→UUID-sniff+native jsonb) → RE-VERIFY PASS vs
+  live TS pg over docker postgres:16. 43 tests (39 unit + 4 DATABASE_URL-gated live). examples/oracle_cycle28_pg.rs, tests/postgres_live.rs.
+- **T3 CO-02 connection auto-detect** `- [x]` (db0071d) — get_database singleton (DATABASE_URL→pg / else SQLite at
+  archon_home/archon.db; ARCHON_DOCKER warn), get_dialect, get_database_type (env-only), get_db_notification_listener (option-4a),
+  close/reset, legacy pool. Construct-once ATOMIC (lock held across async ctor). **GATE PASS no defects** — byte-exact strings +
+  LIVE pg branch end-to-end. crates/har-db/src/connection.rs (LEDGER CORRECTION: crates/core doesn't exist). tests/connection_live.rs.
+
+Carries `- [≈]`: pg Date→ISO, numeric/uuid/int8→string, async ctor, throw→Result, dbPath→db_path. Workspace green (build+clippy
+--all-targets -D warnings+fmt). docker pg probe cleaned up at wrap. Commits NOT pushed (owner defer-push).
+
+**NEXT — 4 remaining tasks (T4-T7), all PENDING, over the now-complete adapter+connection+schema. Full per-task instructions
+in loop_state.md status_cycle28. Summary:**
+- **T4 CO-04 workflows.ts (1088 ln, behavior-rich)** — NEW `SqlWorkflowStore { db: Arc<dyn Database>, dialect }` in store.rs +
+  workflows.rs; method sigs MATCH the WF-19 `WorkflowStore` trait (crates/har-ledger/src/store.rs — reuse its structs; add
+  har-ledger + har-workflow-schema deps). LOAD-BEARING: resume CAS (transactional, read workflows.resume-cas.integration.test.ts);
+  getCompletedDagNodeOutputs (IndexMap + THROWS); getActiveWorkflowRunByPath self-tiebreaker. SqlDialect builders via self.db.sql().
+  SQLite-backed in-process behavioral tests for CAS+CRUD. (T4 porter prompt was launched+interrupted — re-use it from this turn's history.)
+- **T5 CO-05 workflow-events.ts (222 ln)** — createWorkflowEvent (never-throws, swallow+log, return ()) + getWorkflowEventsSince (ordered).
+- **T6 CO-06 workflow-node-sessions.ts (121 ln)** — get/upsert/delete; composite-PK ON CONFLICT upsert; provider-filter delete.
+- **T7 CO-08 codebases.ts (183 ln) + WIRE `impl WorkflowStore for SqlWorkflowStore`** — getCodebase/getCodebaseEnvVars + CRUD,
+  then assemble the COMPLETE object-safe trait impl delegating to T4/T5/T6/T7 → store smoke battery SQLite-diffed vs bun. Closes
+  the WorkflowStore impl → unblocks **WF-09 dag-executor (keystone)**.
+PARALLELISM: T5+T6 independent (parallel OK, but wire lib.rs yourself — don't let parallel agents race on it). T7 needs T4/5/6.
+CO-07 conversations deferred (orchestrator-facing). VERIFY INFRA: docker `postgres:16-alpine` on :55432, bun 1.3.14.
+
+## Where we are: 41/79 full units + ALL provider ports BOUND; CO-01 (dialect+Database+SQLite+Postgres adapters), CO-02, CO-03 DONE
+
+**cycle 27 (CO-01 `Database` trait + SQLite adapter) — `- [x]` (CO-01 driver-bound SQLite slice; still 38/79 full units;
+pg adapter + connection auto-detect remain).** Driver = **sqlx 0.9.0** (`runtime-tokio`+`tls-rustls-ring`+`sqlite`+`uuid`+
+`chrono`; 0.9 split `runtime-tokio-rustls`→`runtime-tokio`+`tls-rustls-ring`; `cc` present for bundled C-SQLite). Landed in
+`crates/har-db`: `database.rs` (`Database` object-safe `#[async_trait]` + narrow `DbExecutor`; `with_transaction` = boxed
+`for<'tx> FnOnce(&dyn DbExecutor)->BoxFuture`; TS `<T>` erased to serde_json::Value = `- [≈]`, faithful to TS `as T[]`),
+`sqlite.rs` (`SqliteAdapter`: PRAGMA WAL/busy_timeout=5000/foreign_keys=ON, createSchema BYTE-FAITHFUL inlined block +
+migrate_columns via direct fetch bypassing public dispatch, query SELECT/WITH-vs-mutation dispatch + RETURNING+INSERT fetch +
+RETURNING-on-UPDATE/DELETE throw + PRAGMA/EXPLAIN→rows=[]/rowCount=0, with_transaction BEGIN/COMMIT/ROLLBACK), `error.rs`.
+**convertPlaceholders ELIMINATED** (sqlx-sqlite resolves `$N` by index — out-of-order `$2…$1` + repeated `$1` PROVEN
+bun-identical, NOT a downgrade). **GATE FAILED FIRST** (verifier caught 2 unflagged divergences: D1 error msg embedded RAW
+`$N` not CONVERTED `?` SQL; D2 `query()` is_select wrongly included PRAGMA → 14 rows vs bun's 0); porter fixed both →
+**RE-VERIFY PASS** (full-message byte-match + PRAGMA rows=[]/rowCount=0, no regression). Only benign `- [≈]` B1 (`nowMinusDays`
+REAL `1` vs serde `1.0`). Durable oracle: `crates/har-db/examples/oracle_cycle27.rs`. 31 har-db tests; workspace **1596 passed /
+11 ignored**, clippy+fmt clean. Findings: parity-cycle27.md; task-card: cycle27-spec.md. **NEXT = cycle 28: PostgresAdapter
+(CO-01b — sqlx-postgres pool, advisory-lock schema init via getSchemaSQL bundled-schema, installNotifyTrigger, `PgListener` for
+DbNotificationListener) + connection.ts auto-detect (CO-02 — needs BOTH adapters) → workflows/events/sessions queries (impl
+WorkflowStore) → WF-09 dag-executor (keystone). TODO marker left: swap SQLite backend to turso at 1.0 (pure-Rust).**
+
+## Prior: 38/79 full units + ALL provider ports BOUND; CO-01 db layer STARTED
+
+**cycle 26 (CO-01 db adapter DIALECT layer) — `- [x]` (CO-01 partial; still 38/79 full units).**
+**OWNER-CONFIRMED LANDING (2026-06-21):** the `WorkflowStore` impl is a **SQL-backed FAITHFUL PORT, NOT a map onto
+`hf`** — Archon's store is a real SQL DB (Postgres/SQLite auto-detect) with transactional resume-CAS + indexed
+lookups + an append-only DAG-event log + node-session upsert + codebase config; `hf` is a continuity-ledger kernel
+with NONE of those, so mapping onto it = a silent downgrade (forbidden). ADR-0001 "don't reimplement what substrates
+provide" does NOT bite (hf provides no workflow-exec store). **This REVERSES the prior "MAP→hf applies to the impl"
+note.** OWNER SCOPE: **SQLite + Postgres BOTH** + consider a pure-rust-native UPGRADE adapter (redb/sled/gluesql/
+limbo/ruvector) behind the same trait where it preserves behavior. New crate **`crates/har-db`**. Cycle 26 ported the
+DIALECT slice of `db/adapters/types.ts` (+ postgresDialect/sqliteDialect): `QueryResult<T>` (rowCount→u64), `Dialect`
+enum, `SqlDialect` trait (6 pure SQL-expr builders) + `PostgresDialect`/`SqliteDialect` impls (BYTE-EXACT SQL strings),
+`DbNotificationListener` trait shape. Differentially verified vs live bun: **56/56 dialect strings CHARACTER-IDENTICAL**
+(indices 1/3/10/42), UUID v4 shape-parity, 6/6 methods, ZERO stubs. Workspace 1855 passed / 15 ignored, clippy+fmt clean.
+Findings: parity-cycle26.md. **DEFERRED to cycle 27 (`- [ ]`, scope boundary not a drop):** `Database::query`/
+`with_transaction` + concrete `SqliteAdapter`/`PostgresAdapter` + pg LISTEN/NOTIFY impl + `getDatabaseType()` —
+all DRIVER-DEPENDENT. **NEXT = cycle 27: read `findings/co-db-backend-research.md` (agent running; sqlx = prior
+hypothesis for both backends, pure-rust-native limbo/libsql/gluesql assessed as additive upgrade) → pick driver → port
+`Database` trait + SQLite adapter + connection auto-detect → pg adapter → workflows.ts/events/sessions queries → WF-09
+dag-executor (keystone state machine).**
+
+**cycle 25 (WF-19 WorkflowStore trait) — FULL `- [x]`.** Ported `packages/workflows/src/store.ts` — the NARROW
+persistence INTERFACE the workflow engine depends on — into `crates/har-ledger/src/store.rs` (new `store` module).
+LEDGER CORRECTION: target `crates/workflows` doesn't exist → landed in `har-ledger` (earmarked for WF-19). Ported the
+`WorkflowStore` trait (drop `I`, `#[async_trait]`, ALL 20 methods, object-safe), `WORKFLOW_EVENT_TYPES` (`[&str;21]`) +
+`WorkflowEventType` enum (21 variants → exact source strings), `WorkflowNodeSessionKey` + 10 param/result structs +
+`StoreError`. Schema types reused from har-workflow-schema. TWO load-bearing contract-encodings preserved:
+`create_workflow_event`→`()` (must-not-throw) and `get_completed_dag_node_outputs`→`Result<IndexMap,StoreError>`
+(throws + insertion-order). Differentially verified vs live bun (21-string WORKFLOW_EVENT_TYPES diff PASS + 20/20 method
+shape-fidelity) — PASS, only benign `- [≈]`. Workspace 1845 passed / 15 ignored, clippy + fmt clean. Findings:
+findings/parity-cycle25.md. **MAP→hf applies to the IMPL (next CO-db unit), NOT this interface.**
+**NEXT = CO-db hf-impl (`impl WorkflowStore for HfWorkflowStore` over hf: resume-CAS, event-log append, node-session
+upsert/delete, getCompletedDagNodeOutputs query) → WF-09 dag-executor (keystone state machine) → WF-10/15/16 → server → cli.**
+
+**cycle 24 (PR-12 loadMcpConfig) — FULL `- [x]`.** Faithful shared port of `packages/providers/src/mcp/config.ts`
+into `crates/har-provider/src/mcp/config.rs` (new `mcp` module), replacing the codex inline stopgap (which
+diverged: no `mcpServers` wrapper, recursive all-field expansion vs env/headers-only, warn-and-skip vs throw,
+lowercase var matching, different messages). Source uses it in ONLY claude/codex/copilot (opencode/pi correctly
+don't). Closed the carried MCP `- [≈]` (inline stopgap) AND the claude `&[]` mcp_server_names gap. Copilot now
+feeds expanded `servers` into the JSON-RPC `mcpServers` session param; load errors propagate as terminal chunks
+(was a silent swallow in codex). Differentially verified vs live bun (37-case matrix) — PASS, 0 divergences.
+Harness: tests/parity_cycle24_mcp_config.rs (22 golden). Workspace 1831 passed / 15 ignored, clippy + fmt clean.
+**NEXT = har-ledger (CO db MAP→hf, WF-19 IWorkflowStore) → WF-09 dag-executor (keystone) → WF-10/15/16 → server → cli.**
 
 **Provider track COMPLETE.** claude+codex (CLI via cli_stream) and the 3 community Node-SDK providers
 (copilot/opencode/pi) are all bound in PURE RUST, each verified end-to-end against the REAL CLI/server it
@@ -57,13 +155,11 @@ UP-2. The seam is verified isolated each cycle (nothing portable hides behind it
 like agent-materialization fire BEFORE the seam).
 
 ## Resume — next units (dependency order toward WF-09 dag-executor)
-ALL provider ports (PR-01..11) are DONE and fully bound (CLI + the 3 Node SDKs). Next unit:
-1. **PR-12 loadMcpConfig** (`packages/providers/src/mcp/config.ts`): port fully + rewire into
-   claude/codex/copilot/opencode/pi `send_query` — closes the carried `- [≈]` (the inline stopgap `load_mcp_config`)
-   and the `&[]` mcp_server_names gap. See loop_state "Open follow-ups". Pure-logic, good differential target.
-3. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
+ALL provider ports (PR-01..11) are DONE and fully bound (CLI + 3 Node SDKs); **PR-12 loadMcpConfig DONE (cycle 24)**.
+The whole `packages/providers` track is now full-parity. Next units:
+1. **MAP units the dag-executor needs:** CO db→`hf` (har-ledger = WF-19 IWorkflowStore over hf),
    coord→`weave`/`grit`, memory→`icm` — integrate substrates, don't reimplement a DB.
-4. **WF-09 dag-executor** (keystone state machine), then WF-10/15/16.. workflows → server (axum) → cli.
+2. **WF-09 dag-executor** (keystone state machine), then WF-10/15/16.. workflows → server (axum) → cli.
 
 ## Method that works (proven over 19 cycles — KEEP DOING)
 - One cohesive unit/cycle: porter (sonnet) → `cargo clippy --all-targets` + test → **differential**

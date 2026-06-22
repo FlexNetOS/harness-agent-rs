@@ -18,6 +18,7 @@ members = [
     "crates/har-adapters",
     "crates/har-server",
     "crates/har-cli",
+    "crates/har-db",
 ]
 
 [workspace.package]
@@ -92,3 +93,13 @@ url = "2"
 
 # Futures utilities
 futures-util = "0.3"
+
+# UUID generation (TS crypto.randomUUID() → Uuid::new_v4, v4 lowercase hyphenated)
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# SQL database driver (sqlx 0.9; sqlite + postgres — postgres added cycle 28 for CO-01b PostgresAdapter)
+# runtime-tokio-rustls: pure-Rust TLS (no OpenSSL) on the postgres path; sqlite uses bundled C-SQLite.
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "sqlite", "postgres", "uuid", "chrono", "json", "bigdecimal"] }
+
+# Temporary-file helpers (for test DBs)
+tempfile = "3"

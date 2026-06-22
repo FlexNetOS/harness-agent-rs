@@ -361,13 +361,21 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 - [ ] Runtime detection from file extension (`.ts` → bun, `.py` → uv)
 
 ### UNIT WF-19: Workflow Store Interface
-**Source:** `packages/workflows/src/store.ts`
-**Rust target:** MAP→hf (durable state substrate) + `crates/workflows/src/store.rs` (trait)
+**Source:** `packages/workflows/src/store.ts` (the NARROW interface only; impls live in `core/db/*.ts`)
+**Rust target:** `crates/har-ledger/src/store.rs` (trait). LEDGER CORRECTION: `crates/workflows` crate does not exist;
+the trait lands in `har-ledger` (which already deps `har-workflow-schema` and is earmarked for WF-19). MAP→hf applies
+to the IMPLEMENTATION (the later CO-db unit: `impl WorkflowStore for HfWorkflowStore` over `hf`), NOT this interface unit.
 
-- [ ] `IWorkflowStore` trait: all methods used by executor/dag-executor: `getWorkflowRunStatus(id)`, `updateWorkflowActivity(id)`, `createWorkflowEvent(event)`, `pauseWorkflowRun(id, approval_context)`, `cancelWorkflowRun(id)`, `getCodebase(id)`, `getCompletedDagNodeOutputs(runId)` (inferred from dag-executor.ts usage)
-- [ ] `WORKFLOW_EVENT_TYPES` constant list (cli.ts:60)
-- [ ] Resume CAS operation: `resumeWorkflowRun` with compare-and-swap on status (db/workflows.resume-cas.integration.test.ts)
-- [ ] `WorkflowNodeSession` store operations (persist_session feature)
+**cycle 25 (WF-19) — FULL `- [x]`** (parity PASS vs live bun, findings/parity-cycle25.md). store.ts is a pure INTERFACE
+(TS `interface`/`type`/`const`) — gate = (A) live-bun differential of `WORKFLOW_EVENT_TYPES` (21 strings, byte-identical
+count/order/spelling across the Rust const + serde-enum + as_str) + (B) structural shape-fidelity of all 20 methods + 11
+param/result structs + (C) the two load-bearing contract-encodings preserved (`create_workflow_event` returns `()`
+never-throws; `get_completed_dag_node_outputs` is `Result<IndexMap<..>, StoreError>` — fallible + insertion-order).
+- [x] `WorkflowStore` trait (drop `I` per Rust idiom): ALL 20 methods ported faithfully — createWorkflowRun, getWorkflowRun, getActiveWorkflowRunByPath (self-tiebreaker doc-contract carried), findResumableRun, failOrphanedRuns, resumeWorkflowRun, updateWorkflowRun, updateWorkflowActivity, getWorkflowRunStatus, completeWorkflowRun, failWorkflowRun, pauseWorkflowRun, cancelWorkflowRun, createWorkflowEvent (`()` never-throws contract), getCompletedDagNodeOutputs (`Result<IndexMap>` throws+ordered), getCodebaseEnvVars, getCodebase, getWorkflowNodeSession, upsertWorkflowNodeSession, deleteWorkflowNodeSessions (provider-filter doc-contract carried). `#[async_trait]`, object-safe (`Box<dyn WorkflowStore>`).
+- [x] `WORKFLOW_EVENT_TYPES` constant list (cli.ts:60) — `[&str; 21]` + `WorkflowEventType` enum (21 variants, `#[serde(rename_all="snake_case")]` → exact source strings) + `as_str()`. Live-bun differential PASS.
+- [≈] param/result structs: TS `Record<string,unknown>`→`serde_json::Map` (opaque metadata, insertion-order); `Record<string,string>`→`IndexMap` (deterministic, mandatory for the insertion-order-contracted DAG outputs); row counts `number`(f64)→`u64`. Benign, recorded.
+- [ ] **(NEXT UNIT, not this one)** Resume CAS (`resumeWorkflowRun` compare-and-swap on status) — BEHAVIOR, lives in the hf-backed IMPL (`core/db/workflows.ts`); the trait method signature is ported, the CAS logic is the impl unit.
+- [ ] **(NEXT UNIT, not this one)** `WorkflowNodeSession` store ops (persist_session) — trait methods ported (get/upsert/delete); the durable hf upsert/delete logic is the impl unit.
 
 ### UNIT WF-20: Bundled Defaults
 **Source:** `packages/workflows/src/defaults/bundled-defaults.ts`
@@ -579,13 +587,14 @@ LEDGER CORRECTIONS:
     capability stays `true` end-to-end — NO DOWNGRADE. Live-CLI smoke = `SKIPPED — env-gated` (claude
     2.1.177 present but no CLAUDE_BIN_PATH/auth). Harness: tests/parity_cycle16_loopback_transport.rs.
     Findings: findings/parity-cycle16.md.
-  - [≈] `write_mcp_config_merged` is MORE LENIENT than source `normalizeMcpConfig` (`mcp/config.ts`): on a
-    malformed config that mixes top-level `mcpServers` with sibling keys it ignores the siblings rather than
-    throwing "MCP config cannot mix…". NOT a downgrade of native-tools (no server dropped, no capability
-    lost on well-formed input). FOLLOW-UP (tracked, owed by the not-yet-ported `loadMcpConfig` wiring unit):
-    the full normalizeMcpConfig validation (incl. this throw + the `&[]` mcp_server_names gap where nodeConfig
-    server wildcards aren't yet resolved into allowed-tools) lands when `loadMcpConfig` is ported & wired into
-    `send_query`. See loop_state "Open follow-ups".
+  - [x] (was `- [≈]`) `write_mcp_config_merged` leniency — CLOSED by PR-12 (cycle 24). The claude `send_query`
+    now calls the faithful `crate::mcp::load_mcp_config` at step 3b (BEFORE the native-tools merge / per-attempt
+    argv), so a config that mixes top-level `mcpServers` with sibling keys now throws "MCP config cannot mix…"
+    (load error → claude `return`) before `write_mcp_config_merged` ever runs — the full `normalizeMcpConfig`
+    validation now gates the path. The `&[]` `mcp_server_names` gap is also closed: nodeConfig server wildcards
+    (`mcp__<n>__*`) are resolved into allowed-tools from the loaded `server_names`. `write_mcp_config_merged`
+    itself still does its own inline merge-normalize for the archon entry, but it can no longer be reached with
+    an invalid nodeConfig.mcp (validation runs first). Harness: tests/parity_cycle24_mcp_config.rs.
 
   **→ PR-03 Claude Provider is now a FULL VERIFIED UNIT (34/79).** All rows `- [x]` except the recorded
   `- [≈]`/`- [≠]` qualified items. Native-tools feature is reachable end-to-end (CLI connects to the
@@ -679,7 +688,7 @@ LEDGER CORRECTIONS:
 **Source:** `packages/providers/src/codex/provider.ts`
 **Rust target:** `crates/har-provider/src/codex/provider.rs`
 
-- [x] `CodexProvider` implementing `IAgentProvider`: subprocess-based; `modelReasoningEffort`, `webSearchMode`, `additionalDirectories`, `codexBinaryPath` (provider.ts) — cycle 17, parity-verified vs live @openai/codex-sdk@0.125.0 + bun. Reuses `cli_stream/` substrate. Includes ported `normalize_json_schema_for_openai_strict` (shared/structured-output.ts:147-233) for `--output-schema`. `- [≠]` D3: structured-output warn preview uses `.chars().take(200)` (scalar values) vs TS `slice(0,200)` (UTF-16 units) — log-cosmetic only, Rust strictly more correct (no lone surrogate). `- [≈]` MCP: `send_query` uses inline stopgap `load_mcp_config`; rewire when PR-12 `loadMcpConfig` lands.
+- [x] `CodexProvider` implementing `IAgentProvider`: subprocess-based; `modelReasoningEffort`, `webSearchMode`, `additionalDirectories`, `codexBinaryPath` (provider.ts) — cycle 17, parity-verified vs live @openai/codex-sdk@0.125.0 + bun. Reuses `cli_stream/` substrate. Includes ported `normalize_json_schema_for_openai_strict` (shared/structured-output.ts:147-233) for `--output-schema`. `- [≠]` D3: structured-output warn preview uses `.chars().take(200)` (scalar values) vs TS `slice(0,200)` (UTF-16 units) — log-cosmetic only, Rust strictly more correct (no lone surrogate). `- [x]` MCP: CLOSED by PR-12 (cycle 24) — `send_query` now uses the faithful shared `crate::mcp::load_mcp_config` (env source `{...process.env, ...requestEnv}` via `build_mcp_env_source`); load error → terminal `codex_mcp_config_invalid` chunk (was silently swallowed). Inline stopgap removed.
 - [x] Output parsing: parses Codex CLI output (`thread.started`/`item.completed`/`error`/`turn.failed`/`turn.completed`) to `MessageChunk` stream (provider.ts) — cycle 17, parity PASS.
 
 ### UNIT PR-08: Codex Binary Resolver + Capabilities + Config
@@ -707,7 +716,7 @@ LEDGER CORRECTIONS:
 - [x] `ArchonUiContextSpec::notify` (ui-context-stub.ts) — icon dispatch + flush:true → chunk. cycle 20 PASS
 - [x] Lazy-load pattern (provider-lazy-load.test.ts) — SDK import deferred (the seam); pre-seam steps run without SDK
 - [x] `maxConcurrent` semaphore (types.ts:141) — tokio::sync::Semaphore. `- [≠]` (behavior-preserving: limit + acquire/release/order match)
-- [≈] MCP/loadMcpConfig carried (out-of-unit, PR-12)
+- [x] MCP/loadMcpConfig — CLOSED by PR-12 (cycle 24): pi never calls `loadMcpConfig` in source, so pi correctly stays MCP-unwired (verified). `- [≈]` carried item resolved.
 - NOTE (cycle 20 contract change, no-downgrade-verified): har-contract `MessageChunk::Tool.tool_input` `HashMap`→`Option<Value>` (Pi needs JS array-passthrough). Re-verified ALL providers vs their OWN source — claude `?? {}`(null/absent→{}), copilot `?? {}`(passthrough incl array), opencode `isRecord`(omit null/scalar), pi(typeof→{}), codex(never emits) — 4 distinct behaviors preserved, NOT homogenized. Permanent coverage: tests/parity_cycle20_contract_blast.rs.
 
 ### UNIT PR-10: Community Copilot Provider
@@ -722,7 +731,7 @@ LEDGER CORRECTIONS:
 - [x] `resolveCopilotBinaryPath(config)` (binary-resolver.ts) — cycle 18, all 6 tiers + error text byte-exact
 - [x] shared: `augment_prompt_for_json_schema` (order-preserving) + `try_parse_structured_output` (shared/structured-output.ts) — cycle 18 PASS. `- [≠]` tier-3 jsonrepair: `jsonrepair-rs 0.2.1` (only Rust equiv) vs npm jsonrepair 3.14.0 differs ONLY on pathological invalid-JSON no model emits — `NaN`/`Infinity`→`null` vs `"NaN"`; `+1`/`+1.5`→strip-and-accept vs throw→None. Bounded, recorded.
 - [x] shared: `resolve_skill_directories` (shared/skills.ts) — cycle 18, 17-case PASS
-- [≈] MCP: `send_query` reuses codex's inline stopgap `load_mcp_config`; rewire when PR-12 `loadMcpConfig` lands (carried, out-of-unit)
+- [x] MCP: CLOSED by PR-12 (cycle 24) — `send_query` now uses the faithful shared `crate::mcp::load_mcp_config` with `process.env` source, feeds the expanded `servers` into the JSON-RPC `mcpServers` session param (was hard-coded `None`), and surfaces a load error as a terminal `copilot_mcp_config_invalid` chunk. `- [≈]` carried item resolved.
 - [ ] Provider hardening: retry on transient errors (provider-hardening.test.ts) — folded into the SDK-seam binding (retry wraps the session call); completes when the seam is bound
 
 ### UNIT PR-11: Community OpenCode Provider
@@ -743,9 +752,25 @@ LEDGER CORRECTIONS:
 
 ### UNIT PR-12: MCP Config Loader
 **Source:** `packages/providers/src/mcp/config.ts`
-**Rust target:** `crates/providers/src/mcp/config.rs`
+**Rust target:** `crates/har-provider/src/mcp/config.rs` (LEDGER CORRECTION: was `crates/providers/...`)
+**Status:** `- [x]` FULL VERIFIED UNIT (cycle 24, 2026-06-21) — differentially verified vs live source
+(`bun` 1.3.14, 37-case matrix); harness `tests/parity_cycle24_mcp_config.rs` (22 golden tests). Closes the
+carried `- [≈]` inline-stopgap and the claude `&[]` `mcp_server_names` gap. Replaced the codex inline stopgap
+(which diverged: no `mcpServers` wrapper handling, recursive all-field expansion vs env/headers-only,
+warn-and-skip vs throw, lowercase var matching, different messages) with a faithful shared module.
 
-- [ ] `loadMcpConfig(path: &str) -> Result<Map<String,Value>>` — loads MCP server JSON config file (mentioned in dag-executor.ts:380)
+- [x] `load_mcp_config(mcp_path, cwd, env_source) -> Result<LoadedMcpConfig, String>` — faithful port (config.ts:127-161)
+- [x] `normalizeMcpConfig` — `{mcpServers:{…}}` unwrap; mixed-keys throw; non-object `mcpServers` throw (config.ts:101-122)
+- [x] `expandEnvVars` — expansion ONLY in each server's `env`/`headers` (NOT command/args/url); throws on non-object server/env/headers (config.ts:50-99)
+- [x] `expandEnvVarsInRecord` — uppercase-only regex `[A-Z_][A-Z0-9_]*` (via `regex` crate, byte-exact incl. greedy bare-name stop); non-string value throws; missing vars recorded WITH dups → empty string (config.ts:22-48)
+- [x] `describeJsonType` (null/array/object/string/number/boolean) (config.ts:12-16)
+- [x] `LoadedMcpConfig { servers (order-preserving Map), server_names (Object.keys order), missing_vars }` (config.ts:6-10)
+- [x] **Rewire codex** — `crate::mcp::load_mcp_config` w/ `{...process.env, ...requestEnv}` env source (`buildMcpEnvSource`); load error → terminal `Result{is_error,error_subtype:"codex_mcp_config_invalid"}` (was silently swallowed)
+- [x] **Rewire copilot** — `process.env` source (source uses default arg); feeds `servers` → JSON-RPC `mcpServers` session param (was hard-coded `None`); empty-path early return; load error → `copilot_mcp_config_invalid`; warning NOT deduped (matches source)
+- [x] **Rewire claude** — closed `&[]` gap: `server_names` → `mcp__<n>__*` wildcards, `missing_vars` → warning (both `build_claude_argv` calls); raw `nodeConfig.mcp` path still forwarded to `--mcp-config` (the `claude` CLI expands `${VAR}` natively — verified via docs; faithful CLI delegation); load error → `return` (mirrors binary-not-found)
+- [≈] invalid-JSON / non-ENOENT-read error DETAIL tail differs cross-runtime (V8 `SyntaxError`/Node `fs` vs `serde_json`/`std::io`); prefix + error condition byte-exact; no consumer parses the detail
+- [≈] path resolution uses `Path::join` vs Node `path.resolve` (`..`/`.` not collapsed) — identical for abs-cwd + simple-relative inputs; only appears in the ENOENT message tail
+- [≠] opencode/pi correctly have NO MCP wiring (source never calls `loadMcpConfig` there)
 
 ### UNIT PR-13: Provider Shared Skills
 **Source:** `packages/providers/src/shared/skills.ts`
@@ -1093,26 +1118,63 @@ NOTE ON BOOT VARIANT: `strip-cwd-env-boot.ts` calls `stripCwdEnv()` at import ti
 
 ### UNIT CO-01: Database Adapter Interface
 **Source:** `packages/core/src/db/adapters/types.ts`
-**Rust target:** MAP→`sqlx` (SQLite default, PostgreSQL option); trait in `crates/core/src/db/adapter.rs`
+**Rust target:** `crates/har-db/src/adapters.rs` (cycle 26: dialect layer). Driver-bound pieces (query/tx, concrete adapters) MAP→DB driver crate TBD in cycle 27.
 
-- [ ] `IDatabaseAdapter` trait: `query`, `queryOne`, `execute`, `transaction`, `close` (adapters/types.ts)
-- [ ] SQLite adapter: `packages/core/src/db/adapters/sqlite.ts` (CO-01a)
-- [ ] PostgreSQL adapter: `packages/core/src/db/adapters/postgres.ts` (CO-01b)
-- [ ] `getDatabaseType()` — env-based selection (core/index.ts; api.ts imports)
+Dialect layer (cycle 26 — har-db crate): PARITY-VERIFIED 2026-06-21 (differential vs live TS, 56/56 strings byte-identical, UUID v4 shape parity) — see findings/parity-cycle26.md
+- [x] `QueryResult<T>` struct: `rows: Vec<T>`, `row_count: u64` (TS `rowCount`→u64); serde `rowCount` rename, round-trip tested (har-db/src/adapters.rs)
+- [x] `Dialect` enum `{Postgres,Sqlite}` (TS `'postgres'|'sqlite'`); serde lowercase round-trip + `as_str()`, tested
+- [x] `SqlDialect` trait (6 methods: generate_uuid/now/json_merge/json_array_contains/now_minus_days/days_since); object-safe, tested
+- [x] `PostgresDialect` impl — BYTE-EXACT vs `postgresDialect` (postgres.ts:237-261); all 5 string methods + UUID v4 verified differentially
+- [x] `SqliteDialect` impl — BYTE-EXACT vs `sqliteDialect` (sqlite.ts:522-550); all 5 string methods + UUID v4 verified differentially
+- [x] `DbNotificationListener` trait SHAPE (types.ts:59-72): async `listen(channel, on_notify: Box<dyn Fn(String)+Send+Sync>, on_error: Box<dyn Fn(NotificationError)+Send+Sync>) -> Box<dyn FnOnce()+Send>`. Trait only; Postgres-only impl deferred to pg adapter cycle.
+
+Driver-bound layer (cycle 27 — sqlx 0.9 / sqlite): PARITY-VERIFIED 2026-06-22 (differential vs live bun:sqlite 1.3.14, 21-case battery re-passed after D1/D2 fix) — see findings/parity-cycle27.md
+- [x] `Database` trait `query` / `with_transaction` signatures — object-safe `#[async_trait]`; TS generic `<T>`/`<U>` erased to `serde_json::Value` (`- [≈]`; TS `as T[]` is an unchecked runtime cast). `with_transaction` takes a boxed `for<'tx> FnOnce(&'tx dyn DbExecutor) -> BoxFuture` (object-safe, no method generic). `DbExecutor` narrow inner trait exposes `query` only. (har-db/src/database.rs)
+- [x] SQLite adapter `query`/`withTransaction` impl (CO-01a) ← sqlite.ts:17-517 — sqlx-sqlite over bundled C-SQLite. PRAGMA WAL/busy_timeout=5000/foreign_keys=ON; createSchema (BYTE-FAITHFUL inlined CREATE TABLE/INDEX block) + migrate_columns (PRAGMA table_info via direct fetch path bypassing public dispatch — mirrors source `db.prepare().all()`; conditional ALTER TABLE, per-table warn-not-throw). query dispatch: SELECT/WITH→rows; RETURNING+INSERT→fetch; RETURNING on UPDATE/DELETE→throw EXACT message built from CONVERTED (`?`) SQL (D1 fix); else execute rowCount=changes; PRAGMA/EXPLAIN fall through to mutation path rows=[]/rowCount=0 (D2 fix, bun-parity). with_transaction BEGIN/COMMIT/ROLLBACK (rollback-fail logged, original err rethrown). **convertPlaceholders ELIMINATED** — sqlx-sqlite resolves `$N` by index (out-of-order `$2…$1` + repeated `$1` PROVEN bun-identical); `::jsonb`/`::INTERVAL` strip moot for SQLite-routed SQL. 31 har-db tests. (har-db/src/sqlite.rs, error.rs)
+
+Postgres driver layer (cycle 28 T2 — sqlx 0.9 / postgres): PARITY-VERIFIED 2026-06-22 (differential vs live TS `pg` over docker postgres:16, full type/rowCount/RETURNING/LISTEN-NOTIFY/transaction battery; FAILED FIRST on 4 real divergences, fixed+re-passed) — see findings/parity-cycle28-pg.md
+- [x] PostgreSQL adapter `query`/`withTransaction` impl (CO-01b) ← postgres.ts:17-232 — sqlx `PgPool` (max=10, idle=none, acquire-timeout=10s). schema init eager in async ctor (advisory `pg_advisory_xact_lock(1796)`, `get_schema_sql()`, COMMIT/ROLLBACK-on-err `db.postgres_schema_init_*`) + `installNotifyTrigger` (lock 1797, WORKFLOW_EVENT_NOTIFY_SQL verbatim, non-fatal WARN). Native `$N` binding (no convertPlaceholders). GATE-fixed: NUMERIC decode (BigDecimal+normalized), INT8→string (node-pg bigint-as-string, split from OID→Number), string→typed-column bind (UUID-sniff + native jsonb in build_args). `- [≈]`: Date→ISO, numeric/uuid/int8→string, async ctor, pool-error-hook relocation. (har-db/src/postgres.rs)
+- [x] `DbNotificationListener` Postgres impl ← postgres.ts:189-231 — sqlx `PgListener`, channel-name validated `^[a-z_][a-z0-9_]*$/i` (exact `Invalid LISTEN channel name: {channel}`), spawned forwarder + mpsc-stop unsubscribe closure, destroy-not-recycle. LISTEN/NOTIFY round-trip proven live (trigger→pg_notify→on_notify). (har-db/src/postgres.rs)
+- [x] `getDatabaseType()` — env-based selection — landed with CO-02 connection auto-detect (cycle 28 T3). 43 har-db tests (39 unit + 4 DATABASE_URL-gated live). Durable oracle: examples/oracle_cycle28_pg.rs, tests/postgres_live.rs.
 
 ### UNIT CO-02: Database Connection
 **Source:** `packages/core/src/db/connection.ts`
-**Rust target:** MAP→`sqlx::Pool`; connection module in `crates/core/src/db/connection.rs`
+**Rust target:** MAP→`sqlx::Pool`; connection module in `crates/har-db/src/connection.rs`
+**Ledger correction:** ledger named `crates/core/src/db/connection.rs` but `crates/core` does not
+exist — har-db owns the CO adapters (cycles 26/27/28), so connection lands in `crates/har-db/src/connection.rs`.
 
-- [ ] `initDatabase(url?)` / `closeDatabase()` (connection.ts; cli.ts imports)
-- [ ] WAL mode for SQLite (connection.ts comment at dag-executor.ts:851)
+- [x] `getDatabase()` — singleton auto-detect (DATABASE_URL→Postgres / else SQLite at getArchonHome()/archon.db);
+      exact log events `db.connection_postgresql_selected` / `db.connection_sqlite_selected` / `db.docker_using_sqlite`
+      (WARN, exact hint); at-most-one adapter under concurrent first-callers (tokio Mutex held across async ctor).
+      `- [≈]` async getter vs sync TS getter (sqlx pools/schema-init are async).
+- [x] `getDialect()` — cached Dialect, inits DB if needed, exact "Database dialect not initialized…" throw →
+      `DbError::DialectNotInitialized` (byte-exact message). `- [≈]` async + throw→Result.
+- [x] `getDatabaseType()` — env-only, NO init → `DatabaseType::{Postgresql,Sqlite}` (`as_str()` = "postgresql"/"sqlite",
+      exact). Empty DATABASE_URL = JS-falsy → Sqlite.
+- [x] `getDbNotificationListener()` — None unless type==postgresql AND backend supports listen. Seam: **option 4a**
+      (separate `Arc<dyn DbNotificationListener>` singleton, same pg adapter, populated only on pg branch). sqlite→None
+      (no init). `- [≈]` async.
+- [x] `closeDatabase()` (async) — close() then clear singleton (db+dialect+listener→None).
+- [x] `resetDatabase()` — clear WITHOUT closing (sync test seam; `try_lock` to keep sync signature inside a runtime).
+- [x] legacy `pool` — `pool::query(sql, Option<params>)` / `pool::end()` forwarders (`<T>`→Value erasure).
+- [≈] `initDatabase(url?)` — TS connection.ts exposes NO `initDatabase`; auto-detect IS the init path (getDatabase).
+- [x] WAL mode for SQLite — already done in SqliteAdapter::open (cycle 27).
+
+**Status:** `- [x]` PARITY-VERIFIED 2026-06-22 (cycle 28 T3) — differential vs live TS connection.ts: byte-exact
+log events + 107-char docker hint + 145-char dialect-not-init msg; construct-once atomic (no TOCTOU, lock held
+across async ctor); LIVE pg branch exercised end-to-end (SELECT 1 + listener .listen() receives pg_notify) + sqlite
+None. PASS, no defects. findings/parity-cycle28-conn.md; tests/connection_live.rs. 53 tests w/ DATABASE_URL (48 unit + live).
 
 ### UNIT CO-03: Database Schema (bundled SQL)
 **Source:** `packages/core/src/db/bundled-schema.ts`, `bundled-schema.generated.ts`
-**Rust target:** MAP→`sqlx::migrate!` with migration files in `migrations/`
+**Rust target:** `crates/har-db/src/schema.rs` + vendored `crates/har-db/src/bundled_schema.sql`
+**Status:** `- [x]` (cycle 28 T1) — `get_schema_sql()` port of `bundled-schema.ts:17-24`. Vendors
+`migrations/000_combined.sql` (byte-equal `cmp`) into the crate, `include_str!`s it. Binary/source build
+branches collapse to the compile-time embed (`- [≈]`). PG-dialect, 17 `remote_agent_*` tables. SQLite keeps
+its c27 inlined schema (this is the sole `getSchemaSQL` caller = pg). 3 tests (embed + idempotency style).
 
-- [ ] Schema version + migration (bundled-schema.ts)
-- [ ] Tables: conversations, codebases, messages, sessions, users, env_vars, isolation_environments, workflow_events, workflow_node_sessions, workflow_run (bundled-schema.generated.ts; inferred from db/*.ts names)
+- [x] `getSchemaSQL()` → `get_schema_sql() -> &'static str` (compile-time embed of 000_combined.sql, byte-equal)
+- [x] Tables: 17 `remote_agent_*` (codebases, codebase_env_vars, users, user_identities, conversations, sessions, isolation_environments, workflow_runs, workflow_events, workflow_node_sessions, messages, user_github_tokens, auth_*) — embedded verbatim, exercised live by the pg adapter init (T2)
 
 ### UNIT CO-04: Workflow DB Operations
 **Source:** `packages/core/src/db/workflows.ts`

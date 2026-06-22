@@ -8,11 +8,135 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 7    # resume 2026-06-21; cycles 17-23 done. ALL provider SDKs BOUND (owner: do it right, no band-aid).
-cycles_total: 23
-ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
-        `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
-        units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+cycles_this_session: 3    # resume 2026-06-22 (owner: "pick 7 new tasks this session"); units T1=CO-03, T2=CO-01b, T3=CO-02 DONE+verified+committed. T4-T7 PENDING (interrupted: usage exhausted).
+cycles_total: 30          # 27 + 3 (cycle-28 session units T1/T2/T3)
+ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+        cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
+        query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
+        cycle 25 added WF-19 WorkflowStore trait (full `- [x]`), the narrow persistence interface WF-09 depends on.
+        cycle 24 added PR-12 loadMcpConfig (full `- [x]`), closing the carried MCP `- [≈]` (inline stopgap) and
+        the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14, WF-19; PA-01/06/07;
+        GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+status_cycle28: cycle 28 session (2026-06-22) — owner directive "/harness:rust-port-merge resume and pick 7 new task".
+        Picked a coherent 7-unit slice = **complete the DB backend + land a verified `impl WorkflowStore`** (the WF-09
+        keystone dependency). Spec card: findings/cycle28-spec.md (7 task cards, owner spec-before-implementing rule).
+        **3 of 7 DONE + parity-verified + committed (foundation):**
+        • **T1 = CO-03 Postgres bundled schema** `- [x]` (commit 9ec006f) — get_schema_sql() embeds vendored
+          migrations/000_combined.sql (byte-equal cmp, include_str!); 17 remote_agent_* tables; pg-only (sole getSchemaSQL
+          caller). 3 tests.
+        • **T2 = CO-01b PostgresAdapter** `- [x]` (commit e566ded) — sqlx PgPool, advisory-lock schema init (1796) +
+          installNotifyTrigger (1797, WORKFLOW_EVENT_NOTIFY_SQL verbatim, non-fatal) + DbNotificationListener::listen via
+          PgListener. Added sqlx features postgres/json/bigdecimal. **GATE FAILED FIRST on 4 real divergences** the verifier
+          caught+fixed (NUMERIC decode panic→BigDecimal+normalized; INT8→string not Number; OID→Number split;
+          string→typed-column bind downgrade→UUID-sniff+native jsonb in build_args) → RE-VERIFY PASS (full type/rowCount/
+          RETURNING/LISTEN-NOTIFY/transaction battery vs live TS pg over docker postgres:16). 43 har-db tests (39 unit + 4
+          DATABASE_URL-gated live). findings/parity-cycle28-pg.md; durable oracle examples/oracle_cycle28_pg.rs + tests/postgres_live.rs.
+        • **T3 = CO-02 connection auto-detect** `- [x]` (commit db0071d) — get_database singleton (DATABASE_URL→pg else
+          SQLite at archon_home/archon.db; ARCHON_DOCKER warn), get_dialect, get_database_type (env-only), get_db_notification_listener
+          (option-4a separate listener singleton: pg Some / sqlite None), close_database, reset_database, legacy pool forwarder.
+          Construct-once ATOMIC (lock held across async ctor — no TOCTOU). **GATE PASS, no defects** — byte-exact strings (3 log
+          events + 107-char docker hint + 145-char dialect-not-init msg) + LIVE pg branch exercised end-to-end. findings/parity-cycle28-conn.md;
+          tests/connection_live.rs. Landed in crates/har-db/src/connection.rs (LEDGER CORRECTION: crates/core doesn't exist).
+        **Carries (`- [≈]`):** pg Date→ISO, numeric/uuid/int8→string, async ctor (sqlx pools build async), throw→Result, dbPath→db_path field.
+        Workspace green: cargo build + clippy --all-targets -D warnings + fmt clean; har-db 52 unit (+live when DATABASE_URL set).
+        docker pg probe (har_pg_probe) STOPPED/cleaned at wrap-up. Commits LOCAL on main, NOT pushed (owner defer-push).
+        **NEXT (4 remaining units, all PENDING) — store-impl modules over the now-complete adapter+connection+schema:**
+        • **T4 = CO-04 workflows.ts (1088 lines, the behavior-rich core)** — port each exported fn as a method on a NEW
+          `SqlWorkflowStore { db: Arc<dyn Database>, dialect }` (create crates/har-db/src/store.rs scaffolding + workflows.rs).
+          Method sigs MUST match the WF-19 `WorkflowStore` trait in crates/har-ledger/src/store.rs (reuse its param/result
+          structs; add har-ledger + har-workflow-schema deps to har-db). LOAD-BEARING: resumeWorkflowRun = transactional
+          compare-and-swap on status (read source + workflows.resume-cas.integration.test.ts); getCompletedDagNodeOutputs =
+          insertion-ordered IndexMap + THROWS (Result, don't swallow); getActiveWorkflowRunByPath self-tiebreaker. Use SqlDialect
+          builders via self.db.sql() for now()/nowMinusDays()/jsonMerge() so BOTH backends get correct SQL. Prefer SQLite-backed
+          in-process behavioral tests (SqliteAdapter, no server) for CAS+CRUD; pg variant DATABASE_URL-gated.
+          (The T4 porter was launched then INTERRUPTED before starting — re-launch the same prompt; it's preserved in this turn's history.)
+        • **T5 = CO-05 workflow-events.ts (222 ln)** — createWorkflowEvent (fire-and-forget, MUST-NOT-THROW → swallow+log, return ());
+          getWorkflowEventsSince (ordered). Own module workflow_events.rs + impl SqlWorkflowStore block.
+        • **T6 = CO-06 workflow-node-sessions.ts (121 ln)** — get/upsert/delete node sessions; composite PK
+          (workflow_name,node_id,scope_key,provider) ON CONFLICT upsert; provider-filter delete. Own module + impl block.
+        • **T7 = CO-08 codebases.ts (183 ln) + WIRE `impl WorkflowStore for SqlWorkflowStore`** — getCodebase/getCodebaseEnvVars
+          (the store's remaining methods) + CRUD; then assemble the COMPLETE object-safe `impl WorkflowStore` delegating to
+          T4/T5/T6/T7 inherent methods → end-to-end store smoke battery SQLite-diffed vs bun. THIS closes the WorkflowStore impl
+          that unblocks **WF-09 dag-executor (keystone)**.
+        PARALLELISM NOTE: T5+T6 are independent siblings (can port in parallel) but DON'T let parallel agents edit lib.rs — wire
+        lib.rs yourself after. T7 depends on T4/T5/T6. Conversations (CO-07) deferred (orchestrator-facing, not in store trait).
+        VERIFY INFRA: docker available; `docker run -d --rm --name har_pg_probe -e POSTGRES_PASSWORD=postgres -p 55432:5432
+        postgres:16-alpine` → DATABASE_URL=postgresql://postgres:postgres@localhost:55432/postgres. bun 1.3.14 for sqlite/TS oracle.
+status_cycle27: cycle 27 DONE — **CO-01 `Database` trait + SQLite adapter `- [x]`** (CO-01 driver-bound SQLite slice done;
+        still 38/79 FULL units — CO-01 not yet a full unit, pg adapter + connection auto-detect remain). Driver = **sqlx 0.9.0**
+        (cached + network up; `cc` present for bundled C-SQLite), features `runtime-tokio`+`tls-rustls-ring`+`sqlite`+`uuid`+`chrono`
+        (NOTE: 0.9 split `runtime-tokio-rustls` → `runtime-tokio`+`tls-rustls-ring`). Landed in crates/har-db: `database.rs`
+        (`Database` object-safe `#[async_trait]` + narrow `DbExecutor`; `with_transaction` = boxed `for<'tx> FnOnce(&dyn DbExecutor)
+        -> BoxFuture`; TS generic `<T>` erased to serde_json::Value = `- [≈]` faithful to TS `as T[]` unchecked cast), `sqlite.rs`
+        (`SqliteAdapter`: PRAGMA WAL/busy_timeout=5000/foreign_keys=ON, createSchema BYTE-FAITHFUL inlined block + migrate_columns via
+        direct fetch bypassing public dispatch, query SELECT/WITH vs mutation dispatch + RETURNING+INSERT fetch + RETURNING-on-
+        UPDATE/DELETE throw + PRAGMA/EXPLAIN→rows=[]/rowCount=0, with_transaction BEGIN/COMMIT/ROLLBACK), `error.rs` (DbError, exact msgs).
+        **convertPlaceholders ELIMINATED** (sqlx-sqlite resolves `$N` by index — out-of-order `$2…$1` + repeated `$1` PROVEN bun-identical
+        by the verifier's own oracle, NOT a downgrade). **GATE: differential vs live bun:sqlite 1.3.14 — FAILED FIRST** on 2 unflagged
+        contract divergences the verifier caught (D1: error msg embedded RAW `$N` SQL not CONVERTED `?` SQL; D2: `query()` is_select
+        wrongly broadened to include PRAGMA → returned 14 rows vs bun's 0). Porter fixed both (D1: `convert_sql_for_error`; D2: revert
+        is_select to SELECT/WITH-only + migrate_columns uses own `pragma_table_info` direct path) → **RE-VERIFY PASS** (full-message
+        byte-match + PRAGMA rows=[]/rowCount=0 + no regression). Only benign carry B1 `- [≈]` (`nowMinusDays` REAL `1` vs serde `1.0`).
+        Durable oracle: crates/har-db/examples/oracle_cycle27.rs. 31 har-db tests; workspace **1596 passed / 11 ignored**, clippy+fmt clean.
+        Findings: findings/parity-cycle27.md; spec/task-card: findings/cycle27-spec.md.
+        **NEXT = cycle 28: PostgresAdapter (CO-01b — sqlx-postgres pool, advisory-lock schema init via getSchemaSQL bundled-schema,
+        installNotifyTrigger, `PgListener` for DbNotificationListener) + connection.ts auto-detect (CO-02: getDatabase/getDialect/
+        getDatabaseType/getDbNotificationListener/closeDatabase/resetDatabase + legacy `pool`) — connection needs BOTH adapters. Then
+        workflows.ts/workflow-events.ts/workflow-node-sessions.ts/sessions.ts/conversations.ts queries (impl WorkflowStore) → WF-09
+        dag-executor (keystone). TODO marker left in sqlite.rs/lib.rs: swap SQLite backend to turso when it ships 1.0 (pure-Rust).**
+status_cycle26: cycle 26 DONE — **CO-01 db adapter DIALECT layer `- [x]`** (still 38/79 full units; CO-01 partially done).
+        **OWNER-CONFIRMED LANDING (2026-06-21):** the WorkflowStore impl is a **SQL-backed FAITHFUL PORT, NOT a map onto hf**
+        (evidence: Archon store = SQL DB w/ transactional resume-CAS + indexed lookups + append-only DAG-event log + node-session
+        upsert + codebase config; hf = continuity-ledger kernel w/ none of those → mapping = silent downgrade, forbidden. ADR-0001
+        'do not reimplement what substrates provide' does NOT bite — hf does not provide a workflow-exec store. REVERSES prior
+        'MAP->hf applies to impl' note). OWNER SCOPE: **SQLite + Postgres BOTH** (full connection.ts auto-detect parity) + consider a
+        pure-rust-native UPGRADE adapter (redb/sled/gluesql/limbo/ruvector) behind the same trait where it preserves behavior.
+        Landed new crate **crates/har-db** (deps har-ledger trait + har-workflow-schema + har-paths planned). Cycle 26 ported the
+        DIALECT slice of packages/core/src/db/adapters/types.ts (+ postgresDialect 237-261 / sqliteDialect 522-550): `QueryResult<T>`
+        (rowCount→u64), `Dialect` enum (serde lowercase postgres|sqlite + as_str), `SqlDialect` trait (6 pure SQL-expr builders:
+        generate_uuid/now/json_merge/json_array_contains/now_minus_days/days_since), `PostgresDialect`+`SqliteDialect` impls
+        (BYTE-EXACT SQL strings), `DbNotificationListener` trait SHAPE (pg LISTEN/NOTIFY, impl deferred). Differentially verified vs
+        live bun 1.3.14: **56/56 dialect strings CHARACTER-IDENTICAL** (param indices 1/3/10/42 incl. multi-digit), UUID v4 shape-parity,
+        6/6 methods, ZERO stubs. 10 har-db tests. Workspace **1855 passed / 15 ignored**, clippy+fmt clean. Findings: parity-cycle26.md.
+        DEFERRED to cycle 27 (`- [ ]`, genuine scope boundary NOT a drop): `Database` trait `query`/`with_transaction` signatures +
+        concrete `SqliteAdapter`/`PostgresAdapter` + pg `DbNotificationListener` impl + `getDatabaseType()` auto-detect — all
+        DRIVER-DEPENDENT, pending the backend-driver research (findings/co-db-backend-research.md, agent running; sqlx is the prior
+        hypothesis for both backends; pure-rust-native = limbo/libsql/gluesql assessed for an additive upgrade adapter).
+        **NEXT = cycle 27 read co-db-backend-research.md → pick driver → port the `Database` trait + first concrete adapter (SQLite)
+        + connection auto-detect → then pg adapter → then workflows.ts/events/sessions queries → WF-09 dag-executor (keystone).**
+status_cycle25: cycle 25 DONE — **WF-19 WorkflowStore trait FULL `- [x]`** (38/79). Ported `packages/workflows/src/store.ts`
+        (the NARROW persistence INTERFACE the workflow engine depends on) into **`crates/har-ledger/src/store.rs`** (new
+        `store` module). LEDGER CORRECTION: target `crates/workflows` doesn't exist → landed in `har-ledger` (already deps
+        har-workflow-schema, earmarked for WF-19 in its header). Ported: `WorkflowStore` trait (drop `I`, `#[async_trait]`,
+        ALL 20 methods, object-safe), `WORKFLOW_EVENT_TYPES` (`[&str;21]`) + `WorkflowEventType` enum (21 variants, serde
+        snake_case → exact source strings), `WorkflowNodeSessionKey`, + 10 param/result structs (CreateWorkflowRunData,
+        WorkflowRunUpdate, CreateWorkflowEventData, CancelResult, FailOrphanedRunsResult, CodebaseRecord, ActiveRunSelf,
+        DeleteSessionsFilter, DeleteSessionsResult, UpsertNodeSessionParams), StoreError. Schema types (WorkflowRun,
+        WorkflowRunStatus, ApprovalContext, WorkflowNodeSession) reused from har-workflow-schema (not redefined). TWO
+        load-bearing contract-encodings: `create_workflow_event` → `()` (MUST-NOT-THROW structural); `get_completed_dag_node_outputs`
+        → `Result<IndexMap<String,String>, StoreError>` (throws + insertion-order). Differentially verified vs live bun
+        (WORKFLOW_EVENT_TYPES 21-string diff PASS across const+enum-serde+as_str) + 20/20 method shape-fidelity — PASS,
+        only benign `- [≈]` (Record→Map/IndexMap, row-count f64→u64). 14 har-ledger unit tests. Workspace **1845 passed /
+        15 ignored**, clippy + fmt clean. Findings: findings/parity-cycle25.md. **MAP→hf applies to the IMPL (next CO-db
+        unit), NOT this interface.** **NEXT = CO-db hf-impl (`impl WorkflowStore for HfWorkflowStore` over hf: resume CAS,
+        event-log append, node-session upsert/delete, getCompletedDagNodeOutputs query) → WF-09 dag-executor (keystone).**
+status_cycle24: cycle 24 DONE — **PR-12 loadMcpConfig FULL `- [x]`** (37/79). Ported the source's single shared
+        `loadMcpConfig` helper into a faithful **`crates/har-provider/src/mcp/config.rs`** (new `mcp` module),
+        replacing the codex inline stopgap that had diverged 5 ways (no `mcpServers` wrapper handling; recursive
+        all-field env-expansion vs source's env/headers-ONLY; warn-and-skip vs throw on non-object server;
+        lowercase var-name matching vs source's uppercase-only `[A-Z_][A-Z0-9_]*`; different error messages).
+        Rewired the 3 source callers (claude/codex/copilot — opencode/pi correctly DON'T use it): codex env source
+        `{...process.env, ...requestEnv}`; claude/copilot `process.env` (source default arg). **Closed the carried
+        `- [≈]` (inline stopgap) AND the claude `&[]` mcp_server_names gap** (server_names→`mcp__<n>__*` wildcards,
+        missing_vars→warning, both build_claude_argv calls). Copilot now feeds expanded `servers` into the JSON-RPC
+        `mcpServers` session param (was hard-coded `None`). Load errors now propagate as terminal error chunks
+        (codex/copilot `*_mcp_config_invalid`) / claude `return` — was a SILENT swallow (downgrade) in codex.
+        Differentially verified vs live bun (37-case matrix, harness-agent-rs parity-verifier) — PASS, 0 divergences;
+        only `- [≈]` = cross-runtime JSON-parse error DETAIL tail (prefix+condition byte-exact). Claude raw mcp-config
+        path still forwarded to `--mcp-config` (the `claude` CLI expands `${VAR}` natively — verified via docs; faithful
+        CLI delegation, NOT a downgrade). Durable harness: tests/parity_cycle24_mcp_config.rs (22 golden tests).
+        Workspace **1831 passed / 15 ignored** (58 suites), clippy + fmt clean. **NEXT = har-ledger (CO db MAP→hf,
+        WF-19 IWorkflowStore) → WF-09 dag-executor (keystone state machine) → WF-10/15/16.. → server (axum) → cli.**
 last_item: cycle 19 — **OpenCode community provider** (PR-11). Ported crates/har-provider/src/opencode/ (config,
            errors, tokens, agent_config, agent_fs, runtime, session, multi_agent, provider — 12 source files).
            OpenCode wraps the @opencode-ai/sdk NODE SDK → cli_stream/ N/A; per UP-2(b) the live SDK session
@@ -68,14 +192,14 @@ session_summary_2026-06-21: resumed at 34/79; baseline re-verified PASS; ran cyc
 last_update: 2026-06-21T18:00:00Z
 
 ## Open follow-ups (tracked — not downgrades, owed by not-yet-ported sibling units)
-- **loadMcpConfig full wiring into send_query** (owes two items surfaced cycles 15-16):
-  (1) `normalizeMcpConfig`'s "cannot mix top-level mcpServers with other keys" THROW — `write_mcp_config_merged`
-      is currently more lenient (`- [≈]`, ignores siblings); the throw belongs to the ported loadMcpConfig.
-  (2) the `&[]` mcp_server_names gap: `send_query` passes empty mcp_server_names to build_claude_argv, so a
-      nodeConfig.mcp server's `mcp__<name>__*` wildcards aren't yet resolved into --allowed-tools (PRE-EXISTING,
-      predates cycle 16; native-tools archon wildcard IS added). Resolve when loadMcpConfig is ported & the
-      async file-load + server-name extraction is wired into send_query. Source: packages/providers/src/mcp/config.ts
-      (already partially read cycle 15). NOT a native-tools downgrade — archon path is complete.
+- **loadMcpConfig full wiring into send_query** — ✅ **CLOSED cycle 24 (PR-12).** Both items resolved:
+  (1) `normalizeMcpConfig`'s "cannot mix top-level mcpServers…" THROW now fires via `crate::mcp::load_mcp_config`,
+      called at claude `send_query` step 3b BEFORE `write_mcp_config_merged` — so the lenient merge can no longer
+      be reached with an invalid nodeConfig.mcp (the validation gates the path first).
+  (2) the `&[]` mcp_server_names gap is closed — `send_query` now loads the config and passes real `server_names`
+      (→ `mcp__<name>__*` wildcards in --allowed-tools) + `missing_vars` (→ warning) to both build_claude_argv calls.
+  Faithful shared port in `crates/har-provider/src/mcp/config.rs`; differentially verified (37-case matrix);
+  harness tests/parity_cycle24_mcp_config.rs. (No remaining MCP follow-ups.)
 
 ## Cycle-13 (ported, parity UNPROVEN — awaiting verifier gate)
 - PR-03 deterministic core: `crates/har-provider/src/cli_stream/` + `crates/har-provider/src/claude/argv.rs` + `crates/har-provider/src/claude/parser.rs`.
