@@ -61,6 +61,10 @@ use serde_json::Value;
 
 use crate::copilot::binary_resolver::resolve_copilot_binary_path;
 use crate::copilot::config::parse_copilot_config;
+use crate::copilot::event_bridge::EventMapperContext;
+use crate::copilot::jsonrpc_client::{
+    bridge_session_via_rpc, CopilotSessionParams, SystemMessageWire,
+};
 use crate::shared::structured_output::augment_prompt_for_json_schema;
 use crate::COPILOT_CAPABILITIES;
 
@@ -690,11 +694,15 @@ impl AgentProvider for CopilotProvider {
                 .unwrap_or_default();
             let copilot_config = parse_copilot_config(&raw_config);
 
-            // 2. Log unsupported options (forkSession, persistSession) (provider.ts:447-459)
+            // 2. Extract forkSession / persistSession options.
+            //    Source: provider.ts:531 — `const wantsFork = requestOptions?.forkSession === true`
+            //    When wantsFork==true AND resumeSessionId is set, the bridge skips resume and
+            //    creates a fresh session, emitting the fork-warning chunk. This is the HOT path:
+            //    the dag-executor sets forkSession:true on every reuse.
+            let wants_fork = options.as_ref()
+                .and_then(|o| o.fork_session)
+                .unwrap_or(false);
             if let Some(opts) = &options {
-                if let Some(val) = opts.fork_session {
-                    tracing::debug!(option = "forkSession", value = val, "copilot.option_not_supported");
-                }
                 if let Some(val) = opts.persist_session {
                     tracing::debug!(option = "persistSession", value = val, "copilot.option_not_supported");
                 }
@@ -830,35 +838,98 @@ impl AgentProvider for CopilotProvider {
                 "copilot.session_config_resolved"
             );
 
-            // 10. Session create/resume + event bridge — NEEDS-HUMAN seam
+            // 10. Session create/resume + event bridge — PR-10/cycle-22 binding
             // Source: provider.ts:520-618 (client construction, createSession, resumeSession,
             // bridgeSession call, client.stop(), error handling).
             //
-            // The `@github/copilot-sdk` does not have a Rust equivalent. This seam requires
-            // either: (a) a native Rust Copilot SDK binding, or (b) an RPC bridge to a
-            // Node.js sidecar process that runs the SDK. Until then, surface a clear error.
-            tracing::warn!(
+            // The @github/copilot CLI is spawned as a subprocess. JSON-RPC 2.0 is spoken
+            // over its stdio using Content-Length framing (LSP convention).
+            // `bridge_session_via_rpc` handles the full lifecycle.
+            tracing::info!(
                 model = %resolved_model,
                 cwd = %cwd,
-                "copilot.sdk_session_needs_human: CopilotProvider sdk seam not yet resolved"
+                "copilot.rpc_bridge: invoking session via JSON-RPC"
             );
 
-            yield MessageChunk::Result {
-                session_id: None,
-                tokens: None,
-                structured_output: None,
-                is_error: Some(true),
-                error_subtype: Some("copilot_sdk_not_bound".to_owned()),
-                errors: Some(vec![
-                    "The Copilot provider SDK session is not yet bound in the Rust port. \
-                     The @github/copilot-sdk requires a Node.js runtime and has no Rust equivalent. \
-                     See harness-agent-rs crates/har-provider/src/copilot/provider.rs (NEEDS-HUMAN seam).".to_owned()
-                ]),
-                cost: None,
-                stop_reason: None,
-                num_turns: None,
-                model_usage: None,
+            // Build the system message wire format if present
+            let system_message_wire = system_message.as_ref().map(|content| SystemMessageWire {
+                mode: "append".to_owned(),
+                content: content.clone(),
+            });
+
+            // Build session params from resolved values
+            let session_params = CopilotSessionParams {
+                session_id: None, // generated fresh by bridge_session_via_rpc
+                model: resolved_model.clone(),
+                working_directory: cwd.clone(),
+                streaming: true,
+                reasoning_effort: reasoning_result.effort.as_ref().map(|e| e.as_str().to_owned()),
+                system_message: system_message_wire,
+                available_tools: _tool_restrictions.available_tools,
+                excluded_tools: _tool_restrictions.excluded_tools,
+                mcp_servers: None, // MCP handled externally via sidecar
+                skill_directories: if skills_result.paths.is_empty() {
+                    None
+                } else {
+                    Some(skills_result.paths)
+                },
+                custom_agents: if agents_result.custom_agents.is_empty() {
+                    None
+                } else {
+                    Some(
+                        agents_result
+                            .custom_agents
+                            .iter()
+                            .map(|a| serde_json::json!({
+                                "name": a.name,
+                                "description": a.description,
+                                "prompt": a.prompt,
+                                "tools": a.tools
+                            }))
+                            .collect(),
+                    )
+                },
+                config_dir: None,
+                enable_config_discovery,
             };
+
+            // Determine auth params from token_source
+            let (github_token_for_rpc, use_logged_in_user_for_rpc) = match token_source {
+                TokenSource::CopilotToken => (copilot_token.clone(), true),
+                TokenSource::GenericToken => (generic_github_token.clone(), false),
+                TokenSource::LoggedInUser => (None, true),
+            };
+
+            // Resolve the JSON schema if structured output is requested.
+            // OutputFormat.schema is Map<String, Value>; bridge expects Option<&Value>.
+            let json_schema_owned: Option<Value> = output_format.map(|f| Value::Object(f.schema.clone()));
+            let json_schema_ref = json_schema_owned.as_ref();
+
+            // Build EventMapperContext for this session
+            let mut event_ctx = EventMapperContext::new();
+
+            // Call the RPC bridge — returns all chunks including the terminal Result.
+            // Pass wants_fork so the bridge handles fork-to-fresh vs resume correctly.
+            // Source: provider.ts:531-578 (wantsFork + resumeSessionId branch)
+            let output_chunks = bridge_session_via_rpc(
+                cli_path,
+                github_token_for_rpc,
+                use_logged_in_user_for_rpc,
+                "debug",
+                &merged_env,
+                &session_params,
+                resume_session_id.as_deref(),
+                wants_fork,
+                &effective_prompt,
+                cancel.clone(),
+                wants_structured,
+                json_schema_ref,
+                &mut event_ctx,
+            ).await;
+
+            for chunk in output_chunks {
+                yield chunk;
+            }
         })
     }
 

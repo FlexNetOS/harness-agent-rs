@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 5    # resume 2026-06-21; cycles 17-21 done. Owner: bind ALL provider SDKs now (do it right, no band-aid).
-cycles_total: 21
+cycles_this_session: 6    # resume 2026-06-21; cycles 17-22 done. Owner: bind ALL provider SDKs now (do it right, no band-aid).
+cycles_total: 22
 ledger: parity **36/79 full units** + **PR-10 Copilot & PR-11 OpenCode ported-surfaces verified, provider rows
         `- [~]` on the accepted UP-2(b) Node-SDK seam** (not full `- [x]` until the later SDK-binding pass). (Full
         units: PR-01..08; WF-01..08, WF-11..14; PA-01/06/07; GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
@@ -34,6 +34,14 @@ status_cycle21: cycle 21 DONE — **OWNER DIRECTIVE: bind ALL provider SDKs now,
         client to the copilot CLI; ping/handshake/framing verifiable without auth), then cycle 23 **bind Pi** (RPC JSONL +
         ctx.ui + resolve the customTools callback no-downgrade). Researcher agents: opencode a24cb0882282bf083,
         copilot a86aaaf13ec9e69e2, pi adf3f133529e357a7 (full transport reports — continue via SendMessage).
+status_cycle22: cycle 22 DONE — **Copilot BOUND** (PR-10 provider `- [x]`): pure-Rust JSON-RPC/stdio client to the real
+        `@github/copilot` CLI; handshake proven live (protocolVersion=3, byte-identical frames). Gate caught+fixed 5
+        no-downgrade gaps (fork-to-fresh HOT path; 3 warning/error texts; tool.call body; structured-output reuse-not-copy)
+        + the pi env-race flake (#[serial]). Workspace 1763 tests, clippy+fmt clean. **2 of 3 SDKs bound** (opencode c21,
+        copilot c22). NEXT = cycle 23 **bind Pi** (`pi --mode rpc` JSONL/stdio + ctx.ui via RPC extension-UI sub-protocol)
+        — THE WRINKLE: pi customTools(native-tools) has no documented RPC dispatch-back. Per owner "do it right/no downgrade":
+        if PI_CAPABILITIES.native_tools=true, build the no-downgrade callback (thin pi extension → Rust socket, or MCP
+        extension) — do NOT ship V1-omit. Research: pi adf3f133529e357a7 (rpc.md protocol). Then PR-12 loadMcpConfig → WF-09.
 status: cycle 20 DONE (PR-09 Pi). **ALL 3 community-provider surfaces now ported+verified** (copilot/opencode/pi);
         their provider send_query rows `- [~]` on the accepted UP-2(b) Node-SDK seam. cycle 20 also changed
         har-contract `MessageChunk::Tool.tool_input` HashMap→Option<Value> (Pi array-passthrough); the gate caught

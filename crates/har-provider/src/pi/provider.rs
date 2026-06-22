@@ -575,6 +575,12 @@ pub use super::resource_loader::reset_reloaded_extension_loader_cache as reset_r
 mod tests {
     use super::*;
     use har_contract::StructuredOutputCapability;
+    // `send_query` calls `ensure_pi_package_dir_shim` which mutates `PI_PACKAGE_DIR` via
+    // `std::env::set_var`. Under the parallel test runner this races with any sibling
+    // test that reads or sets the same env var.  Serialize all async `send_query_*` tests
+    // using `serial_test::serial`, matching the fix applied to codex/claude provider tests
+    // in cycles 18 and 20.
+    use serial_test::serial;
 
     // ── get_type / get_capabilities ───────────────────────────────────────────
 
@@ -638,6 +644,7 @@ mod tests {
     // ── send_query surfaces pi_sdk_not_bound ──────────────────────────────────
 
     #[tokio::test]
+    #[serial]
     async fn send_query_surfaces_pi_sdk_not_bound() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
@@ -682,6 +689,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_surfaces_error_for_missing_model() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
@@ -706,6 +714,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_surfaces_error_for_invalid_model_ref() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
@@ -740,6 +749,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_yields_warning_for_unknown_tools() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
@@ -779,6 +789,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_yields_warning_for_thinking_object() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
@@ -814,6 +825,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn send_query_resume_failed_emits_warning() {
         use futures_util::StreamExt;
         reset_pi_semaphore();
