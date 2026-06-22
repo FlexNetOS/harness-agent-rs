@@ -25,6 +25,7 @@
 pub mod adapters;
 pub mod database;
 pub mod error;
+pub mod schema;
 pub mod sqlite;
 
 pub use adapters::{
@@ -33,4 +34,5 @@ pub use adapters::{
 };
 pub use database::{Database, DbExecutor};
 pub use error::DbError;
+pub use schema::get_schema_sql;
 pub use sqlite::SqliteAdapter;
