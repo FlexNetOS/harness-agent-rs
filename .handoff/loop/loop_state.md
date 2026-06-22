@@ -8,13 +8,35 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 9    # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + cycle 24 (PR-12 loadMcpConfig) + cycle 25 (WF-19 store trait).
-cycles_total: 25
+cycles_this_session: 10   # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + 24 (PR-12 loadMcpConfig) + 25 (WF-19 store trait) + 26 (CO-01 db dialect layer).
+cycles_total: 26
 ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+        cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
+        query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
         cycle 25 added WF-19 WorkflowStore trait (full `- [x]`), the narrow persistence interface WF-09 depends on.
         cycle 24 added PR-12 loadMcpConfig (full `- [x]`), closing the carried MCP `- [≈]` (inline stopgap) and
         the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14, WF-19; PA-01/06/07;
         GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+status_cycle26: cycle 26 DONE — **CO-01 db adapter DIALECT layer `- [x]`** (still 38/79 full units; CO-01 partially done).
+        **OWNER-CONFIRMED LANDING (2026-06-21):** the WorkflowStore impl is a **SQL-backed FAITHFUL PORT, NOT a map onto hf**
+        (evidence: Archon store = SQL DB w/ transactional resume-CAS + indexed lookups + append-only DAG-event log + node-session
+        upsert + codebase config; hf = continuity-ledger kernel w/ none of those → mapping = silent downgrade, forbidden. ADR-0001
+        'do not reimplement what substrates provide' does NOT bite — hf does not provide a workflow-exec store. REVERSES prior
+        'MAP->hf applies to impl' note). OWNER SCOPE: **SQLite + Postgres BOTH** (full connection.ts auto-detect parity) + consider a
+        pure-rust-native UPGRADE adapter (redb/sled/gluesql/limbo/ruvector) behind the same trait where it preserves behavior.
+        Landed new crate **crates/har-db** (deps har-ledger trait + har-workflow-schema + har-paths planned). Cycle 26 ported the
+        DIALECT slice of packages/core/src/db/adapters/types.ts (+ postgresDialect 237-261 / sqliteDialect 522-550): `QueryResult<T>`
+        (rowCount→u64), `Dialect` enum (serde lowercase postgres|sqlite + as_str), `SqlDialect` trait (6 pure SQL-expr builders:
+        generate_uuid/now/json_merge/json_array_contains/now_minus_days/days_since), `PostgresDialect`+`SqliteDialect` impls
+        (BYTE-EXACT SQL strings), `DbNotificationListener` trait SHAPE (pg LISTEN/NOTIFY, impl deferred). Differentially verified vs
+        live bun 1.3.14: **56/56 dialect strings CHARACTER-IDENTICAL** (param indices 1/3/10/42 incl. multi-digit), UUID v4 shape-parity,
+        6/6 methods, ZERO stubs. 10 har-db tests. Workspace **1855 passed / 15 ignored**, clippy+fmt clean. Findings: parity-cycle26.md.
+        DEFERRED to cycle 27 (`- [ ]`, genuine scope boundary NOT a drop): `Database` trait `query`/`with_transaction` signatures +
+        concrete `SqliteAdapter`/`PostgresAdapter` + pg `DbNotificationListener` impl + `getDatabaseType()` auto-detect — all
+        DRIVER-DEPENDENT, pending the backend-driver research (findings/co-db-backend-research.md, agent running; sqlx is the prior
+        hypothesis for both backends; pure-rust-native = limbo/libsql/gluesql assessed for an additive upgrade adapter).
+        **NEXT = cycle 27 read co-db-backend-research.md → pick driver → port the `Database` trait + first concrete adapter (SQLite)
+        + connection auto-detect → then pg adapter → then workflows.ts/events/sessions queries → WF-09 dag-executor (keystone).**
 status_cycle25: cycle 25 DONE — **WF-19 WorkflowStore trait FULL `- [x]`** (38/79). Ported `packages/workflows/src/store.ts`
         (the NARROW persistence INTERFACE the workflow engine depends on) into **`crates/har-ledger/src/store.rs`** (new
         `store` module). LEDGER CORRECTION: target `crates/workflows` doesn't exist → landed in `har-ledger` (already deps

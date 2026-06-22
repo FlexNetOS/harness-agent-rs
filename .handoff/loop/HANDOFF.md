@@ -5,10 +5,29 @@
 
 closed_utc: 2026-06-21
 branch: main — local commits ahead of origin/main (not pushed this cycle; push when owner asks)
-mode: ITERATE — cycles_total=25 (this session 9: cycles 17-25). ALL provider SDKs BOUND + PR-12 loadMcpConfig + WF-19 store trait done.
+mode: ITERATE — cycles_total=26 (this session 10: cycles 17-26). ALL provider SDKs BOUND + PR-12 + WF-19 trait + CO-01 db dialect layer.
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 38/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+## Where we are: 38/79 full units + ALL provider ports BOUND; CO-01 db layer STARTED
+
+**cycle 26 (CO-01 db adapter DIALECT layer) — `- [x]` (CO-01 partial; still 38/79 full units).**
+**OWNER-CONFIRMED LANDING (2026-06-21):** the `WorkflowStore` impl is a **SQL-backed FAITHFUL PORT, NOT a map onto
+`hf`** — Archon's store is a real SQL DB (Postgres/SQLite auto-detect) with transactional resume-CAS + indexed
+lookups + an append-only DAG-event log + node-session upsert + codebase config; `hf` is a continuity-ledger kernel
+with NONE of those, so mapping onto it = a silent downgrade (forbidden). ADR-0001 "don't reimplement what substrates
+provide" does NOT bite (hf provides no workflow-exec store). **This REVERSES the prior "MAP→hf applies to the impl"
+note.** OWNER SCOPE: **SQLite + Postgres BOTH** + consider a pure-rust-native UPGRADE adapter (redb/sled/gluesql/
+limbo/ruvector) behind the same trait where it preserves behavior. New crate **`crates/har-db`**. Cycle 26 ported the
+DIALECT slice of `db/adapters/types.ts` (+ postgresDialect/sqliteDialect): `QueryResult<T>` (rowCount→u64), `Dialect`
+enum, `SqlDialect` trait (6 pure SQL-expr builders) + `PostgresDialect`/`SqliteDialect` impls (BYTE-EXACT SQL strings),
+`DbNotificationListener` trait shape. Differentially verified vs live bun: **56/56 dialect strings CHARACTER-IDENTICAL**
+(indices 1/3/10/42), UUID v4 shape-parity, 6/6 methods, ZERO stubs. Workspace 1855 passed / 15 ignored, clippy+fmt clean.
+Findings: parity-cycle26.md. **DEFERRED to cycle 27 (`- [ ]`, scope boundary not a drop):** `Database::query`/
+`with_transaction` + concrete `SqliteAdapter`/`PostgresAdapter` + pg LISTEN/NOTIFY impl + `getDatabaseType()` —
+all DRIVER-DEPENDENT. **NEXT = cycle 27: read `findings/co-db-backend-research.md` (agent running; sqlx = prior
+hypothesis for both backends, pure-rust-native limbo/libsql/gluesql assessed as additive upgrade) → pick driver → port
+`Database` trait + SQLite adapter + connection auto-detect → pg adapter → workflows.ts/events/sessions queries → WF-09
+dag-executor (keystone state machine).**
 
 **cycle 25 (WF-19 WorkflowStore trait) — FULL `- [x]`.** Ported `packages/workflows/src/store.ts` — the NARROW
 persistence INTERFACE the workflow engine depends on — into `crates/har-ledger/src/store.rs` (new `store` module).

@@ -1118,11 +1118,21 @@ NOTE ON BOOT VARIANT: `strip-cwd-env-boot.ts` calls `stripCwdEnv()` at import ti
 
 ### UNIT CO-01: Database Adapter Interface
 **Source:** `packages/core/src/db/adapters/types.ts`
-**Rust target:** MAP→`sqlx` (SQLite default, PostgreSQL option); trait in `crates/core/src/db/adapter.rs`
+**Rust target:** `crates/har-db/src/adapters.rs` (cycle 26: dialect layer). Driver-bound pieces (query/tx, concrete adapters) MAP→DB driver crate TBD in cycle 27.
 
-- [ ] `IDatabaseAdapter` trait: `query`, `queryOne`, `execute`, `transaction`, `close` (adapters/types.ts)
-- [ ] SQLite adapter: `packages/core/src/db/adapters/sqlite.ts` (CO-01a)
-- [ ] PostgreSQL adapter: `packages/core/src/db/adapters/postgres.ts` (CO-01b)
+Dialect layer (cycle 26 — har-db crate): PARITY-VERIFIED 2026-06-21 (differential vs live TS, 56/56 strings byte-identical, UUID v4 shape parity) — see findings/parity-cycle26.md
+- [x] `QueryResult<T>` struct: `rows: Vec<T>`, `row_count: u64` (TS `rowCount`→u64); serde `rowCount` rename, round-trip tested (har-db/src/adapters.rs)
+- [x] `Dialect` enum `{Postgres,Sqlite}` (TS `'postgres'|'sqlite'`); serde lowercase round-trip + `as_str()`, tested
+- [x] `SqlDialect` trait (6 methods: generate_uuid/now/json_merge/json_array_contains/now_minus_days/days_since); object-safe, tested
+- [x] `PostgresDialect` impl — BYTE-EXACT vs `postgresDialect` (postgres.ts:237-261); all 5 string methods + UUID v4 verified differentially
+- [x] `SqliteDialect` impl — BYTE-EXACT vs `sqliteDialect` (sqlite.ts:522-550); all 5 string methods + UUID v4 verified differentially
+- [x] `DbNotificationListener` trait SHAPE (types.ts:59-72): async `listen(channel, on_notify: Box<dyn Fn(String)+Send+Sync>, on_error: Box<dyn Fn(NotificationError)+Send+Sync>) -> Box<dyn FnOnce()+Send>`. Trait only; Postgres-only impl deferred to pg adapter cycle.
+
+Deferred to cycle 27 (driver decision required — NOT stubbed, intentionally not yet ported):
+- [ ] `Database` trait `query<T>` / `with_transaction<T>` method signatures (object-safety + async-tx design is driver-dependent)
+- [ ] SQLite adapter `query`/`withTransaction` impl: `packages/core/src/db/adapters/sqlite.ts` (CO-01a)
+- [ ] PostgreSQL adapter `query`/`withTransaction` impl: `packages/core/src/db/adapters/postgres.ts` (CO-01b)
+- [ ] `DbNotificationListener` Postgres impl (LISTEN/NOTIFY on held connection)
 - [ ] `getDatabaseType()` — env-based selection (core/index.ts; api.ts imports)
 
 ### UNIT CO-02: Database Connection

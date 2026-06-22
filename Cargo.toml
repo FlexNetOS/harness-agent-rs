@@ -18,6 +18,7 @@ members = [
     "crates/har-adapters",
     "crates/har-server",
     "crates/har-cli",
+    "crates/har-db",
 ]
 
 [workspace.package]
@@ -92,3 +93,6 @@ url = "2"
 
 # Futures utilities
 futures-util = "0.3"
+
+# UUID generation (TS crypto.randomUUID() → Uuid::new_v4, v4 lowercase hyphenated)
+uuid = { version = "1", features = ["v4", "serde"] }
