@@ -251,8 +251,8 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-19 — store.ts
 
-- [ ] unit:WF-19 `store.ts::IWorkflowStore` → `workflows::store::IWorkflowStore` (trait)
-- [ ] unit:WF-19 `store.ts::WORKFLOW_EVENT_TYPES` → `workflows::store::WORKFLOW_EVENT_TYPES`
+- [x] unit:WF-19 `store.ts::IWorkflowStore` → `workflows::store::IWorkflowStore` (trait) — parity PASS 2026-06-21: 20/20 methods + 11 param/result structs shape-match; `()` never-throws + `Result`+IndexMap contracts correct; object-safe.
+- [x] unit:WF-19 `store.ts::WORKFLOW_EVENT_TYPES` → `workflows::store::WORKFLOW_EVENT_TYPES` — parity PASS 2026-06-21: live-bun differential, 21 strings identical (count/order/spelling) across const + serde-enum + as_str.
 
 ### WF-20 — defaults/bundled-defaults.ts
 

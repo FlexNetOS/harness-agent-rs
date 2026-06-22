@@ -1,7 +1,7 @@
 //! har-ledger — Durable run/workflow/event state. MAP'd onto `hf`.
 //!
 //! Ports the BEHAVIORAL CONTRACT of Archon's Postgres persistence layer:
-//!   - `packages/workflows/src/store.ts` → `WorkflowStore` trait (UNIT WF-19)
+//!   - `packages/workflows/src/store.ts` → `WorkflowStore` trait (UNIT WF-19) ✓
 //!   - `core/src/db/workflows.ts`        → `WorkflowRun` CRUD + resume CAS
 //!   - `core/src/db/workflow-events.ts`  → append-only `WorkflowEvent` log
 //!   - `core/src/db/workflow-node-sessions.ts` → per-node session upsert
@@ -18,4 +18,13 @@
 //!   - `getCompletedDagNodeOutputs(runId)` → reads all completed node outputs for a run
 //!   - `WORKFLOW_EVENT_TYPES` constant list
 //!
-//! Status: STUB — not yet ported. Will be filled in ITERATE cycle 6 (after har-workflow-schema).
+//! Status: WF-19 (store interface) ported. hf-backed implementation units pending.
+
+pub mod store;
+
+pub use store::{
+    ActiveRunSelf, CancelResult, CodebaseRecord, CreateWorkflowEventData, CreateWorkflowRunData,
+    DeleteSessionsFilter, DeleteSessionsResult, FailOrphanedRunsResult, StoreError,
+    UpsertNodeSessionParams, WorkflowEventType, WorkflowNodeSessionKey, WorkflowRunUpdate,
+    WorkflowStore, WORKFLOW_EVENT_TYPES,
+};

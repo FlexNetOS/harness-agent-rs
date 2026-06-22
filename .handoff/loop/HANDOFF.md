@@ -5,10 +5,23 @@
 
 closed_utc: 2026-06-21
 branch: main — local commits ahead of origin/main (not pushed this cycle; push when owner asks)
-mode: ITERATE — cycles_total=24 (this session 8: cycles 17-24). ALL provider SDKs BOUND + PR-12 loadMcpConfig done.
+mode: ITERATE — cycles_total=25 (this session 9: cycles 17-25). ALL provider SDKs BOUND + PR-12 loadMcpConfig + WF-19 store trait done.
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 37/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+## Where we are: 38/79 full units + ALL provider ports (PR-01..11) FULLY BOUND & verified
+
+**cycle 25 (WF-19 WorkflowStore trait) — FULL `- [x]`.** Ported `packages/workflows/src/store.ts` — the NARROW
+persistence INTERFACE the workflow engine depends on — into `crates/har-ledger/src/store.rs` (new `store` module).
+LEDGER CORRECTION: target `crates/workflows` doesn't exist → landed in `har-ledger` (earmarked for WF-19). Ported the
+`WorkflowStore` trait (drop `I`, `#[async_trait]`, ALL 20 methods, object-safe), `WORKFLOW_EVENT_TYPES` (`[&str;21]`) +
+`WorkflowEventType` enum (21 variants → exact source strings), `WorkflowNodeSessionKey` + 10 param/result structs +
+`StoreError`. Schema types reused from har-workflow-schema. TWO load-bearing contract-encodings preserved:
+`create_workflow_event`→`()` (must-not-throw) and `get_completed_dag_node_outputs`→`Result<IndexMap,StoreError>`
+(throws + insertion-order). Differentially verified vs live bun (21-string WORKFLOW_EVENT_TYPES diff PASS + 20/20 method
+shape-fidelity) — PASS, only benign `- [≈]`. Workspace 1845 passed / 15 ignored, clippy + fmt clean. Findings:
+findings/parity-cycle25.md. **MAP→hf applies to the IMPL (next CO-db unit), NOT this interface.**
+**NEXT = CO-db hf-impl (`impl WorkflowStore for HfWorkflowStore` over hf: resume-CAS, event-log append, node-session
+upsert/delete, getCompletedDagNodeOutputs query) → WF-09 dag-executor (keystone state machine) → WF-10/15/16 → server → cli.**
 
 **cycle 24 (PR-12 loadMcpConfig) — FULL `- [x]`.** Faithful shared port of `packages/providers/src/mcp/config.ts`
 into `crates/har-provider/src/mcp/config.rs` (new `mcp` module), replacing the codex inline stopgap (which

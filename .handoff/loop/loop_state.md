@@ -8,12 +8,29 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 8    # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + cycle 24 (PR-12 loadMcpConfig).
-cycles_total: 24
-ledger: parity **37/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+cycles_this_session: 9    # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + cycle 24 (PR-12 loadMcpConfig) + cycle 25 (WF-19 store trait).
+cycles_total: 25
+ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+        cycle 25 added WF-19 WorkflowStore trait (full `- [x]`), the narrow persistence interface WF-09 depends on.
         cycle 24 added PR-12 loadMcpConfig (full `- [x]`), closing the carried MCP `- [≈]` (inline stopgap) and
-        the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14; PA-01/06/07;
+        the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14, WF-19; PA-01/06/07;
         GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+status_cycle25: cycle 25 DONE — **WF-19 WorkflowStore trait FULL `- [x]`** (38/79). Ported `packages/workflows/src/store.ts`
+        (the NARROW persistence INTERFACE the workflow engine depends on) into **`crates/har-ledger/src/store.rs`** (new
+        `store` module). LEDGER CORRECTION: target `crates/workflows` doesn't exist → landed in `har-ledger` (already deps
+        har-workflow-schema, earmarked for WF-19 in its header). Ported: `WorkflowStore` trait (drop `I`, `#[async_trait]`,
+        ALL 20 methods, object-safe), `WORKFLOW_EVENT_TYPES` (`[&str;21]`) + `WorkflowEventType` enum (21 variants, serde
+        snake_case → exact source strings), `WorkflowNodeSessionKey`, + 10 param/result structs (CreateWorkflowRunData,
+        WorkflowRunUpdate, CreateWorkflowEventData, CancelResult, FailOrphanedRunsResult, CodebaseRecord, ActiveRunSelf,
+        DeleteSessionsFilter, DeleteSessionsResult, UpsertNodeSessionParams), StoreError. Schema types (WorkflowRun,
+        WorkflowRunStatus, ApprovalContext, WorkflowNodeSession) reused from har-workflow-schema (not redefined). TWO
+        load-bearing contract-encodings: `create_workflow_event` → `()` (MUST-NOT-THROW structural); `get_completed_dag_node_outputs`
+        → `Result<IndexMap<String,String>, StoreError>` (throws + insertion-order). Differentially verified vs live bun
+        (WORKFLOW_EVENT_TYPES 21-string diff PASS across const+enum-serde+as_str) + 20/20 method shape-fidelity — PASS,
+        only benign `- [≈]` (Record→Map/IndexMap, row-count f64→u64). 14 har-ledger unit tests. Workspace **1845 passed /
+        15 ignored**, clippy + fmt clean. Findings: findings/parity-cycle25.md. **MAP→hf applies to the IMPL (next CO-db
+        unit), NOT this interface.** **NEXT = CO-db hf-impl (`impl WorkflowStore for HfWorkflowStore` over hf: resume CAS,
+        event-log append, node-session upsert/delete, getCompletedDagNodeOutputs query) → WF-09 dag-executor (keystone).**
 status_cycle24: cycle 24 DONE — **PR-12 loadMcpConfig FULL `- [x]`** (37/79). Ported the source's single shared
         `loadMcpConfig` helper into a faithful **`crates/har-provider/src/mcp/config.rs`** (new `mcp` module),
         replacing the codex inline stopgap that had diverged 5 ways (no `mcpServers` wrapper handling; recursive

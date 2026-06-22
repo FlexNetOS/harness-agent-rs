@@ -361,13 +361,21 @@ PARITY VERDICT (2026-06-13): all 16 symbols `- [x]` except `resolveModelSpec` = 
 - [ ] Runtime detection from file extension (`.ts` → bun, `.py` → uv)
 
 ### UNIT WF-19: Workflow Store Interface
-**Source:** `packages/workflows/src/store.ts`
-**Rust target:** MAP→hf (durable state substrate) + `crates/workflows/src/store.rs` (trait)
+**Source:** `packages/workflows/src/store.ts` (the NARROW interface only; impls live in `core/db/*.ts`)
+**Rust target:** `crates/har-ledger/src/store.rs` (trait). LEDGER CORRECTION: `crates/workflows` crate does not exist;
+the trait lands in `har-ledger` (which already deps `har-workflow-schema` and is earmarked for WF-19). MAP→hf applies
+to the IMPLEMENTATION (the later CO-db unit: `impl WorkflowStore for HfWorkflowStore` over `hf`), NOT this interface unit.
 
-- [ ] `IWorkflowStore` trait: all methods used by executor/dag-executor: `getWorkflowRunStatus(id)`, `updateWorkflowActivity(id)`, `createWorkflowEvent(event)`, `pauseWorkflowRun(id, approval_context)`, `cancelWorkflowRun(id)`, `getCodebase(id)`, `getCompletedDagNodeOutputs(runId)` (inferred from dag-executor.ts usage)
-- [ ] `WORKFLOW_EVENT_TYPES` constant list (cli.ts:60)
-- [ ] Resume CAS operation: `resumeWorkflowRun` with compare-and-swap on status (db/workflows.resume-cas.integration.test.ts)
-- [ ] `WorkflowNodeSession` store operations (persist_session feature)
+**cycle 25 (WF-19) — FULL `- [x]`** (parity PASS vs live bun, findings/parity-cycle25.md). store.ts is a pure INTERFACE
+(TS `interface`/`type`/`const`) — gate = (A) live-bun differential of `WORKFLOW_EVENT_TYPES` (21 strings, byte-identical
+count/order/spelling across the Rust const + serde-enum + as_str) + (B) structural shape-fidelity of all 20 methods + 11
+param/result structs + (C) the two load-bearing contract-encodings preserved (`create_workflow_event` returns `()`
+never-throws; `get_completed_dag_node_outputs` is `Result<IndexMap<..>, StoreError>` — fallible + insertion-order).
+- [x] `WorkflowStore` trait (drop `I` per Rust idiom): ALL 20 methods ported faithfully — createWorkflowRun, getWorkflowRun, getActiveWorkflowRunByPath (self-tiebreaker doc-contract carried), findResumableRun, failOrphanedRuns, resumeWorkflowRun, updateWorkflowRun, updateWorkflowActivity, getWorkflowRunStatus, completeWorkflowRun, failWorkflowRun, pauseWorkflowRun, cancelWorkflowRun, createWorkflowEvent (`()` never-throws contract), getCompletedDagNodeOutputs (`Result<IndexMap>` throws+ordered), getCodebaseEnvVars, getCodebase, getWorkflowNodeSession, upsertWorkflowNodeSession, deleteWorkflowNodeSessions (provider-filter doc-contract carried). `#[async_trait]`, object-safe (`Box<dyn WorkflowStore>`).
+- [x] `WORKFLOW_EVENT_TYPES` constant list (cli.ts:60) — `[&str; 21]` + `WorkflowEventType` enum (21 variants, `#[serde(rename_all="snake_case")]` → exact source strings) + `as_str()`. Live-bun differential PASS.
+- [≈] param/result structs: TS `Record<string,unknown>`→`serde_json::Map` (opaque metadata, insertion-order); `Record<string,string>`→`IndexMap` (deterministic, mandatory for the insertion-order-contracted DAG outputs); row counts `number`(f64)→`u64`. Benign, recorded.
+- [ ] **(NEXT UNIT, not this one)** Resume CAS (`resumeWorkflowRun` compare-and-swap on status) — BEHAVIOR, lives in the hf-backed IMPL (`core/db/workflows.ts`); the trait method signature is ported, the CAS logic is the impl unit.
+- [ ] **(NEXT UNIT, not this one)** `WorkflowNodeSession` store ops (persist_session) — trait methods ported (get/upsert/delete); the durable hf upsert/delete logic is the impl unit.
 
 ### UNIT WF-20: Bundled Defaults
 **Source:** `packages/workflows/src/defaults/bundled-defaults.ts`
