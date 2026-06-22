@@ -16,8 +16,12 @@ sqlx = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
+indexmap = { workspace = true }
 # connection.ts auto-detect: getArchonHome()/archon.db on the SQLite branch.
 har-paths = { path = "../har-paths" }
+# workflows.rs depends on har-ledger (WorkflowStore trait) and har-workflow-schema (types).
+har-ledger = { path = "../har-ledger" }
+har-workflow-schema = { path = "../har-workflow-schema" }
 
 [dev-dependencies]
 tokio = { workspace = true }

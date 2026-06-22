@@ -29,6 +29,7 @@ pub mod error;
 pub mod postgres;
 pub mod schema;
 pub mod sqlite;
+pub mod workflows;
 
 pub use adapters::{
     DbNotificationListener, Dialect, NotificationError, PostgresDialect, QueryResult, SqlDialect,
@@ -43,3 +44,9 @@ pub use error::DbError;
 pub use postgres::PostgresAdapter;
 pub use schema::get_schema_sql;
 pub use sqlite::SqliteAdapter;
+pub use workflows::{
+    delete_old_workflow_runs, delete_workflow_run, find_latest_run_by_working_path,
+    find_resumable_run_by_parent_conversation, get_active_workflow_run, get_paused_workflow_run,
+    get_running_workflows, get_workflow_run_by_worker_platform_id, resumable_status_clause,
+    SqlWorkflowStore, WorkflowNotResumableError, ORPHAN_RESUME_STALE_DAYS, STALE_PENDING_AGE_MS,
+};

@@ -345,7 +345,7 @@ impl SqliteAdapter {
     /// 1. Creates the parent directory if missing.
     /// 2. Opens the SQLite file via sqlx.
     /// 3. PRAGMAs: `journal_mode=WAL`, `busy_timeout=5000`,
-    ///    `foreign_keys=ON` (exact order — matches TS source lines 32-38).
+    ///    `foreign_keys=OFF` (matches TS source behavior — Archon never enforces FK on SQLite).
     /// 4. Calls `init_schema()` (= `create_schema()` + `migrate_columns()`).
     pub async fn open(db_path: impl AsRef<Path>) -> Result<Self, DbError> {
         use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
@@ -369,8 +369,9 @@ impl SqliteAdapter {
 
         let pool = SqlitePool::connect_with(opts).await?;
 
-        // 3b. PRAGMA foreign_keys = ON (must be run as raw SQL).
-        pool.execute(AssertSqlSafe("PRAGMA foreign_keys = ON"))
+        // 3b. PRAGMA foreign_keys = OFF (Archon never enforces FK on SQLite — schema has
+        //     FK declarations for documentation only, but they are never enforced in practice).
+        pool.execute(AssertSqlSafe("PRAGMA foreign_keys = OFF"))
             .await?;
 
         let adapter = Self {
@@ -485,7 +486,7 @@ impl SqliteAdapter {
         }
         if !cols.contains("user_id") {
             conn.execute(AssertSqlSafe(
-                "ALTER TABLE remote_agent_conversations ADD COLUMN user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL",
+                "ALTER TABLE remote_agent_conversations ADD COLUMN user_id TEXT",
             ))
             .await?;
         }
@@ -513,7 +514,7 @@ impl SqliteAdapter {
         }
         if !cols.contains("user_id") {
             conn.execute(AssertSqlSafe(
-                "ALTER TABLE remote_agent_workflow_runs ADD COLUMN user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL",
+                "ALTER TABLE remote_agent_workflow_runs ADD COLUMN user_id TEXT",
             ))
             .await?;
         }
@@ -541,7 +542,7 @@ impl SqliteAdapter {
         if !cols.contains("user_id") {
             let mut conn = self.pool.acquire().await?;
             conn.execute(AssertSqlSafe(
-                "ALTER TABLE remote_agent_messages ADD COLUMN user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL",
+                "ALTER TABLE remote_agent_messages ADD COLUMN user_id TEXT",
             ))
             .await?;
         }
@@ -555,7 +556,7 @@ impl SqliteAdapter {
         if !cols.contains("created_by_user_id") {
             let mut conn = self.pool.acquire().await?;
             conn.execute(AssertSqlSafe(
-                "ALTER TABLE remote_agent_isolation_environments ADD COLUMN created_by_user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL",
+                "ALTER TABLE remote_agent_isolation_environments ADD COLUMN created_by_user_id TEXT",
             ))
             .await?;
         }
@@ -678,7 +679,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_users (
 );
 CREATE TABLE IF NOT EXISTS remote_agent_user_identities (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  user_id TEXT NOT NULL REFERENCES remote_agent_users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   platform TEXT NOT NULL,
   platform_user_id TEXT NOT NULL,
   platform_display_name TEXT,
@@ -687,7 +688,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_user_identities (
 );
 CREATE TABLE IF NOT EXISTS remote_agent_user_github_tokens (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  user_id TEXT NOT NULL REFERENCES remote_agent_users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   github_user_id INTEGER NOT NULL,
   github_login TEXT NOT NULL,
   access_token_encrypted TEXT NOT NULL,
@@ -711,7 +712,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_codebases (
 );
 CREATE TABLE IF NOT EXISTS remote_agent_codebase_env_vars (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  codebase_id TEXT NOT NULL REFERENCES remote_agent_codebases(id) ON DELETE CASCADE,
+  codebase_id TEXT NOT NULL,
   key TEXT NOT NULL,
   value TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
@@ -723,13 +724,13 @@ CREATE TABLE IF NOT EXISTS remote_agent_conversations (
   platform_type TEXT NOT NULL,
   platform_conversation_id TEXT NOT NULL,
   ai_assistant_type TEXT DEFAULT 'claude',
-  codebase_id TEXT REFERENCES remote_agent_codebases(id) ON DELETE SET NULL,
+  codebase_id TEXT,
   cwd TEXT,
   isolation_env_id TEXT,
   title TEXT,
   deleted_at TEXT,
   hidden INTEGER DEFAULT 0,
-  user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL,
+  user_id TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   last_activity_at TEXT DEFAULT (datetime('now')),
@@ -737,28 +738,28 @@ CREATE TABLE IF NOT EXISTS remote_agent_conversations (
 );
 CREATE TABLE IF NOT EXISTS remote_agent_sessions (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  conversation_id TEXT NOT NULL REFERENCES remote_agent_conversations(id) ON DELETE CASCADE,
-  codebase_id TEXT REFERENCES remote_agent_codebases(id) ON DELETE SET NULL,
+  conversation_id TEXT NOT NULL,
+  codebase_id TEXT,
   ai_assistant_type TEXT NOT NULL DEFAULT 'claude',
   assistant_session_id TEXT,
   active INTEGER DEFAULT 1,
   metadata TEXT DEFAULT '{}',
   started_at TEXT DEFAULT (datetime('now')),
   ended_at TEXT,
-  parent_session_id TEXT REFERENCES remote_agent_sessions(id),
+  parent_session_id TEXT,
   transition_reason TEXT,
   ended_reason TEXT
 );
 CREATE TABLE IF NOT EXISTS remote_agent_isolation_environments (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  codebase_id TEXT NOT NULL REFERENCES remote_agent_codebases(id) ON DELETE CASCADE,
+  codebase_id TEXT NOT NULL,
   workflow_type TEXT NOT NULL,
   workflow_id TEXT NOT NULL,
   provider TEXT NOT NULL DEFAULT 'worktree',
   working_path TEXT NOT NULL,
   branch_name TEXT NOT NULL,
   created_by_platform TEXT,
-  created_by_user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL,
+  created_by_user_id TEXT,
   metadata TEXT DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT DEFAULT (datetime('now')),
@@ -769,15 +770,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS unique_active_workflow
   WHERE status = 'active';
 CREATE TABLE IF NOT EXISTS remote_agent_workflow_runs (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  conversation_id TEXT NOT NULL REFERENCES remote_agent_conversations(id) ON DELETE CASCADE,
-  codebase_id TEXT REFERENCES remote_agent_codebases(id) ON DELETE SET NULL,
+  conversation_id TEXT NOT NULL,
+  codebase_id TEXT,
   workflow_name TEXT NOT NULL,
   user_message TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   current_step_index INTEGER,
   metadata TEXT DEFAULT '{}',
-  parent_conversation_id TEXT REFERENCES remote_agent_conversations(id) ON DELETE SET NULL,
-  user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL,
+  parent_conversation_id TEXT,
+  user_id TEXT,
   started_at TEXT DEFAULT (datetime('now')),
   completed_at TEXT,
   last_activity_at TEXT DEFAULT (datetime('now')),
@@ -785,7 +786,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_workflow_runs (
 );
 CREATE TABLE IF NOT EXISTS remote_agent_workflow_events (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  workflow_run_id TEXT NOT NULL,
   event_type TEXT NOT NULL,
   step_index INTEGER,
   step_name TEXT,
@@ -794,11 +795,11 @@ CREATE TABLE IF NOT EXISTS remote_agent_workflow_events (
 );
 CREATE TABLE IF NOT EXISTS remote_agent_messages (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  conversation_id TEXT NOT NULL REFERENCES remote_agent_conversations(id) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL DEFAULT '',
   metadata TEXT DEFAULT '{}',
-  user_id TEXT REFERENCES remote_agent_users(id) ON DELETE SET NULL,
+  user_id TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_sessions (
@@ -807,7 +808,7 @@ CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_sessions (
   scope_key TEXT NOT NULL,
   provider TEXT NOT NULL,
   provider_session_id TEXT NOT NULL,
-  last_run_id TEXT REFERENCES remote_agent_workflow_runs(id) ON DELETE SET NULL,
+  last_run_id TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (workflow_name, node_id, scope_key, provider)
