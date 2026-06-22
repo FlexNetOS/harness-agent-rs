@@ -3,12 +3,32 @@
 > Mid-loop checkpoint at cycle budget. A fresh session reads this + loop_state.md and resumes the
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
-closed_utc: 2026-06-21
+closed_utc: 2026-06-22
 branch: main — local commits ahead of origin/main (not pushed this cycle; push when owner asks)
-mode: ITERATE — cycles_total=26 (this session 10: cycles 17-26). ALL provider SDKs BOUND + PR-12 + WF-19 trait + CO-01 db dialect layer.
+mode: ITERATE — cycles_total=27 (this session 11: cycles 17-27). ALL provider SDKs BOUND + PR-12 + WF-19 trait + CO-01 db dialect layer + CO-01 Database trait + SQLite adapter.
 resume_command: /harness:rust-port-merge   (or /session-relay-resume)
 
-## Where we are: 38/79 full units + ALL provider ports BOUND; CO-01 db layer STARTED
+## Where we are: 38/79 full units + ALL provider ports BOUND; CO-01 db layer (dialect + Database trait + SQLite adapter) DONE
+
+**cycle 27 (CO-01 `Database` trait + SQLite adapter) — `- [x]` (CO-01 driver-bound SQLite slice; still 38/79 full units;
+pg adapter + connection auto-detect remain).** Driver = **sqlx 0.9.0** (`runtime-tokio`+`tls-rustls-ring`+`sqlite`+`uuid`+
+`chrono`; 0.9 split `runtime-tokio-rustls`→`runtime-tokio`+`tls-rustls-ring`; `cc` present for bundled C-SQLite). Landed in
+`crates/har-db`: `database.rs` (`Database` object-safe `#[async_trait]` + narrow `DbExecutor`; `with_transaction` = boxed
+`for<'tx> FnOnce(&dyn DbExecutor)->BoxFuture`; TS `<T>` erased to serde_json::Value = `- [≈]`, faithful to TS `as T[]`),
+`sqlite.rs` (`SqliteAdapter`: PRAGMA WAL/busy_timeout=5000/foreign_keys=ON, createSchema BYTE-FAITHFUL inlined block +
+migrate_columns via direct fetch bypassing public dispatch, query SELECT/WITH-vs-mutation dispatch + RETURNING+INSERT fetch +
+RETURNING-on-UPDATE/DELETE throw + PRAGMA/EXPLAIN→rows=[]/rowCount=0, with_transaction BEGIN/COMMIT/ROLLBACK), `error.rs`.
+**convertPlaceholders ELIMINATED** (sqlx-sqlite resolves `$N` by index — out-of-order `$2…$1` + repeated `$1` PROVEN
+bun-identical, NOT a downgrade). **GATE FAILED FIRST** (verifier caught 2 unflagged divergences: D1 error msg embedded RAW
+`$N` not CONVERTED `?` SQL; D2 `query()` is_select wrongly included PRAGMA → 14 rows vs bun's 0); porter fixed both →
+**RE-VERIFY PASS** (full-message byte-match + PRAGMA rows=[]/rowCount=0, no regression). Only benign `- [≈]` B1 (`nowMinusDays`
+REAL `1` vs serde `1.0`). Durable oracle: `crates/har-db/examples/oracle_cycle27.rs`. 31 har-db tests; workspace **1596 passed /
+11 ignored**, clippy+fmt clean. Findings: parity-cycle27.md; task-card: cycle27-spec.md. **NEXT = cycle 28: PostgresAdapter
+(CO-01b — sqlx-postgres pool, advisory-lock schema init via getSchemaSQL bundled-schema, installNotifyTrigger, `PgListener` for
+DbNotificationListener) + connection.ts auto-detect (CO-02 — needs BOTH adapters) → workflows/events/sessions queries (impl
+WorkflowStore) → WF-09 dag-executor (keystone). TODO marker left: swap SQLite backend to turso at 1.0 (pure-Rust).**
+
+## Prior: 38/79 full units + ALL provider ports BOUND; CO-01 db layer STARTED
 
 **cycle 26 (CO-01 db adapter DIALECT layer) — `- [x]` (CO-01 partial; still 38/79 full units).**
 **OWNER-CONFIRMED LANDING (2026-06-21):** the `WorkflowStore` impl is a **SQL-backed FAITHFUL PORT, NOT a map onto

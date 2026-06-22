@@ -3,23 +3,34 @@
 //!
 //! # Port status (rust-port loop)
 //!
-//! - **Cycle 26 (this cycle): dialect layer only.** Ports the pure/dialect
-//!   surface of `adapters/types.ts`: [`QueryResult`], [`Dialect`],
+//! - **Cycle 26 (DONE): dialect layer.** [`QueryResult`], [`Dialect`],
 //!   [`SqlDialect`] (+ [`PostgresDialect`] / [`SqliteDialect`]), and the
-//!   [`DbNotificationListener`] trait *shape*.
-//! - **Cycle 27 (deferred): the `Database` trait's `query` / `with_transaction`
-//!   method signatures and the concrete `SqliteAdapter` / `PostgresAdapter`
-//!   implementations.** These are intentionally *not* ported here because they
-//!   are driver-dependent (object-safety + async-transaction design hinges on
-//!   the DB driver crate chosen in a separate decision). Adding them now would
-//!   mean guessing that design — a downgrade we refuse.
+//!   [`DbNotificationListener`] trait shape.
 //!
-//! The dialect surface is itself complete and driver-independent: it is pure
-//! string construction (plus a UUID v4 generator), so it ports with full
-//! parity now.
+//! - **Cycle 27 (this cycle): `Database` trait + `SqliteAdapter`.** The object-safe
+//!   [`Database`] / [`DbExecutor`] traits (port of `IDatabase` in `types.ts`) and the
+//!   concrete [`SqliteAdapter`] over sqlx-sqlite (port of `sqlite.ts:17-517`).
+//!   PostgresAdapter and `connection.ts` auto-detect are deferred to cycle 28.
+//!
+//! - **Cycle 28 (deferred):** `PostgresAdapter` + `connection.ts` auto-detect
+//!   (`getDatabase` / `getDialect` / `getDatabaseType` / `getDbNotificationListener`
+//!   / `closeDatabase` / `resetDatabase` + `PgListener`).
+//!
+//! # TODO
+//!
+//! // TODO(har-db): swap SQLite backend to turso when it ships 1.0 (pure-Rust)
+//! // The `Database` trait is the seam: SqliteAdapter can be swapped to a
+//! // turso-backed impl behind the same interface once turso hits 1.0.
 
 pub mod adapters;
+pub mod database;
+pub mod error;
+pub mod sqlite;
 
 pub use adapters::{
-    DbNotificationListener, Dialect, PostgresDialect, QueryResult, SqlDialect, SqliteDialect,
+    DbNotificationListener, Dialect, NotificationError, PostgresDialect, QueryResult, SqlDialect,
+    SqliteDialect,
 };
+pub use database::{Database, DbExecutor};
+pub use error::DbError;
+pub use sqlite::SqliteAdapter;

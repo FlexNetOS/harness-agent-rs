@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 10   # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + 24 (PR-12 loadMcpConfig) + 25 (WF-19 store trait) + 26 (CO-01 db dialect layer).
-cycles_total: 26
+cycles_this_session: 11   # resume 2026-06-21; cycles 17-23 (provider SDKs BOUND) + 24 (PR-12 loadMcpConfig) + 25 (WF-19 store trait) + 26 (CO-01 db dialect layer) + 27 (CO-01 Database trait + SQLite adapter).
+cycles_total: 27
 ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
         cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
         query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
@@ -17,6 +17,28 @@ ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOU
         cycle 24 added PR-12 loadMcpConfig (full `- [x]`), closing the carried MCP `- [≈]` (inline stopgap) and
         the claude `&[]` mcp_server_names gap. (Full units: PR-01..08, PR-12; WF-01..08, WF-11..14, WF-19; PA-01/06/07;
         GI-01..05; IS-01..08.) no-downgrade preserved end-to-end.
+status_cycle27: cycle 27 DONE — **CO-01 `Database` trait + SQLite adapter `- [x]`** (CO-01 driver-bound SQLite slice done;
+        still 38/79 FULL units — CO-01 not yet a full unit, pg adapter + connection auto-detect remain). Driver = **sqlx 0.9.0**
+        (cached + network up; `cc` present for bundled C-SQLite), features `runtime-tokio`+`tls-rustls-ring`+`sqlite`+`uuid`+`chrono`
+        (NOTE: 0.9 split `runtime-tokio-rustls` → `runtime-tokio`+`tls-rustls-ring`). Landed in crates/har-db: `database.rs`
+        (`Database` object-safe `#[async_trait]` + narrow `DbExecutor`; `with_transaction` = boxed `for<'tx> FnOnce(&dyn DbExecutor)
+        -> BoxFuture`; TS generic `<T>` erased to serde_json::Value = `- [≈]` faithful to TS `as T[]` unchecked cast), `sqlite.rs`
+        (`SqliteAdapter`: PRAGMA WAL/busy_timeout=5000/foreign_keys=ON, createSchema BYTE-FAITHFUL inlined block + migrate_columns via
+        direct fetch bypassing public dispatch, query SELECT/WITH vs mutation dispatch + RETURNING+INSERT fetch + RETURNING-on-
+        UPDATE/DELETE throw + PRAGMA/EXPLAIN→rows=[]/rowCount=0, with_transaction BEGIN/COMMIT/ROLLBACK), `error.rs` (DbError, exact msgs).
+        **convertPlaceholders ELIMINATED** (sqlx-sqlite resolves `$N` by index — out-of-order `$2…$1` + repeated `$1` PROVEN bun-identical
+        by the verifier's own oracle, NOT a downgrade). **GATE: differential vs live bun:sqlite 1.3.14 — FAILED FIRST** on 2 unflagged
+        contract divergences the verifier caught (D1: error msg embedded RAW `$N` SQL not CONVERTED `?` SQL; D2: `query()` is_select
+        wrongly broadened to include PRAGMA → returned 14 rows vs bun's 0). Porter fixed both (D1: `convert_sql_for_error`; D2: revert
+        is_select to SELECT/WITH-only + migrate_columns uses own `pragma_table_info` direct path) → **RE-VERIFY PASS** (full-message
+        byte-match + PRAGMA rows=[]/rowCount=0 + no regression). Only benign carry B1 `- [≈]` (`nowMinusDays` REAL `1` vs serde `1.0`).
+        Durable oracle: crates/har-db/examples/oracle_cycle27.rs. 31 har-db tests; workspace **1596 passed / 11 ignored**, clippy+fmt clean.
+        Findings: findings/parity-cycle27.md; spec/task-card: findings/cycle27-spec.md.
+        **NEXT = cycle 28: PostgresAdapter (CO-01b — sqlx-postgres pool, advisory-lock schema init via getSchemaSQL bundled-schema,
+        installNotifyTrigger, `PgListener` for DbNotificationListener) + connection.ts auto-detect (CO-02: getDatabase/getDialect/
+        getDatabaseType/getDbNotificationListener/closeDatabase/resetDatabase + legacy `pool`) — connection needs BOTH adapters. Then
+        workflows.ts/workflow-events.ts/workflow-node-sessions.ts/sessions.ts/conversations.ts queries (impl WorkflowStore) → WF-09
+        dag-executor (keystone). TODO marker left in sqlite.rs/lib.rs: swap SQLite backend to turso when it ships 1.0 (pure-Rust).**
 status_cycle26: cycle 26 DONE — **CO-01 db adapter DIALECT layer `- [x]`** (still 38/79 full units; CO-01 partially done).
         **OWNER-CONFIRMED LANDING (2026-06-21):** the WorkflowStore impl is a **SQL-backed FAITHFUL PORT, NOT a map onto hf**
         (evidence: Archon store = SQL DB w/ transactional resume-CAS + indexed lookups + append-only DAG-event log + node-session

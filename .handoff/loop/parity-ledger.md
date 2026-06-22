@@ -1128,12 +1128,14 @@ Dialect layer (cycle 26 — har-db crate): PARITY-VERIFIED 2026-06-21 (different
 - [x] `SqliteDialect` impl — BYTE-EXACT vs `sqliteDialect` (sqlite.ts:522-550); all 5 string methods + UUID v4 verified differentially
 - [x] `DbNotificationListener` trait SHAPE (types.ts:59-72): async `listen(channel, on_notify: Box<dyn Fn(String)+Send+Sync>, on_error: Box<dyn Fn(NotificationError)+Send+Sync>) -> Box<dyn FnOnce()+Send>`. Trait only; Postgres-only impl deferred to pg adapter cycle.
 
-Deferred to cycle 27 (driver decision required — NOT stubbed, intentionally not yet ported):
-- [ ] `Database` trait `query<T>` / `with_transaction<T>` method signatures (object-safety + async-tx design is driver-dependent)
-- [ ] SQLite adapter `query`/`withTransaction` impl: `packages/core/src/db/adapters/sqlite.ts` (CO-01a)
-- [ ] PostgreSQL adapter `query`/`withTransaction` impl: `packages/core/src/db/adapters/postgres.ts` (CO-01b)
-- [ ] `DbNotificationListener` Postgres impl (LISTEN/NOTIFY on held connection)
-- [ ] `getDatabaseType()` — env-based selection (core/index.ts; api.ts imports)
+Driver-bound layer (cycle 27 — sqlx 0.9 / sqlite): PARITY-VERIFIED 2026-06-22 (differential vs live bun:sqlite 1.3.14, 21-case battery re-passed after D1/D2 fix) — see findings/parity-cycle27.md
+- [x] `Database` trait `query` / `with_transaction` signatures — object-safe `#[async_trait]`; TS generic `<T>`/`<U>` erased to `serde_json::Value` (`- [≈]`; TS `as T[]` is an unchecked runtime cast). `with_transaction` takes a boxed `for<'tx> FnOnce(&'tx dyn DbExecutor) -> BoxFuture` (object-safe, no method generic). `DbExecutor` narrow inner trait exposes `query` only. (har-db/src/database.rs)
+- [x] SQLite adapter `query`/`withTransaction` impl (CO-01a) ← sqlite.ts:17-517 — sqlx-sqlite over bundled C-SQLite. PRAGMA WAL/busy_timeout=5000/foreign_keys=ON; createSchema (BYTE-FAITHFUL inlined CREATE TABLE/INDEX block) + migrate_columns (PRAGMA table_info via direct fetch path bypassing public dispatch — mirrors source `db.prepare().all()`; conditional ALTER TABLE, per-table warn-not-throw). query dispatch: SELECT/WITH→rows; RETURNING+INSERT→fetch; RETURNING on UPDATE/DELETE→throw EXACT message built from CONVERTED (`?`) SQL (D1 fix); else execute rowCount=changes; PRAGMA/EXPLAIN fall through to mutation path rows=[]/rowCount=0 (D2 fix, bun-parity). with_transaction BEGIN/COMMIT/ROLLBACK (rollback-fail logged, original err rethrown). **convertPlaceholders ELIMINATED** — sqlx-sqlite resolves `$N` by index (out-of-order `$2…$1` + repeated `$1` PROVEN bun-identical); `::jsonb`/`::INTERVAL` strip moot for SQLite-routed SQL. 31 har-db tests. (har-db/src/sqlite.rs, error.rs)
+
+Deferred to cycle 28 (pg driver + connection — NOT stubbed, genuine scope boundary; connection.ts constructs BOTH adapters so needs pg first):
+- [ ] PostgreSQL adapter `query`/`withTransaction` impl: `packages/core/src/db/adapters/postgres.ts` (CO-01b) + `installNotifyTrigger`
+- [ ] `DbNotificationListener` Postgres impl (LISTEN/NOTIFY on held connection — sqlx `PgListener`)
+- [ ] `getDatabaseType()` — env-based selection (core/index.ts; api.ts imports) [lands with connection.ts auto-detect, CO-02]
 
 ### UNIT CO-02: Database Connection
 **Source:** `packages/core/src/db/connection.ts`
