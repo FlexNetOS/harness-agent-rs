@@ -126,6 +126,7 @@ pub use dag_executor::{
     parse_mcp_failure_server_names,
     resolve_node_provider_and_model_sync,
     ResolvedProviderAndModel,
+    RetryConfig,
     should_continue_streaming_for_status,
     substitute_node_output_refs,
     TriggerResult,

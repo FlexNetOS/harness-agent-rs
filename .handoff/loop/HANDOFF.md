@@ -4,11 +4,46 @@
 > port at the next unit. The committed state is the authoritative resume signal; weave is the heartbeat.
 
 closed_utc: 2026-06-22
-branch: main — local commits ahead of origin/main (not pushed; push when owner asks). cycle-28 commits: 9ec006f, e566ded, db0071d (+ Cargo.lock).
-mode: ITERATE — cycles_total=30. cycle-28 session (owner: "pick 7 new tasks") landed 3 of 7: CO-03 schema, CO-01b PostgresAdapter, CO-02 connection. T4-T7 PENDING (usage exhausted, clean stop).
+branch: main (synced to origin via PR #6) — cycle-35 lands via its own feature branch + PR.
+mode: ITERATE — cycles_total=34. NO dest_repo (port target IS this repo); `/harness:rust-port-merge` runs as plain rust-port.
 resume_command: /harness:rust-port-merge resume   (or /session-relay-resume)
 
-## CYCLE 28 (this session, 2026-06-22): DB-backend completion — 3 of 7 tasks DONE+verified+committed
+## CYCLE 35 (2026-06-22): WF-09 build-health gate — the gate cycle 34 SKIPPED, now run → WORKSPACE GREEN
+
+Owner: "/harness:rust-port-merge resume". No dest_repo → plain rust-port resume. Verify-on-resume baseline FAILED:
+`har-dag-executor` (the in-port WF-09 keystone crate) did **not compile** — **13 hard errors**, contradicting the
+cycle-34 HANDOFF claim "cargo check succeeds, only lint warnings" (that claim was FALSE; corrected below).
+
+**What ran (the skipped build-health gate):** porter fixed all 13 faithfully vs TS source; then
+`cargo check` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo test --workspace` → **GREEN**
+(**2066 passed, 15 ignored, 0 failed**; first green workspace since WF-09 started).
+
+**Fixes (all behavior-preserving, source-cited):**
+- E0425 — added `use crate::detect_credit_exhaustion;` (defined executor_shared.rs:282, re-exported lib.rs:55).
+- E0308 ×2 — removed a **synthetic** `Ok/Err` match on `get_agent_provider`; the port wrongly modeled a Result.
+  Verified vs TS: `execute_node_internal` ports `executeNodeInternal` (dag-executor.ts:**672**) where the call at
+  **784** is a DIRECT call, not in a try/catch — so direct-bind is the faithful port. (The try/catch at TS:1977 is
+  `executeLoopNode`, a DIFFERENT, not-yet-ported function — do NOT confuse them when porting sub-cycle 4+.)
+- E0308 ×9 + E0277 — `&str`/`String` ownership at emit/reask/schema sites + `output_format.schema` is already
+  `Map<String,Value>` (har-contract), not `Value`; removed needless `Value::Object` destructuring + dead arm.
+- 20 warnings — `_`-prefixed genuinely-not-yet-wired sub-cycle-4 params (incl. `_ai_client` — node execution
+  against the client is wired in sub-cycle 4); removed needless `mut`. No behavior dropped.
+
+**3 sub-cycle-3 test-authoring errors corrected vs TS (NOT impl bugs — adversarially verified):** Rust
+`detect_credit_exhaustion` patterns are CHARACTER-IDENTICAL to TS (executor-shared.ts:166/173). The failing tests
+asserted non-Archon behavior: "…session limit **resets**…" matches none of SESSION_LIMIT_OUTPUT_PATTERNS, and
+"rate limit" is a TRANSIENT_PATTERN (retryable) not credit-exhaustion → TS returns null for both. Fixed the tests to
+exercise real matching strings (`is_some`) and assert `is_none` for the transient rate-limit (changing the impl to
+satisfy the wrong tests would have been a downgrade — misclassifying retryable rate-limits as fatal).
+
+**Caveat — WF-09 is still mid-port, NOT a full unit.** `execute_node_internal` has the state-machine *structure* but
+the actual node execution (streaming against `_ai_client`, bash/script/loop executors) is deferred to sub-cycles 4-5;
+the `_`-prefixed params are the markers. "44/79 full units" counts the sub-cycles' *scope*, not a working dag-executor.
+
+**NEXT = WF-09 sub-cycle 4:** wire bash/script/loop node executors + stream execution against `ai_client`
+(the `_`-prefixed params in `execute_node_internal` go live). Run build-health BEFORE parity (now enforced).
+
+## CYCLE 28 (2026-06-22): DB-backend completion — 3 of 7 tasks DONE+verified+committed
 
 Owner directive: "/harness:rust-port-merge resume and pick 7 new task for this session." Picked a coherent 7-unit slice =
 **complete the DB backend + land a verified `impl WorkflowStore`** (the WF-09 keystone dependency). Spec: findings/cycle28-spec.md.
@@ -254,9 +289,12 @@ It is not. The following errors exist in sub-cycle 3 (`crates/har-dag-executor/s
 - **E2**: `!schema.is_null()` → `true` (comment explaining JS truthiness source)
 
 ### What is STILL unclean
-After the two fixes above, ~16 clippy "unused variable" warnings remain on fn params in execute_node_internal.
-These are NOT errors — `cargo check` succeeds, tests pass. They WILL be resolved when sub-cycle 4 wires them up.
-If you want clean lint before continuing: prefix unused params with `_` (e.g., `workflow_name: _`).
+~~After the two fixes above, ~16 clippy "unused variable" warnings remain ... cargo check succeeds, tests pass.~~
+**❌ CORRECTED IN CYCLE 35 (2026-06-22): THIS CLAIM WAS FALSE.** After E1/E2, `cargo check -p har-dag-executor` did
+NOT succeed — it had **13 HARD compile errors** (1×E0425 missing `detect_credit_exhaustion` import; 11×E0308 type
+mismatches incl. a *synthetic* `Ok/Err` match on the non-Result `get_agent_provider` field; 1×E0277 unsized `str`)
+plus 20 warnings. "Only lint warnings" was wrong — these blocked the build. All fixed faithfully in cycle 35 (top
+section); workspace now green. The gate lesson below is now actually enforced.
 
 ### Root cause
 The parity-verifier checked **behavior** against source but did NOT re-run clippy after the porter produced sub-cycle 3.
