@@ -1,0 +1,8 @@
+{
+  "next_command": "hf resume",
+  "northstar": "Full-parity, no-downgrade Rust port of meta/Archon's runtime (DAG workflow-run orchestrator + IAgentProvider abstraction + git-worktree isolation + control plane) per harness_hub ADR-0001 — DONE only at 100% parity, nothing left behind. Continuity via .handoff/loop/ (rust-port harness) + this hf kernel.",
+  "plane": "execution",
+  "project_name": "harness-agent-rs",
+  "role": "tool",
+  "schema": "handoff.context_capsule.v1"
+}
