@@ -181,9 +181,14 @@ Source lines 93–581 | 7 constants + 6 exported functions + 5 helpers | 52 test
 
 **Remaining sub-cycles:**
 - Sub-cycle 2: `executeDagWorkflow` orchestrator (~960 ln) — [x] `- [x]` cycle 33 (see below)
-- Sub-cycle 3: `executeNodeInternal` AI node state machine (~820 ln) — [ ] pending
-- Sub-cycle 4: bash/script/loop executors (~1030 ln) — [ ] pending (needs WF-18 script discovery)
+- Sub-cycle 3: `executeNodeInternal` AI node state machine (~820 ln) — [~] cycle 34 STRUCTURE ported (NodeState enum, reask helpers, lifecycle skeleton); build-health-clean + parity-verified-for-scope **cycle 35**. Streaming execution against `ai_client` (the `_`-prefixed params) DEFERRED to sub-cycle 4 → not yet a working node executor.
+- Sub-cycle 4: bash/script/loop executors (~1030 ln) — [ ] pending (needs WF-18 script discovery) — also wires `executeNodeInternal` streaming live (sub-cycle 3's `_`-prefixed params)
 - Sub-cycle 5: approval node + integration verification (~180 ln) — [ ] pending
+
+**Build-health (cycle 35, 2026-06-22):** `har-dag-executor` now COMPILES — `cargo check` + `cargo clippy
+--workspace --all-targets -- -D warnings` + `cargo test --workspace` GREEN (2066 passed / 15 ignored). Cycle 34
+left 13 hard compile errors (the build-health gate was skipped); fixed faithfully vs TS in cycle 35. WF-09 is NOT
+yet a full unit — sub-cycles 1-3 (structure) done; sub-cycles 4-5 (actual node execution) pending.
 
 ### UNIT WF-09 Sub-cycle 2: DAG Orchestrator (executeDagWorkflow) — cycle 33 — FULL `- [x]`
 **Source:** `packages/workflows/src/dag-executor.ts` lines 2753–3710 (~960 ln)
@@ -208,7 +213,7 @@ Source lines 93–581 | 7 constants + 6 exported functions + 5 helpers | 52 test
 - [ ] `executeDagWorkflow(...)` — main DAG loop: layer iteration, `Promise.allSettled` concurrent execution, session threading (sequential layers thread session forward; parallel layers always fresh), cost accumulation, `always_run` skip of resume caching, `priorCompletedNodes` prepopulation (dag-executor.ts:2753-end)
 
 **Internal node executors (all must be ported):**
-- [ ] `executeNodeInternal(...)` — AI (command/prompt) node: idle-timeout abort controller, session fork on resume, validate-and-reask loop (up to `STRUCTURED_OUTPUT_MAX_REASKS=3` for best-effort providers), streaming/batch mode, cancel-during-streaming detection every 10s (`CANCEL_CHECK_INTERVAL_MS`), activity heartbeat every 60s, credit-exhaustion detection, empty-output detection, MCP failure filtering, structured-output override, tool event emission (dag-executor.ts:672-1490)
+- [~] `executeNodeInternal(...)` — AI (command/prompt) node: idle-timeout abort controller, session fork on resume, validate-and-reask loop (up to `STRUCTURED_OUTPUT_MAX_REASKS=3` for best-effort providers), streaming/batch mode, cancel-during-streaming detection every 10s (`CANCEL_CHECK_INTERVAL_MS`), activity heartbeat every 60s, credit-exhaustion detection, empty-output detection, MCP failure filtering, structured-output override, tool event emission (dag-executor.ts:672-1490). **[~] cycle 34 structure + cycle 35 build-health-clean; live streaming execution against `ai_client` DEFERRED to sub-cycle 4.**
 - [ ] `executeBashNode(...)` — bash -c execution; stdout trimmed; stderr surfaced as warning; env injection (`ARTIFACTS_DIR`, `LOG_DIR`, `BASE_BRANCH`, `USER_MESSAGE`, `ARGUMENTS`, `LOOP_USER_INPUT`, `LOOP_PREV_OUTPUT`, `REJECTION_REASON`, `CONTEXT`, `EXTERNAL_CONTEXT`, `ISSUE_CONTEXT`); timeout (default 120s); ENOENT/EACCES handling (dag-executor.ts:1504-1676)
 - [ ] `executeScriptNode(...)` — bun/uv inline or named-script; precedence: `<cwd>/.archon/scripts/` > `~/.archon/scripts/`; `--no-env-file` for bun; uv `--with dep` flags; env injection (same as bash); timeout 120s (dag-executor.ts:1683-1945)
 - [ ] `executeLoopNode(...)` — iterative AI loop: max_iterations guard, fresh vs shared context per iteration, completion signal detection via `detectCompletionSignal`, bash condition `until_bash` exit code check, interactive-loop gate (pause + await user input via `/workflow approve`), loop resume from `metadata.approval`, empty-output failure per iteration, cost accumulation across iterations (dag-executor.ts:1955-2558)

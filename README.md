@@ -30,5 +30,11 @@ This repo has the `rust-port` harness ejected into `.claude/`. To work the port:
 /rust-port resume     # continue from .handoff/loop/HANDOFF.md
 ```
 
-Status: **scaffold** — minimal cargo workspace (`crates/har-core` placeholder, green baseline);
-awaiting DISCOVER. See `.handoff/loop/HANDOFF.md` for the kickoff.
+Status: **port in progress (~44/79 units; WF-09 keystone mid-port)** — workspace green (`cargo build` +
+`clippy --workspace --all-targets -D warnings` + `cargo test --workspace`: 2066 passed / 15 ignored, as of
+cycle 35). Landed: schema, the SQL DB backend (SQLite + Postgres adapters, connection auto-detect,
+`WorkflowStore`), all provider ports (CLI + Claude/Codex/Copilot/OpenCode/Pi SDKs) bound, and the git /
+worktree-isolation layers. In progress: **WF-09 `dag-executor`** (the keystone state machine) — sub-cycles 1-3
+(constants, `executeDagWorkflow` orchestrator, `executeNodeInternal` structure) landed; sub-cycles 4-5
+(bash/script/loop executors + live streaming execution + approval node) pending. See `.handoff/loop/HANDOFF.md`
++ `.handoff/loop/parity-ledger.md` for the authoritative state.
