@@ -971,15 +971,62 @@ impl WorkflowStore for SqlWorkflowStore {
 
     // ── Codebase / env vars ──────────────────────────────────────────────────
 
+    /// Per-codebase env vars (port of `env-vars.ts:getCodebaseEnvVars`).
     async fn get_codebase_env_vars(
         &self,
-        _codebase_id: &str,
+        codebase_id: &str,
     ) -> Result<IndexMap<String, String>, StoreError> {
-        Ok(IndexMap::new())
+        let sql = "SELECT key, value FROM remote_agent_codebase_env_vars \
+                   WHERE codebase_id = $1 ORDER BY key ASC";
+        match self.db.query(sql, vec![json!(codebase_id)]).await {
+            Ok(result) => {
+                let mut map = IndexMap::with_capacity(result.rows.len());
+                for row in &result.rows {
+                    if let Some(row_map) = row.as_object() {
+                        if let (Some(key), Some(value)) = (
+                            row_map.get("key").and_then(|v| v.as_str()),
+                            row_map.get("value").and_then(|v| v.as_str()),
+                        ) {
+                            map.insert(key.to_string(), value.to_string());
+                        }
+                    }
+                }
+                Ok(map)
+            }
+            Err(e) => {
+                log::error!(err = %e, "db.codebase_env_vars_query_failed");
+                Err(StoreError::Db(format!(
+                    "Failed to get codebase env vars: {e}"
+                )))
+            }
+        }
     }
 
-    async fn get_codebase(&self, _id: &str) -> Result<Option<CodebaseRecord>, StoreError> {
-        Ok(None)
+    /// Codebase lookup by id (port of `codebases.ts:getCodebase`).
+    async fn get_codebase(&self, id: &str) -> Result<Option<CodebaseRecord>, StoreError> {
+        let sql = "SELECT id, name, repository_url, default_cwd \
+                   FROM remote_agent_codebases WHERE id = $1";
+        match self.db.query(sql, vec![json!(id)]).await {
+            Ok(result) => {
+                if result.rows.is_empty() {
+                    return Ok(None);
+                }
+                let row_val = &result.rows[0];
+                match serde_json::from_value::<CodebaseRecord>(row_val.clone()) {
+                    Ok(record) => Ok(Some(record)),
+                    Err(e) => {
+                        log::error!(err = %e, "db.codebase_record_deserialize_failed");
+                        Err(StoreError::Db(format!(
+                            "Failed to deserialize codebase: {e}"
+                        )))
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!(err = %e, "db.codebase_query_failed");
+                Err(StoreError::Db(format!("Failed to get codebase: {e}")))
+            }
+        }
     }
 
     // ── Node sessions ────────────────────────────────────────────────────────
@@ -2397,5 +2444,132 @@ mod tests {
             .await
             .unwrap();
         assert!(found.is_some());
+    }
+
+    // ── CO-08 codebases: get_codebase and get_codebase_env_vars tests ───────────────
+
+    /// Helper to insert a raw codebase record into the test DB.
+    async fn insert_codebase(
+        store: &SqlWorkflowStore,
+        id: &str,
+        name: &str,
+        repo_url: Option<&str>,
+        default_cwd: &str,
+    ) {
+        store.db.query(
+            "INSERT INTO remote_agent_codebases (id, name, repository_url, default_cwd) VALUES ($1, $2, $3, $4)",
+            vec![json!(id), json!(name), json!(repo_url), json!(default_cwd)],
+        ).await.unwrap();
+    }
+
+    /// Helper to insert a raw codebase env var record into the test DB.
+    async fn insert_codebase_env_var(
+        store: &SqlWorkflowStore,
+        _codebase_id: &str,
+        key: &str,
+        value: &str,
+    ) {
+        // Use key as part of id to guarantee uniqueness (env vars are uniquely keyed).
+        store.db.query(
+            "INSERT INTO remote_agent_codebase_env_vars (id, codebase_id, key, value) VALUES ($1, $2, $3, $4)",
+            vec![json!(format!("{}-env-var", key)), json!(_codebase_id), json!(key), json!(value)],
+        ).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn get_codebase_returns_none_for_missing_id() {
+        let (store, _tmp) = make_test_store();
+        let result = store.get_codebase("nonexistent-uuid").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn get_codebase_returns_record_for_existing_id() {
+        let (store, _tmp) = make_test_store();
+        let cb_id = "cb-test-001";
+        insert_codebase(
+            &store,
+            cb_id,
+            "my-repo",
+            Some("https://github.com/example/repo"),
+            "/home/user/project",
+        )
+        .await;
+
+        let result = store.get_codebase(cb_id).await.unwrap();
+        assert!(result.is_some());
+        let record = result.unwrap();
+        assert_eq!(record.name, "my-repo");
+        assert_eq!(
+            record.repository_url,
+            Some("https://github.com/example/repo".into())
+        );
+        assert_eq!(record.default_cwd, "/home/user/project");
+    }
+
+    #[tokio::test]
+    async fn get_codebase_handles_null_repository_url() {
+        let (store, _tmp) = make_test_store();
+        insert_codebase(
+            &store,
+            "cb-null-repo",
+            "no-url-repo",
+            None,
+            "/home/user/blank",
+        )
+        .await;
+
+        let result = store.get_codebase("cb-null-repo").await.unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().repository_url, None);
+    }
+
+    #[tokio::test]
+    async fn get_codebase_env_vars_returns_empty_when_none_exist() {
+        let (store, _tmp) = make_test_store();
+        let result = store.get_codebase_env_vars("cb-empty").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_codebase_env_vars_returns_sorted_keys() {
+        let (store, _tmp) = make_test_store();
+        let cb_id = "cb-env-test";
+        // Insert in non-sorted order to verify ASC ordering
+        insert_codebase_env_var(&store, cb_id, "ZEBRA", "val-z").await;
+        insert_codebase_env_var(&store, cb_id, "APPLE", "val-a").await;
+        insert_codebase_env_var(&store, cb_id, "MANGO", "val-m").await;
+
+        let result = store.get_codebase_env_vars(cb_id).await.unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(
+            result.keys().collect::<Vec<_>>(),
+            vec!["APPLE", "MANGO", "ZEBRA"]
+        );
+        assert_eq!(result.get("APPLE"), Some(&"val-a".to_string()));
+        assert_eq!(result.get("MANGO"), Some(&"val-m".to_string()));
+        assert_eq!(result.get("ZEBRA"), Some(&"val-z".to_string()));
+    }
+
+    #[tokio::test]
+    async fn get_codebase_env_vars_filters_by_codebase_id() {
+        let (store, _tmp) = make_test_store();
+        insert_codebase_env_var(&store, "cb-other", "ONLY_OTHER", "1").await;
+
+        let result = store.get_codebase_env_vars("cb-target").await.unwrap();
+        assert!(result.is_empty()); // cb-target has no env vars
+    }
+
+    #[tokio::test]
+    async fn get_codebase_env_vars_handles_special_value_chars() {
+        let (store, _tmp) = make_test_store();
+        let cb_id = "cb-special";
+        insert_codebase_env_var(&store, cb_id, "API_KEY", "abc123!@#$%^&*()").await;
+        insert_codebase_env_var(&store, cb_id, "PATH_VAR", "/usr/local/bin:/usr/bin:/bin").await;
+
+        let result = store.get_codebase_env_vars(cb_id).await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result["API_KEY"], "abc123!@#$%^&*()");
+        assert_eq!(result["PATH_VAR"], "/usr/local/bin:/usr/bin:/bin");
     }
 }

@@ -41,6 +41,9 @@ pub mod executor_shared;
 pub mod condition_evaluator;
 pub mod output_ref;
 
+// Cycle 7+: WF-09 DAG executor (sub-cycle 1: constants + pure utilities)
+pub mod dag_executor;
+
 // Public re-exports for downstream consumers.
 pub use condition_evaluator::{evaluate_condition, split_outside_quotes, EvaluationResult};
 pub use executor_shared::{
@@ -111,4 +114,32 @@ pub use model_validation::{
 pub use output_ref::{
     declared_fields_from_schema, resolve_node_output_field, FieldResolution, OutputRefError,
     OutputRefErrorReason,
+};
+
+// WF-09 sub-cycle 1 re-exports
+pub use dag_executor::{
+    build_topological_layers,
+    check_trigger_rule,
+    get_effective_node_retry_config,
+    load_configured_mcp_server_names,
+    McpFailureEntry,
+    parse_mcp_failure_server_names,
+    resolve_node_provider_and_model_sync,
+    ResolvedProviderAndModel,
+    should_continue_streaming_for_status,
+    substitute_node_output_refs,
+    TriggerResult,
+};
+
+// WF-09 sub-cycle 2 re-exports (executeDagWorkflow orchestrator)
+pub use dag_executor::{
+    capture_workflow_completed,
+    execute_dag_workflow,
+    get_workflow_event_emitter,
+    log_node_skip,
+    log_workflow_complete,
+    log_workflow_error,
+    write_node_artifact,
+    WorkflowDeps,
+    WorkflowEventEmitter,
 };

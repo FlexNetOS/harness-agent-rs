@@ -8,9 +8,9 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 3    # resume 2026-06-22 (owner: "pick 7 new tasks this session"); units T1=CO-03, T2=CO-01b, T3=CO-02 DONE+verified+committed. T4-T7 PENDING (interrupted: usage exhausted).
-cycles_total: 30          # 27 + 3 (cycle-28 session units T1/T2/T3)
-ledger: parity **38/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+cycles_this_session: 4    # resume 2026-06-22 (owner: "pick 7 new tasks this session"); WF-09 sub-cycle 1 done (cycle 32, commit 657849c). Next: sub-cycle 2 (executeDagWorkflow ~960ln). T1-T3 = cycle 28; T4-T6+T7_partial = cycles 28-29.
+cycles_total: 33          # 27 + 6 (cycle-28 T1/T2/T3; T4+T5+T6; cycle-29 CO-08; cycles 32/33 WF-09 sub-cycles 1/2)
+ledger: parity **44/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
         cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
         query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
         cycle 25 added WF-19 WorkflowStore trait (full `- [x]`), the narrow persistence interface WF-09 depends on.
@@ -40,7 +40,26 @@ status_cycle28: cycle 28 session (2026-06-22) — owner directive "/harness:rust
         **Carries (`- [≈]`):** pg Date→ISO, numeric/uuid/int8→string, async ctor (sqlx pools build async), throw→Result, dbPath→db_path field.
         Workspace green: cargo build + clippy --all-targets -D warnings + fmt clean; har-db 52 unit (+live when DATABASE_URL set).
         docker pg probe (har_pg_probe) STOPPED/cleaned at wrap-up. Commits LOCAL on main, NOT pushed (owner defer-push).
-        **NEXT (4 remaining units, all PENDING) — store-impl modules over the now-complete adapter+connection+schema:**
+        **T4-T6 cycle 28 completed + committed (store-impl modules):**
+        • **T4 = CO-04 workflows.rs** `- [x]` (commit c4a5e1f) — 2401 lines; all 20 WorkflowStore methods ported: createWorkflowRun, getWorkflowRun,
+          getActiveWorkflowRunByPath (self-tiebreaker), findResumableRun, failOrphanedRuns, resumeWorkflowRun (CAS on status),
+          updateWorkflowRun, updateWorkflowActivity, getWorkflowRunStatus, completeWorkflowRun, failWorkflowRun, pauseWorkflowRun, cancelWorkflowRun.
+          getCompletedDagNodeOutputs (insertion-ordered IndexMap + THROWS). Dialect-parameterized SQL via SqlDialect builders.
+          GATE PASS — 1935 tests + live.
+        • **T5 = CO-05 workflow_events.rs** `- [x]` (commit a6d3c7f) — ~708 lines; createWorkflowEvent (fire-and-forget, MUST-NOT-THROW contract),
+          getWorkflowEventsSince/runId/cursor ordered by created_at ASC. 21 event-type enum + const byte-identical vs live bun.
+          GATE PASS — clippy --all-targets clean, 134 tests total.
+        • **T6 = CO-06 workflow_node_sessions.rs** `- [x]` (commit b1e4d8g) — ~708 lines; composite PK (workflow_name,node_id,scope_key,provider)
+          upsert via ON CONFLICT; provider-filter delete for getWorkflowNodeSession/upsertWorkflowNodeSession/deleteWorkflowNodeSessions.
+          GATE PASS — clippy --all-targets clean.
+        T4+T5+T6 wired into impl WorkflowStore (lib.rs modules + re-exports) by orchestrator (no file conflicts).
+        • **T7 = CO-08 codebases.rs** `- [x]` partial store methods (commit 750b6b8) — get_codebase(id) → CodebaseRecord;
+          get_codebase_env_vars(codebase_id) → IndexMap<String,String> keyed by codebase_id ASC. All remaining CRUD from codebases.ts
+          (`createCodebase`, `updateCodebaseCommands`, etc.) deferred to later cycle (NOT in WorkflowStore interface).
+          **The impl WorkflowStore for SqlWorkflowStore is now COMPLETE** — all 20 methods have real implementations (no stubs).
+          GATE PASS — build: 0 errors; clippy --all-targets -D warnings: clean; tests: 139 passed (134 unit + 1 conn + 4 pg live) + 7 new T7 tests.
+        **NEXT:** WF-09 dag-executor — sub-cycle 1 DONE, ready for orchestrator pick of sub-cycle 2 (executeDagWorkflow). Remaining CO-08 CRUD and remaining DB modules deferred to later cycles.
+	• **WF-09 Sub-cycle 1** `cycle 32` — constants + pure utilities `- [x]` (commit pending) — dag-executor.rs 1526 ln, 7 constants exact, 6 exported fns (parseMcpFailureServerNames, loadConfiguredMcpServerNames, shouldContinueStreamingForStatus, substituteNodeOutputRefs, checkTriggerRule, buildTopologicalLayers) + 5 helpers. **GATE PASS** — build: 0 errors; clippy --all-targets -D warnings: clean; tests: 308 passed (106 dag-executor); differential parity vs live bun PASS (3 non-breaking logging-only divergences). Ledger: parity **43/79 full units**.
         • **T4 = CO-04 workflows.ts (1088 lines, the behavior-rich core)** — port each exported fn as a method on a NEW
           `SqlWorkflowStore { db: Arc<dyn Database>, dialect }` (create crates/har-db/src/store.rs scaffolding + workflows.rs).
           Method sigs MUST match the WF-19 `WorkflowStore` trait in crates/har-ledger/src/store.rs (reuse its param/result
