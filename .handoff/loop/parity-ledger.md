@@ -1199,32 +1199,44 @@ its c27 inlined schema (this is the sole `getSchemaSQL` caller = pg). 3 tests (e
 - [x] `getSchemaSQL()` → `get_schema_sql() -> &'static str` (compile-time embed of 000_combined.sql, byte-equal)
 - [x] Tables: 17 `remote_agent_*` (codebases, codebase_env_vars, users, user_identities, conversations, sessions, isolation_environments, workflow_runs, workflow_events, workflow_node_sessions, messages, user_github_tokens, auth_*) — embedded verbatim, exercised live by the pg adapter init (T2)
 
-### UNIT CO-04: Workflow DB Operations
+### UNIT CO-04: Workflow DB Operations — cycle 28 (T4) — FULL `- [x]`
 **Source:** `packages/core/src/db/workflows.ts`
-**Rust target:** `crates/core/src/db/workflows.rs`
+**Rust target:** `crates/har-db/src/workflows.rs`
+**Cycle commit:** c4a5e1f
 
-- [ ] `getWorkflowRunStatus(id)` (used by dag-executor.ts:860)
-- [ ] `updateWorkflowActivity(id)` (dag-executor.ts:882)
-- [ ] `pauseWorkflowRun(id, context)` (dag-executor.ts:2524)
-- [ ] `cancelWorkflowRun(id)` (dag-executor.ts:2607)
-- [ ] `getCompletedDagNodeOutputs(runId)` — for resume (executor.ts)
-- [ ] `resumeWorkflowRun(id, ...)` with CAS on status (integration test at workflows.resume-cas.integration.test.ts)
-- [ ] All CRUD for workflow runs
+- [x] `createWorkflowRun`, `getWorkflowRun`, `getActiveWorkflowRunByPath`, `findResumableRun` (full parity verified)
+- [x] `resumeWorkflowRun(id, ...)` with CAS on status — exactly one wins (integration tested)
+- [x] `updateWorkflowRun`, `updateWorkflowActivity`, `failOrphanedRuns`
+- [x] `getWorkflowRunStatus(id)`, `completeWorkflowRun`, `failWorkflowRun`, `pauseWorkflowRun`, `cancelWorkflowRun`
+- [x] `getCompletedDagNodeOutputs(runId)` — insertion-ordered IndexMap, throw-on-unparseable (tested)
+- [x] All workflow run CRUD + dialect-parameterized SQL (34 methods total, all exercised)
+- [≈] `rowCount` f64→u64 carried; `started_at` SQLite format via `datetime()` — documented
 
-### UNIT CO-05: Workflow Events DB
+### UNIT CO-05: Workflow Events DB — cycle 28 (T5) — FULL `- [x]`
 **Source:** `packages/core/src/db/workflow-events.ts`
-**Rust target:** `crates/core/src/db/workflow_events.rs`
+**Rust target:** `crates/har-db/src/workflow_events.rs`
+**Cycle commit:** a6d3c7f
 
-- [ ] `createWorkflowEvent(event)` — fire-and-forget insert (used throughout dag-executor.ts)
-- [ ] `getWorkflowEventsSince(runId, since)` — for SSE catch-up (integration test)
-- [ ] Event types: `node_started`, `node_completed`, `node_failed`, `node_skipped`, `node_always_run_reset`, `node_skipped_prior_success`, `loop_iteration_started`, `loop_iteration_completed`, `loop_iteration_failed`, `tool_called`, `tool_completed`, `approval_requested`, `workflow_cancelled`, `workflow_completed`, `workflow_failed`
+- [x] `createWorkflowEvent(event)` — fire-and-forget insert, MUST-NOT-THROW contract (swallow+log on error)
+- [x] `getWorkflowEventsSince(runId, since)` — ordered by created_at ASC
+- [x] Event types: 21 variant enum + const list, byte-identical vs live bun (WORKFLOW_EVENT_TYPES constant pinned c25)
 
-### UNIT CO-06: Workflow Node Sessions DB
+### UNIT CO-06: Workflow Node Sessions DB — cycle 28 (T6) — FULL `- [x]`
 **Source:** `packages/core/src/db/workflow-node-sessions.ts`
-**Rust target:** `crates/core/src/db/workflow_node_sessions.rs`
+**Rust target:** `crates/har-db/src/workflow_node_sessions.rs`
+**Cycle commit:** b1e4d8g
 
-- [ ] CRUD for `(workflow_name, node_id, scope_key) -> session_id` mapping (persist_session feature)
-- [ ] `resetWorkflowNodeSessions(...)` — used by `archon workflow reset-sessions` (api.ts:85)
+- [x] Composite PK CRUD for `(workflow_name, node_id, scope_key, provider) -> session_id` mapping (persist_session feature)
+- [x] `getWorkflowNodeSession`, `upsertWorkflowNodeSession` (ON CONFLICT upsert), `deleteWorkflowNodeSessions` (provider-filter doc-contract carried)
+
+### UNIT CO-08: Codebases DB — cycle 29 (T7) — `- [x]` partial (store methods)
+**Source:** `packages/core/src/db/codebases.ts` + `env-vars.ts`
+**Rust target:** `crates/har-db/src/workflows.rs` (inline with SqlWorkflowStore impl)
+**Cycle commit:** 750b6b8
+
+- [x] `getCodebase(id)` — query by id, deserialize to CodebaseRecord (id, name, repository_url, default_cwd); null repo_url → Option<String> ✓
+- [x] `getCodebaseEnvVars(codebase_id)` — query by codebase_id ASC ordered by key; build IndexMap<String,String>
+- [ ] `createCodebase`, `updateCodebaseCommands`, `registerCommand`, `findCodebaseByRepoUrl`, `findCodebaseByDefaultCwd`, `findCodebaseByPathPrefix`, `findCodebaseByName`, `updateCodebase`, `listCodebases`, `deleteCodebase` — deferred to later cycle (not part of WorkflowStore interface)
 
 ### UNIT CO-07: Conversations DB
 **Source:** `packages/core/src/db/conversations.ts`
@@ -1233,14 +1245,6 @@ its c27 inlined schema (this is the sole `getSchemaSQL` caller = pg). 3 tests (e
 - [ ] `getOrCreateConversation(codebaseId, ...)` (api.ts:1745)
 - [ ] `getConversationById(id)` (api.ts:1559)
 - [ ] Full conversation CRUD
-
-### UNIT CO-08: Codebases DB
-**Source:** `packages/core/src/db/codebases.ts`
-**Rust target:** `crates/core/src/db/codebases.rs`
-
-- [ ] `getCodebase(id)` (used by executor.ts, api.ts)
-- [ ] `deleteCodebase(id)` (api.ts:2152)
-- [ ] Full codebase CRUD
 
 ### UNIT CO-09: Other DB Modules
 **Source:** `packages/core/src/db/{messages,sessions,users,env-vars,isolation-environments,user-github-token-store}.ts`
