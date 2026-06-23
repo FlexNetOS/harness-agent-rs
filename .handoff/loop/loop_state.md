@@ -8,8 +8,8 @@ source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 4    # resume 2026-06-22 (owner: "pick 7 new tasks this session"); WF-09 sub-cycle 1 done (cycle 32, commit 657849c). Next: sub-cycle 2 (executeDagWorkflow ~960ln). T1-T3 = cycle 28; T4-T6+T7_partial = cycles 28-29.
-cycles_total: 33          # 27 + 6 (cycle-28 T1/T2/T3; T4+T5+T6; cycle-29 CO-08; cycles 32/33 WF-09 sub-cycles 1/2)
+cycles_this_session: 1    # resume 2026-06-22 (owner: "/harness:rust-port-merge resume" — NO dest_repo, so plain rust-port). cycle 35 = WF-09 build-health gate (the gate cycle 34 SKIPPED): har-dag-executor had 13 HARD compile errors (NOT lint-only as HANDOFF wrongly claimed) → fixed faithfully → WORKSPACE GREEN (build+clippy --all-targets -D warnings+test 2066 passed). Next: WF-09 sub-cycle 4 (wire bash/script/loop executors + stream against ai_client; the `_`-prefixed params in execute_node_internal go live).
+cycles_total: 34          # 27 + 6 + cycle 35 (WF-09 build-health gate: 13 compile errors fixed, 3 sub-cycle-3 test-authoring errors corrected vs TS, workspace green)
 ledger: parity **44/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
         cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
         query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
