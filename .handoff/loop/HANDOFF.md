@@ -242,8 +242,8 @@ cd ~/Desktop/meta/harness-agent-rs && cargo clippy --all-targets -- -D warnings 
 
 ## CYCLES 32–34: WF-09 DAG-executor sub-cycles 1–3 (newest)
 
-**PR #4** opened, auto-merge armed: https://github.com/FlexNetOS/harness-agent-rs/pull/4
-Branch: `feat/wf-09-sub-cycles-1-2-3` → `main`
+**PR #4** MERGED (squash). Post-merge follow-up fix landed via **PR #6** (clean forward-integration) + build-health
+via **PR #7** (cycle 35). Branch `feat/wf-09-sub-cycles-1-2-3` is MERGED + PRUNED (local+remote). All WF-09 work is on `main`.
 
 ### Cycle 32 — WF-09 sub-cycle 1 (constants + pure utilities)
 - **commit:** 657849c
