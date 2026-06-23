@@ -165,10 +165,25 @@ Composite PK: (workflow_name, node_id, scope_key, provider)
 - [x] Trim audit: no `.trim()` transforms — N/A
 
 ### UNIT WF-09: DAG Executor — Core State Machine
-**Source:** `packages/workflows/src/dag-executor.ts`
-**Rust target:** `crates/workflows/src/dag_executor.rs`
+**Source:** `packages/workflows/src/dag-executor.ts` (3711 lines)
+**Rust target:** `crates/har-dag-executor/src/dag_executor.rs`
 
-This is the central porting target. Extremely behavior-rich.
+**Sub-cycle 1 (cycle 32): Constants + Pure Utilities — `- [x]` cycle 32** ✅
+Source lines 93–581 | 7 constants + 6 exported functions + 5 helpers | 52 tests | parity PASS vs live bun
+- [x] `CANCEL_CHECK_INTERVAL_MS = 10_000`, `ACTIVITY_HEARTBEAT_INTERVAL_MS = 60_000`, `DEFAULT_NODE_MAX_RETRIES = 2`, `DEFAULT_NODE_RETRY_DELAY_MS = 3000`, `STRUCTURED_OUTPUT_MAX_REASKS = 3`, `SUBPROCESS_DEFAULT_TIMEOUT = 120_000`, `NODE_OUTPUT_FILE_THRESHOLD = 32768` — all exact ✓
+- [x] `parseMcpFailureServerNames` — prefix parse, dedup first-wins ✓
+- [x] `loadConfiguredMcpServerNames` — JSON file reader, Set<String> ✓
+- [x] `shouldContinueStreamingForStatus` — running/paused→true ✓
+- [x] `substituteNodeOutputRefs` — $node.output regex with shell quoting + file spill ✓
+- [x] `checkTriggerRule` — 4 trigger rules × all state combos ✓
+- [x] `buildTopologicalLayers` — Kahn's algorithm ✓
+- [-] `getEffectiveNodeRetryConfig`, `resolveNodeProviderAndModel_sync`, `applyPresetOptions` — helpers (internal, tested implicitly)
+
+**Remaining sub-cycles:**
+- Sub-cycle 2: `executeDagWorkflow` orchestrator (~960 ln) — [ ] pending
+- Sub-cycle 3: `executeNodeInternal` AI node state machine (~820 ln) — [ ] pending
+- Sub-cycle 4: bash/script/loop executors (~1030 ln) — [ ] pending (needs WF-18 script discovery)
+- Sub-cycle 5: approval node + integration verification (~180 ln) — [ ] pending
 
 **Exported functions:**
 - [ ] `parseMcpFailureServerNames(message: String) -> Vec<McpFailureEntry>` — parses "MCP server connection failed: a (status), b (status)" (dag-executor.ts:160-173)
