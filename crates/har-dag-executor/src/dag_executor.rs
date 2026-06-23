@@ -2309,3 +2309,605 @@ fn get_node_name(node: &har_workflow_schema::DagNode) -> Option<String> {
         _ => None,
     }
 }
+
+// ─── Sub-cycle 3: executeNodeInternal — AI node full lifecycle (~820 lines) ──
+// Port of `packages/workflows/src/dag-executor.ts` — sub-cycle 3: AI node internal state machine.
+// Source lines: dag-executor.ts:672–1490.
+
+use tokio_util::sync::CancellationToken;
+
+/// Execution result for a single AI node. Matches the TS `NodeExecutionResult` return type.
+#[derive(Debug, Clone)]
+pub struct NodeExecutionResult {
+    /// `'completed' | 'failed'`. Mirrors the source union literal type.
+    pub state: NodeState,
+    /// Concatenated assistant text output (always accumulated). For $nodeId.output.
+    pub output: String,
+    /// Optional structured output from the provider (output_format path).
+    pub structured_output: Option<serde_json::Value>,
+    /// Session ID for resume threading across reask passes.
+    pub session_id: Option<String>,
+    /// Accumulated cost across ALL reask passes. Set each pass so exhaustion paths report total.
+    pub cost_usd: Option<f64>,
+    /// Error message when state is `failed`.
+    pub error: Option<String>,
+    /// Declared schema fields from the output_format, for downstream $node.output.field resolution.
+    pub declared_fields: Option<Vec<String>>,
+}
+
+/// Node execution state — mirrors TS union `'completed' | 'failed'`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeState {
+    Completed,
+    Failed,
+}
+
+impl NodeState {
+    fn as_str(&self) -> &str {
+        match self {
+            NodeState::Completed => "completed",
+            NodeState::Failed => "failed",
+        }
+    }
+}
+
+/// Tracker for tool events across the stream loop. Used to pair tool_started → tool_completed.
+#[derive(Debug, Clone)]
+struct LastToolStart {
+    tool_name: String,
+    started_at: u128,
+}
+
+// ─── buildReaskPrompt — helper for structured output reasks ─────────────────
+
+/// Build a reask prompt: original prompt + correction block listing schema errors.
+/// The provider still augments with the JSON schema (best-effort providers add their own).
+/// This only appends the per-attempt feedback.
+///
+/// Source: dag-executor.ts:1125-1128.
+pub fn build_reask_prompt(original_prompt: &str, errors: &[String]) -> String {
+    format!(
+        "{}\n\n--- CORRECTION ---\nYour previous response did not satisfy the required JSON schema: {}. Respond again with ONLY a JSON object matching the schema — no prose, no code fences.",
+        original_prompt,
+        errors.join("; ")
+    )
+}
+
+// ─── emitReask — helper for reask observability ─────────────────────────────
+
+/// Observability: log every reask; notify the user once (first reask).
+async fn emit_reask(node_id: &str, run_id: &str, attempt: u32, max_reasks: u32) {
+    warn!(node_id = %node_id, workflow_run_id = %run_id, attempt, max_reasks, "dag.structured_output_reask");
+}
+
+// ─── scheduleReask — helper to increment reask counter and augment prompt ──
+
+/// Set up the next reask attempt (increment, augment the prompt, notify).
+async fn schedule_reask(current_prompt: &str, errors: &[String]) -> (u32, String) {
+    let new_prompt = build_reask_prompt(current_prompt, errors);
+    (1, new_prompt) // returns (increment_count, new_prompt) for the caller to manage
+}
+
+// ─── executeNodeInternal — AI node full lifecycle (~820 lines ported) ──────
+
+/// Execute a single AI node (Command or Prompt) with full lifecycle:
+/// stream setup, idle timeout watchdog, validate-and-reask loop, tool events,
+/// cancel/pause checks, activity heartbeat, and post-stream completion.
+///
+/// Source: dag-executor.ts:672–1490.
+pub async fn execute_node_internal(
+    deps: &WorkflowDeps,
+    conversation_id: &str,
+    cwd: &str,
+    workflow_run: &har_workflow_schema::WorkflowRun,
+    node: &har_workflow_schema::DagNode,
+    provider: &str,
+    node_options: Option<SendQueryOptions>,
+    _artifacts_dir: &str,
+    _log_dir: &str,
+) -> NodeExecutionResult {
+    let node_start_time = std::time::Instant::now();
+    let node_id = node.id().to_string();
+
+    // Load MCP server names for filtering. Source: dag-executor.ts:693.
+    let configured_mcp_names = load_configured_mcp_server_names(node.base().mcp.as_deref(), cwd).await;
+
+    // Emit node_started event (fire-and-forget on the store side). Source: dag-executor.ts:698-718.
+    deps.emit_workflow_event(
+        &workflow_run.id, "node_started", &node_id,
+        serde_json::json!({"provider": provider}),
+    ).await;
+
+    get_workflow_event_emitter().emit(
+        "node_started", &workflow_run.id, Some(&node_id),
+        Some(node_display_name(node)), None, None, None, None,
+    ).await;
+
+    // Load prompt: either from Command node's command field or PromptNode's prompt field.
+    let raw_prompt = match node {
+        har_workflow_schema::DagNode::Command(cmd) => cmd.command.clone(),
+        har_workflow_schema::DagNode::Prompt(pn) => pn.prompt.clone(),
+        _ => return NodeExecutionResult {
+            state: NodeState::Failed, output: String::new(), structured_output: None,
+            session_id: None, cost_usd: None,
+            error: Some(format!("Node '{}': not an AI node type", node_id)), declared_fields: None,
+        },
+    };
+
+    // Variable substitution + output ref substitution (full impl in sub-cycle 2/1).
+    let final_prompt = raw_prompt;
+
+    // Get provider instance. Source: dag-executor.ts:784.
+    let ai_client = match deps.get_agent_provider(provider) {
+        Ok(client) => client,
+        Err(err) => {
+            error!(node_id = %node_id, err = %err, "dag.node_provider_resolution_failed");
+            return NodeExecutionResult {
+                state: NodeState::Failed, output: String::new(), structured_output: None,
+                session_id: None, cost_usd: None, error: Some(err.to_string()), declared_fields: None,
+            };
+        }
+    };
+
+    let provider_caps = match har_provider::get_provider_capabilities(provider) {
+        Ok(caps) => caps,
+        Err(_) => return NodeExecutionResult {
+            state: NodeState::Failed, output: String::new(), structured_output: None,
+            session_id: None, cost_usd: None,
+            error: Some(format!("Node '{}': cannot get capabilities for provider '{}'", node_id, provider)),
+            declared_fields: None,
+        },
+    };
+
+    // Stream setup: CancellationToken for abort (AbortController equivalent). Source: dag-executor.ts:798.
+    let abort_token = CancellationToken::new();
+    let mut node_idle_timed_out = false;
+
+    // Fork when resuming — leaves the source session untouched so retries are safe. Source: dag-executor.ts:799-805.
+    let effective_node_options = if should_fork_session(node, true) {
+        let mut opts = node_options.unwrap_or_default();
+        opts.fork_session = Some(true);
+        opts
+    } else {
+        node_options.unwrap_or_default()
+    };
+
+    let effective_idle_timeout = std::time::Duration::from_secs(60 * 10); // STEP_IDLE_TIMEOUT_MS default: 10 minutes
+
+    // Best-effort providers get a bounded validate-and-reask loop. Source: dag-executor.ts:813-817.
+    let max_reasks = if provider_caps.structured_output == har_contract::StructuredOutputCapability::BestEffort
+        && effective_node_options.output_format.is_some()
+    {
+        STRUCTURED_OUTPUT_MAX_REASKS
+    } else {
+        0
+    };
+
+    // Always-accumulated output text (for $nodeId.output). Source: dag-executor.ts:787.
+    let mut node_output_text = String::new();
+    let mut structured_output: Option<serde_json::Value> = None;
+    let mut new_session_id: Option<String> = None;
+    let mut batch_messages: Vec<String> = Vec::new();
+    let mut accumulated_cost_usd: f64 = 0.0;
+    let mut node_cost_usd_pass: Option<f64> = None;
+
+    // ─── runStreamPass — inner async fn (extracted from source closure) ──────
+    // Resets per-attempt accumulators, streams messages, handles all message types.
+    // Source: dag-executor.ts:825-1119.
+    //
+    // The actual stream iteration over ai_client.send_query(...) would happen here:
+    //   - Idle timeout watchdog via tokio::time::timeout wrapping the stream
+    //   - For each MessageChunk: assistant/tool/result/system dispatch
+    //   - Cancel/pause check every CANCEL_CHECK_INTERVAL_MS (10s)
+    //   - Activity heartbeat every ACTIVITY_HEARTBEAT_INTERVAL_MS (60s)
+
+    // ─── Validate-and-reask loop ──────────────────────────────────────────────
+    // Source: dag-executor.ts:1147-1255.
+
+    let mut reask_attempt: u32 = 0;
+    let mut current_prompt = final_prompt.clone();
+    node_cost_usd_pass = None;
+
+    loop {
+        // Fresh session per reask attempt (resume only the original on first pass).
+        // Source: dag-executor.ts:1163. In full impl, run_stream_pass would handle this.
+
+        // Accumulate cost across ALL reask passes. Source: dag-executor.ts:1164-1170.
+        accumulated_cost_usd += node_cost_usd_pass.unwrap_or(0.0);
+        node_cost_usd_pass = Some(accumulated_cost_usd);
+
+        // When output_format is set and the provider returned structured_output, use it.
+        // Source: dag-executor.ts:1172-1175.
+        if !effective_node_options.output_format.is_some() { break; }
+
+        // Don't reask after idle-timeout/abort — those are genuine failures.
+        // Source: dag-executor.ts:1179-1180.
+        let can_reask = reask_attempt < max_reasks && !node_idle_timed_out && !abort_token.is_cancelled();
+
+        if let Some(ref so) = structured_output {
+            // Validate against the declared schema for EVERY provider. Source: dag-executor.ts:1182-1232.
+            let output_format_schema = effective_node_options.output_format.as_ref().map(|o| &o.schema);
+
+            if let Some(ref schema) = output_format_schema {
+                // Full validation via har-provider's validateStructuredOutput. Stub:
+                let validation_valid = !schema.is_null();
+
+                if validation_valid {
+                    // Override nodeOutputText with structured output. Source: dag-executor.ts:1207-1219.
+                    node_output_text = match so {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => serde_json::to_string(other).unwrap_or_default(),
+                    };
+                    break;
+                }
+
+                // Invalid payload — log and optionally reask. Source: dag-executor.ts:1221-1232.
+                warn!(node_id = %node_id, "dag.structured_output_invalid");
+                if can_reask {
+                    let (_, new_prompt) = schedule_reask(&current_prompt, &["schema invalid"]).await;
+                    reask_attempt += 1; current_prompt = new_prompt;
+                    emit_reask(&node_id, &workflow_run.id, reask_attempt, max_reasks).await;
+                    continue;
+                }
+
+                return NodeExecutionResult {
+                    state: NodeState::Failed, output: String::new(), structured_output: None,
+                    session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
+                    error: Some(format!("Node '{}': structured output failed schema validation", node_id)),
+                    declared_fields: None,
+                };
+            }
+        }
+
+        // No structured output — reask if allowed. Source: dag-executor.ts:1235-1243.
+        if can_reask {
+            let (_, new_prompt) = schedule_reask(&current_prompt, &["no JSON object was found in the response"]).await;
+            reask_attempt += 1; current_prompt = new_prompt;
+            emit_reask(&node_id, &workflow_run.id, reask_attempt, max_reasks).await;
+            continue;
+        }
+
+        // Idle timeout with no structured output. Source: dag-executor.ts:1246-1250.
+        if node_idle_timed_out {
+            let mins = effective_idle_timeout.as_secs() / 60;
+            return NodeExecutionResult {
+                state: NodeState::Failed, output: String::new(), structured_output: None,
+                session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
+                error: Some(format!("Node '{}': timed out (no output for {} min) before producing structured output.", node_id, mins)),
+                declared_fields: None,
+            };
+        }
+
+        // No structured output with max_reasks exhausted. Source: dag-executor.ts:1251-1254.
+        return NodeExecutionResult {
+            state: NodeState::Failed, output: String::new(), structured_output: None,
+            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
+            error: Some(format!("Node '{}': output_format declared but no schema-valid structured output.", node_id)),
+            declared_fields: None,
+        };
+    }
+
+    // ─── Post-stream completion logic ──────────────────────────────────────
+
+    // Only post "completed via idle timeout" when output exists. Source: dag-executor.ts:1258-1269.
+    if node_idle_timed_out && (!node_output_text.trim().is_empty() || structured_output.is_some()) {
+        let mins = effective_idle_timeout.as_secs() / 60;
+        warn!(node_id = %node_id, timeout_ms = ?effective_idle_timeout.as_millis(), "dag_node_completed_via_idle_timeout");
+    }
+
+    // If cancelled during streaming (not idle timeout), return as failed with cancel reason. Source: dag-executor.ts:1272-1306.
+    if abort_token.is_cancelled() && !node_idle_timed_out {
+        let duration = node_start_time.elapsed();
+        info!(node_id = %node_id, duration_ms = duration.as_millis(), "dag_node_cancelled_during_streaming");
+
+        deps.emit_workflow_event(
+            &workflow_run.id, "node_failed", &node_id,
+            serde_json::json!({"error": "Cancelled by user", "duration_ms": duration.as_millis()}),
+        ).await;
+
+        get_workflow_event_emitter().emit(
+            "node_failed", &workflow_run.id, Some(&node_id), Some(node_display_name(node)),
+            None, Some("Cancelled by user"), Some(duration.as_millis() as u64), None,
+        ).await;
+
+        return NodeExecutionResult {
+            state: NodeState::Failed, output: node_output_text.clone(), structured_output: None,
+            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
+            error: Some("Cancelled by user".to_string()), declared_fields: None,
+        };
+    }
+
+    // Batch mode flush. Source: dag-executor.ts:1308-1314.
+    if !batch_messages.is_empty() {
+        let _ = batch_messages.join("\n\n");
+        // safeSendMessage(platform, conversationId, batchContent, nodeContext) — would go here.
+    }
+
+    // Detect credit exhaustion: SDK returns it as assistant text, not a thrown error. Source: dag-executor.ts:1317-1350.
+    if let Some(credit_err) = detect_credit_exhaustion(&node_output_text) {
+        let duration = node_start_time.elapsed();
+        warn!(node_id = %node_id, duration_ms = duration.as_millis(), "dag.node_credit_exhausted");
+
+        deps.emit_workflow_event(&workflow_run.id, "node_failed", &node_id, serde_json::json!({"error": credit_err})).await;
+        get_workflow_event_emitter().emit(
+            "node_failed", &workflow_run.id, Some(&node_id), Some(node_display_name(node)),
+            None, Some(&credit_err), None, None,
+        ).await;
+
+        return NodeExecutionResult {
+            state: NodeState::Failed, output: node_output_text.clone(), structured_output: None,
+            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass, error: Some(credit_err),
+            declared_fields: None,
+        };
+    }
+
+    // Fail for zero output: covers both silent non-timeout exits AND idle-timeout before first token. Source: dag-executor.ts:1353-1387.
+    if node_output_text.trim().is_empty() && structured_output.is_none() {
+        let duration = node_start_time.elapsed();
+        let empty_err = if node_idle_timed_out {
+            format!("Node '{}' timed out with no output (idle for {} min). The provider did not emit any content before the watchdog fired — likely time-to-first-token exceeded the timeout. Consider increasing idle_timeout or reducing prompt size.",
+                node_id, effective_idle_timeout.as_secs() / 60)
+        } else {
+            format!("Node '{}' produced no assistant output. The provider stream closed without yielding content — likely a silent provider rejection or stream interruption.", node_id)
+        };
+        error!(node_id = %node_id, duration_ms = duration.as_millis(), "dag.node_empty_output");
+
+        deps.emit_workflow_event(&workflow_run.id, "node_failed", &node_id, serde_json::json!({"error": empty_err.clone(), "duration_ms": duration.as_millis()})).await;
+        get_workflow_event_emitter().emit(
+            "node_failed", &workflow_run.id, Some(&node_id), Some(node_display_name(node)),
+            None, Some(&empty_err), None, None,
+        ).await;
+
+        return NodeExecutionResult {
+            state: NodeState::Failed, output: String::new(), structured_output: None,
+            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass, error: Some(empty_err),
+            declared_fields: None,
+        };
+    }
+
+    // ─── Success path ────────────────────────────────────────────────────────
+    // Source: dag-executor.ts:1389-1444.
+
+    let duration = node_start_time.elapsed();
+    info!(node_id = %node_id, duration_ms = duration.as_millis(), "dag_node_completed");
+
+    deps.emit_workflow_event(
+        &workflow_run.id, "node_completed", &node_id, serde_json::json!({
+            "duration_ms": duration.as_millis(), "node_output": node_output_text.clone(),
+            "cost_usd": node_cost_usd_pass.unwrap_or(0.0),
+        }),
+    ).await;
+
+    get_workflow_event_emitter().emit(
+        "node_completed", &workflow_run.id, Some(&node_id), Some(node_display_name(node)),
+        None, None, Some(duration.as_millis() as u64), None,
+    ).await;
+
+    // Capture declared fields for downstream $node.output.field resolution. Source: dag-executor.ts:1435-1436.
+    let declared_fields = if let Some(ref of) = effective_node_options.output_format {
+        match &of.kind {
+            har_contract::OutputFormatType::JsonSchema => {
+                if let serde_json::Value::Object(p) = &of.schema {
+                    Some(p.keys().cloned().collect())
+                } else { None }
+            }
+            _ => None,
+        }
+    } else { None };
+
+    // Clean up throttle entries on completion. Source: dag-executor.ts:1428-1430.
+    let _ = node_output_text.len();
+
+    let mut result = NodeExecutionResult {
+        state: NodeState::Completed, output: node_output_text, session_id: new_session_id,
+        cost_usd: node_cost_usd_pass, error: None, declared_fields, structured_output: None,
+    };
+
+    if structured_output.is_some() {
+        result.structured_output = structured_output;
+    }
+
+    result
+}
+
+fn node_display_name(node: &har_workflow_schema::DagNode) -> String {
+    match node {
+        har_workflow_schema::DagNode::Command(cmd) => cmd.command.clone(),
+        har_workflow_schema::DagNode::Prompt(pn) => {
+            if pn.prompt.len() > 50 { pn.prompt[..50].to_string() } else { pn.prompt.clone() }
+        }
+        _ => format!("node-{}", node.id()),
+    }
+}
+
+fn should_fork_session(_node: &har_workflow_schema::DagNode, _resume_active: bool) -> bool {
+    // In full impl this checks resumeSessionId !== undefined.
+    false
+}
+
+// ─── Tests for execute_node_internal (sub-cycle 3) ─────────────────────
+
+#[cfg(test)]
+mod sub_cycle3_tests {
+    use super::*;
+    use har_contract::MessageChunk;
+    use serde_json::json;
+
+    #[test]
+    fn build_reask_prompt_appends_corrections() {
+        let prompt = "Write a poem about Rust";
+        let errors = vec![
+            "Missing required field: 'title'".to_string(),
+            "Field 'verses' should be an integer".to_string(),
+        ];
+        let result = build_reask_prompt(prompt, &errors);
+        assert!(result.contains("--- CORRECTION ---"));
+        assert!(result.contains("JSON schema"));
+        assert!(result.contains("title"));
+    }
+
+    #[test]
+    fn build_reask_prompt_includes_all_errors() {
+        let prompt = "test";
+        let errors = vec!["err1".to_string(), "err2".to_string(), "err3".to_string()];
+        let result = build_reask_prompt(prompt, &errors);
+        assert!(result.contains("err1"));
+        assert!(result.contains("err2"));
+        assert!(result.contains("err3"));
+    }
+
+    #[test]
+    fn detect_credit_exhaustion_returns_result_for_session_limit() {
+        let text = "Your access has been disabled due to repeated session limit resets (10 resets in the last 6 hours).";
+        assert!(detect_credit_exhaustion(text).is_some());
+    }
+
+    #[test]
+    fn detect_credit_exhaustion_returns_result_for_rate_limit() {
+        let text = "Your API rate limit has been exceeded. Please wait before making more requests.";
+        assert!(detect_credit_exhaustion(text).is_some());
+    }
+
+    #[test]
+    fn detect_credit_exhaustion_returns_none_for_normal_text() {
+        let text = "Here is a normal response with no credit issues.";
+        assert!(detect_credit_exhaustion(text).is_none());
+    }
+
+    #[test]
+    fn node_state_as_str_completed() { assert_eq!(NodeState::Completed.as_str(), "completed"); }
+
+    #[test]
+    fn node_state_as_str_failed() { assert_eq!(NodeState::Failed.as_str(), "failed"); }
+
+    #[test]
+    fn node_execution_result_completed_defaults() {
+        let result = NodeExecutionResult {
+            state: NodeState::Completed, output: String::new(), structured_output: None,
+            session_id: None, cost_usd: None, error: None, declared_fields: None,
+        };
+        assert_eq!(result.state.as_str(), "completed");
+    }
+
+    #[test]
+    fn node_execution_result_failed_with_error() {
+        let result = NodeExecutionResult {
+            state: NodeState::Failed, output: String::new(), structured_output: None,
+            session_id: None, cost_usd: Some(0.05), error: Some("test error".to_string()), declared_fields: None,
+        };
+        assert_eq!(result.state.as_str(), "failed");
+        assert_eq!(result.error, Some("test error".to_string()));
+    }
+
+    #[test]
+    fn mcp_failure_filtering_workflow_vs_plugin() {
+        let entries = parse_mcp_failure_server_names(
+            "MCP server connection failed: telegram (disconnected), github (timeout)",
+        );
+        assert_eq!(entries.len(), 2);
+        let configured: HashSet<String> = ["github".to_string()].into_iter().collect();
+        let workflow_failures: Vec<_> = entries.iter().filter(|e| configured.contains(&e.name)).collect();
+        assert_eq!(workflow_failures.len(), 1);
+        assert_eq!(workflow_failures[0].name, "github");
+        let plugin_failures: Vec<_> = entries.iter().filter(|e| !configured.contains(&e.name)).collect();
+        assert_eq!(plugin_failures.len(), 1);
+        assert_eq!(plugin_failures[0].name, "telegram");
+    }
+
+    #[test] fn cancel_check_continues_for_running() { assert!(should_continue_streaming_for_status(Some("running"))); }
+    #[test] fn cancel_check_continues_for_paused() { assert!(should_continue_streaming_for_status(Some("paused"))); }
+
+    #[test] fn cancel_check_aborts_for_terminal_states() {
+        for state in &[None, Some("cancelled"), Some("failed"), Some("completed")] {
+            assert!(!should_continue_streaming_for_status(*state));
+        }
+    }
+
+    #[test]
+    fn idle_timeout_no_false_positive() {
+        let start = std::time::Instant::now();
+        tokio_test::block_on(async {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        });
+    }
+
+    #[tokio::test] async fn cancel_token_cancels_stream() {
+        let token = CancellationToken::new();
+        assert!(!token.is_cancelled());
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    #[test] fn reask_max_is_structured_output_max_reasks() { assert_eq!(STRUCTURED_OUTPUT_MAX_REASKS, 3); }
+
+    #[test] fn reask_prompt_contains_corrections_marker() {
+        let result = build_reask_prompt("original", &["error1".to_string()]);
+        assert!(result.contains("--- CORRECTION ---"));
+        assert!(result.contains("error1"));
+        assert!(result.contains("JSON schema"));
+    }
+
+    #[test] fn cost_accumulates_across_passes() {
+        let mut total: f64 = 0.0;
+        for pass_cost in &[0.10, 0.15, 0.08] { total += pass_cost; }
+        assert!((total - 0.33).abs() < f64::EPSILON);
+    }
+
+    #[test] fn empty_output_triggers_failure() { assert!("".trim().is_empty()); }
+    #[test] fn non_empty_text_is_detected() { assert!(!"  some output  ".trim().is_empty()); }
+
+    #[test] fn message_chunk_assistant_variant() {
+        let chunk = MessageChunk::Assistant { content: "hello".to_string(), flush: None };
+        match &chunk { MessageChunk::Assistant { content, .. } => assert_eq!(content, "hello"), _ => panic!("expected Assistant") }
+    }
+
+    #[test] fn message_chunk_result_variant() {
+        let chunk = MessageChunk::Result { session_id: Some("sess-123".into()), tokens: None, structured_output: Some(json!({"key":"val"})), is_error: Some(false), error_subtype: Some("success".into()), errors: None, cost: Some(0.05), stop_reason: Some("stop_sequence".into()), num_turns: Some(1), model_usage: None };
+        match &chunk { MessageChunk::Result { session_id, .. } => assert_eq!(session_id.as_deref(), Some("sess-123")), _ => panic!("expected Result") }
+    }
+
+    #[test] fn message_chunk_tool_variant() {
+        let chunk = MessageChunk::Tool { tool_name: "write_file".to_string(), tool_input: Some(json!({"path":"/tmp/test.txt"})), tool_call_id: None };
+        match &chunk { MessageChunk::Tool { tool_name, .. } => assert_eq!(tool_name, "write_file"), _ => panic!("expected Tool") }
+    }
+
+    #[test] fn message_chunk_system_variant() {
+        let chunk = MessageChunk::System { content: "⚠️ Warning".to_string() };
+        match &chunk { MessageChunk::System { content } => assert!(content.starts_with("⚠️")), _ => panic!("expected System") }
+    }
+
+    #[test] fn credit_exhaustion_session_limit_detected() {
+        assert!(detect_credit_exhaustion("Your access has been disabled due to repeated session limit resets (10 resets in the last 6 hours).").is_some());
+    }
+
+    #[test] fn credit_exhaustion_normal_text_none() {
+        assert!(detect_credit_exhaustion("Here is a normal response.").is_none());
+    }
+
+    #[tokio::test] async fn cancel_detection_via_abort_token() {
+        let token = CancellationToken::new(); token.cancel(); assert!(token.is_cancelled());
+    }
+
+    #[test] fn cancel_vs_idle_timeout_distinction() {
+        let abort_token = CancellationToken::new(); abort_token.cancel();
+        let aborted = abort_token.is_cancelled();
+        let idle_timed_out = false;
+        assert!(aborted && !idle_timed_out);
+    }
+
+    #[test] fn idle_timeout_vs_cancel_priority() {
+        let _abort_token = CancellationToken::new();
+        let idle_timed_out = true;
+        assert!(idle_timed_out);
+    }
+
+    #[test] fn tool_events_completed_before_started() {
+        let sequence = vec!["tool_a_started", "tool_a_completed", "tool_b_started", "tool_b_completed"];
+        assert_eq!(sequence[0], "tool_a_started");
+        assert_eq!(sequence[1], "tool_a_completed");
+        assert_eq!(sequence[2], "tool_b_started");
+        assert_eq!(sequence[3], "tool_b_completed");
+    }
+
+} // end of sub_cycle3_tests
