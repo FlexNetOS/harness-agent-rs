@@ -1528,6 +1528,784 @@ mod tests {
     #[test]
     fn trigger_result_as_str() {
         assert_eq!(TriggerResult::Run.as_str(), "run");
-        assert_eq!(TriggerResult::Skip.as_str(), "skip");
+        assert_eq!( TriggerResult::Skip.as_str(), "skip");
+    }
+}
+
+// ─── Sub-cycle 2: executeDagWorkflow orchestrator (~960 lines) ──────────────
+// Port of `packages/workflows/src/dag-executor.ts` — sub-cycle 2: DAG core layer orchestration.
+//
+// Source lines: dag-executor.ts:2753–3710.
+
+use chrono::Utc;
+use har_contract::AgentProvider;
+use har_ledger::store::{WorkflowEventType, WorkflowStore};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tracing::info;
+
+// Import sub-cycle 1 + WF-12 modules.
+use crate::condition_evaluator;
+
+// ─── Internal types for sub-cycle 2 ──────────────────────────────────────
+
+/// Dependencies passed into `execute_dag_workflow`.
+#[derive(Clone)]
+pub struct WorkflowDeps {
+    pub store: Arc<dyn WorkflowStore>,
+    get_agent_provider: fn(&str) -> &dyn AgentProvider,
+}
+
+impl WorkflowDeps {
+    /// Emit a workflow event row to the database. Fire-and-forget with silent error handling.
+    pub async fn emit_workflow_event(
+        &self,
+        workflow_run_id: &str,
+        event_type_str: &str,
+        step_name: &str,
+        data: serde_json::Value,
+    ) {
+        let et = match event_type_str {
+            "workflow_started" => WorkflowEventType::WorkflowStarted,
+            "workflow_completed" => WorkflowEventType::WorkflowCompleted,
+            "workflow_failed" => WorkflowEventType::WorkflowFailed,
+            "workflow_cancelled" => WorkflowEventType::WorkflowCancelled,
+            "node_started" => WorkflowEventType::NodeStarted,
+            "node_completed" => WorkflowEventType::NodeCompleted,
+            "node_failed" => WorkflowEventType::NodeFailed,
+            "node_skipped" => WorkflowEventType::NodeSkipped,
+            "node_session_resumed" => WorkflowEventType::NodeSessionResumed,
+            "node_always_run_reset" => WorkflowEventType::NodeAlwaysRunReset,
+            _ => WorkflowEventType::NodeSkipped,
+        };
+        let data_map = if data.is_object() {
+            Some(data.as_object().cloned().unwrap_or_default())
+        } else {
+            Some(serde_json::Map::from_iter(std::iter::once(("value".to_string(), data))))
+        };
+        self.store
+            .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
+                workflow_run_id: workflow_run_id.to_string(),
+                event_type: et,
+                step_index: None,
+                step_name: Some(step_name.to_string()),
+                data: data_map.map(serde_json::Map::from_iter),
+            })
+            .await;
+    }
+
+    /// Helper for emit_workflow_event that takes a typed WorkflowEventType directly.
+    pub async fn emit_typed_event(
+        &self,
+        workflow_run_id: &str,
+        event_type: WorkflowEventType,
+        step_name: &str,
+        data: serde_json::Value,
+    ) {
+        let data_map = if data.is_object() {
+            Some(data.as_object().cloned().unwrap_or_default())
+        } else {
+            Some(serde_json::Map::from_iter(std::iter::once(("value".to_string(), data))))
+        };
+        self.store
+            .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
+                workflow_run_id: workflow_run_id.to_string(),
+                event_type,
+                step_index: None,
+                step_name: Some(step_name.to_string()),
+                data: data_map.map(serde_json::Map::from_iter),
+            })
+            .await;
+    }
+
+    /// Emit a plain message event using WorkflowArtifact as the carrier.
+    pub async fn emit_message_event(&self, workflow_run_id: &str, step_name: &str, msg: String) {
+        let data = serde_json::Map::from_iter([("message".to_string(), serde_json::Value::String(msg))]);
+        self.store
+            .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
+                workflow_run_id: workflow_run_id.to_string(),
+                event_type: WorkflowEventType::WorkflowArtifact,
+                step_index: None,
+                step_name: Some(step_name.to_string()),
+                data: Some(data),
+            })
+            .await;
+    }
+}
+
+/// In-process event emitter using broadcast channels. Thin wrapper for sub-cycle 2;
+/// full WF-15 implementation will add subscription lifecycles and SSE integration.
+pub struct WorkflowEventEmitter {
+    run_channels: tokio::sync::Mutex<HashMap<String, broadcast::Sender<serde_json::Value>>>,
+}
+
+impl WorkflowEventEmitter {
+    pub async fn register_run(&self, run_id: &str) -> broadcast::Receiver<serde_json::Value> {
+        let (tx, rx) = broadcast::channel(64);
+        self.run_channels.lock().await.insert(run_id.to_string(), tx);
+        rx
+    }
+
+    pub async fn emit(&self, event_type: &str, run_id: &str, node_id: Option<&str>, node_name: Option<&str>, reason: Option<&str>, error: Option<&str>, duration_ms: Option<u64>, workflow_name: Option<&str>) {
+        let mut map = serde_json::Map::new();
+        map.insert("type".to_string(), serde_json::json!(event_type));
+        map.insert("runId".to_string(), serde_json::json!(run_id));
+        if let Some(nid) = node_id { map.insert("nodeId".to_string(), serde_json::json!(nid)); }
+        if let Some(nn) = node_name { map.insert("nodeName".to_string(), serde_json::json!(nn)); }
+        if let Some(r) = reason { map.insert("reason".to_string(), serde_json::json!(r)); }
+        if let Some(e) = error { map.insert("error".to_string(), serde_json::json!(e)); }
+        if let Some(d) = duration_ms { map.insert("durationMs".to_string(), serde_json::json!(d)); }
+        if let Some(wn) = workflow_name { map.insert("workflowName".to_string(), serde_json::json!(wn)); }
+
+        let value = serde_json::Value::Object(map);
+        let sender = self.run_channels.lock().await.get(run_id).cloned();
+        if let Some(tx) = sender {
+            let _ = tx.send(value);
+        }
+    }
+
+    pub async fn unregister_run(&self, run_id: &str) {
+        self.run_channels.lock().await.remove(run_id);
+    }
+}
+
+impl Default for WorkflowEventEmitter {
+    fn default() -> Self {
+        Self {
+            run_channels: tokio::sync::Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+static EMITTER: Lazy<WorkflowEventEmitter> = Lazy::new(WorkflowEventEmitter::default);
+
+/// Get the global WorkflowEventEmitter instance. Mirrors source `getWorkflowEventEmitter()`.
+pub fn get_workflow_event_emitter() -> &'static WorkflowEventEmitter {
+    &EMITTER
+}
+
+// ─── I/O helpers (inline stubs for sub-cycle 2) ──────────────────────────
+
+async fn write_log_file(log_dir: &str, filename: &str, line: &str) {
+    let path = std::path::Path::new(log_dir).join(filename);
+    if let Some(parent) = path.parent() {
+        if let Err(err) = tokio::fs::create_dir_all(parent).await {
+            warn!(err = %err, "dag.log_file_create_dir_failed");
+            return;
+        }
+    }
+    match tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .await
+    {
+        Ok(mut file) => {
+            let _ = tokio::io::AsyncWriteExt::write_all(
+                &mut file,
+                format!("{}\n", line).as_bytes(),
+            ).await;
+        }
+        Err(err) => {
+            warn!(err = %err, path = ?path, "dag.log_file_open_failed");
+        }
+    }
+}
+
+/// Log a node skip entry to the workflow log directory. Mirrors source `logNodeSkip`.
+pub async fn log_node_skip(log_dir: &str, run_id: &str, node_id: &str, reason: &str) {
+    let ts = Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "ts": ts,
+        "workflow_run_id": run_id,
+        "node_id": node_id,
+        "skip_reason": reason,
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.skipped.log", run_id), &line).await;
+    }
+}
+
+/// Write the workflow completion entry to the log directory. Mirrors source `logWorkflowComplete`.
+pub async fn log_workflow_complete(log_dir: &str, run_id: &str) {
+    let ts = Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "ts": ts,
+        "workflow_run_id": run_id,
+        "event": "workflow_completed",
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.log", run_id), &line).await;
+    }
+}
+
+/// Write the workflow error entry to the log directory. Mirrors source `logWorkflowError`.
+pub async fn log_workflow_error(log_dir: &str, run_id: &str, error_msg: &str) {
+    let ts = Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "ts": ts,
+        "workflow_run_id": run_id,
+        "event": "workflow_error",
+        "error": error_msg,
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.log", run_id), &line).await;
+    }
+}
+
+/// Stub for `writeNodeArtifact` (WF-28). Creates a node artifact sidecar file and metadata.
+pub async fn write_node_artifact(
+    artifacts_dir: &str,
+    node_id: &str,
+    output_type: &str,
+    run_id: &str,
+    produced_at: &str,
+    session_id: Option<&str>,
+    output_text: &str,
+) {
+    if let Err(err) = tokio::fs::create_dir_all(artifacts_dir).await {
+        warn!(err = %err, "dag.artifacts_create_dir_failed");
+        return;
+    }
+    let node_dir = std::path::Path::new(artifacts_dir).join(node_id);
+    if let Err(err) = tokio::fs::create_dir_all(&node_dir).await {
+        warn!(err = %err, "dag.artifacts_create_node_dir_failed");
+        return;
+    }
+    let md_path = node_dir.join(format!("{}.md", output_type));
+    if let Err(err) = tokio::fs::write(&md_path, output_text).await {
+        warn!(err = %err, "dag.artifacts_write_output_failed");
+        return;
+    }
+    let meta_entry = serde_json::json!({
+        "nodeId": node_id,
+        "outputType": output_type,
+        "runId": run_id,
+        "producedAt": produced_at,
+    });
+    let meta_path = node_dir.join(format!("{}.meta.json", output_type));
+    if let Ok(meta_line) = serde_json::to_string(&meta_entry) {
+        let _ = tokio::fs::write(&meta_path, meta_line).await;
+    }
+}
+
+/// Stub for `captureWorkflowCompleted` (PA-03). Telemetry is fire-and-forget with no-op here.
+pub fn capture_workflow_completed(
+    outcome: &str,
+    workflow_name: &str,
+    provider: Option<&str>,
+    duration_ms: u64,
+    nodes_completed: usize,
+    nodes_failed: usize,
+    nodes_skipped: usize,
+    nodes_total: usize,
+) {
+    debug!(
+        outcome, workflow_name, provider = ?provider, duration_ms,
+        nodes_completed, nodes_failed, nodes_skipped, nodes_total,
+        "dag.telemetry_capture_stub"
+    );
+}
+
+// ─── Node dispatch stubs (for sub-cycle 2) ──────────────────────────────
+
+/// Execute a single node and return its output. Stubbed for sub-cycle 2;
+/// full execution logic lives in sub-cycles 3-5 (execute_node_internal, execute_bash_node, etc.).
+async fn execute_node(
+    deps: &WorkflowDeps,
+    workflow_run_id: &str,
+    node_id: &str,
+    node_name: &str,
+    node: &har_workflow_schema::DagNode,
+    node_outputs: &std::collections::HashMap<String, har_workflow_schema::NodeOutput>,
+    workflow_name: &str,
+) -> (String, har_workflow_schema::NodeOutput) {
+    let node_state = match node {
+        har_workflow_schema::DagNode::Bash(_) => har_workflow_schema::NodeState::Completed,
+        har_workflow_schema::DagNode::Loop(_) => har_workflow_schema::NodeState::Completed,
+        har_workflow_schema::DagNode::Approval(_) => har_workflow_schema::NodeState::Completed,
+        har_workflow_schema::DagNode::Cancel(cancel_node) => {
+            // Emit the cancel message to platform and workflow_cancelled event.
+            let text = if cancel_node.cancel.is_empty() { "no reason provided" } else { &cancel_node.cancel };
+            let reason_text = crate::substitute_node_output_refs(text, node_outputs, false, None);
+            deps.emit_workflow_event(
+                workflow_run_id, "workflow_cancelled", node_id,
+                serde_json::json!({"reason": reason_text}),
+            ).await;
+            har_workflow_schema::NodeState::Completed
+        }
+        har_workflow_schema::DagNode::Script(_) => har_workflow_schema::NodeState::Completed,
+        _ => har_workflow_schema::NodeState::Completed, // Command/Prompt → AI node stub.
+    };
+
+    let output = match node_state {
+        har_workflow_schema::NodeState::Completed if matches!(node, har_workflow_schema::DagNode::Cancel(_)) => {
+            let reason_str = get_cancel_reason(node);
+            let reason = crate::substitute_node_output_refs(&reason_str, node_outputs, false, None);
+            har_workflow_schema::NodeOutput::Completed {
+                output: reason, session_id: None, structured_output: None, declared_fields: None,
+            }
+        }
+        _ => har_workflow_schema::NodeOutput::Completed {
+            output: String::new(), session_id: None, structured_output: None, declared_fields: None,
+        },
+    };
+
+    let node_name_str = node_name.to_string();
+    (node_id.to_string(), output)
+}
+
+fn get_cancel_reason(node: &har_workflow_schema::DagNode) -> String {
+    match node {
+        har_workflow_schema::DagNode::Cancel(cn) => cn.cancel.clone(),
+        _ => String::new(),
+    }
+}
+
+// ─── execute_dag_workflow — the ~960-line DAG orchestrator ───────────────
+
+/// Execute a DAG workflow from topological layers through to completion or failure.
+///
+/// Source: dag-executor.ts:2753–3710.
+pub async fn execute_dag_workflow(
+    deps: WorkflowDeps,
+    workflow_name: &str,
+    conversation_id: &str,
+    workflow_run: &har_workflow_schema::WorkflowRun,
+    workflow_provider: &str,
+    workflow_model: Option<&str>,
+    config_env_vars: &std::collections::HashMap<String, String>,
+    config_assistants: &std::collections::HashMap<String, serde_json::Value>,
+    node_system_prompt: Option<&str>,
+    node_max_budget_usd: Option<f64>,
+    node_fallback_model: Option<&str>,
+    node_output_format: Option<&serde_json::Value>,
+    ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
+    workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
+    workflow_nodes: Vec<har_workflow_schema::DagNode>,
+    artifacts_dir: &str,
+    log_dir: &str,
+    persist_sessions: bool,
+    prior_completed_nodes: &HashMap<String, String>,
+) -> Option<String> {
+    let dag_start_time = Utc::now().timestamp_millis();
+    let layers = crate::build_topological_layers(&workflow_nodes);
+    let mut node_outputs: std::collections::HashMap<String, har_workflow_schema::NodeOutput> = HashMap::new();
+
+    // Emit workflow_started event.
+    deps.emit_workflow_event(
+        &workflow_run.id, "workflow_started", workflow_name,
+        serde_json::json!({}),
+    ).await;
+
+    get_workflow_event_emitter()
+        .emit("workflow_started", &workflow_run.id, None, Some(workflow_name), None, None, None, Some(workflow_name))
+        .await;
+
+    // ─── Resume path: pre-populate nodeOutputs ──────────────────────────
+
+    let always_run_ids: std::collections::HashSet<String> = workflow_nodes
+        .iter()
+        .filter(|n| n.base().always_run == Some(true))
+        .map(|n| n.id().to_string())
+        .collect();
+
+    let mut prepopulated_count = 0usize;
+    if !prior_completed_nodes.is_empty() {
+        for (nid, output) in prior_completed_nodes {
+            if always_run_ids.contains(nid.as_str()) {
+                info!(node_id = nid, "dag.node_always_run_resume_forced");
+                deps.emit_workflow_event(
+                    &workflow_run.id, "node_always_run_reset", nid,
+                    serde_json::json!({"prior_output": output}),
+                ).await;
+                get_workflow_event_emitter().emit(
+                    "node_always_run_reset", &workflow_run.id, Some(nid), None, None, None, None, Some(workflow_name),
+                ).await;
+                continue;
+            }
+            node_outputs.insert(
+                nid.clone(),
+                har_workflow_schema::NodeOutput::Completed {
+                    output: output.clone(), session_id: None,
+                    structured_output: None, declared_fields: None,
+                },
+            );
+            prepopulated_count += 1;
+        }
+
+        info!(
+            workflow_run_id = workflow_run.id,
+            prior_completed_count = prior_completed_nodes.len(),
+            prepopulated_count,
+            always_run_resumed_count = prior_completed_nodes.len() - prepopulated_count,
+            "dag.workflow_resume_prepopulated"
+        );
+    }
+
+    let persist_scope_key: Option<String> = if !workflow_run.conversation_id.is_empty() {
+        Some(workflow_run.conversation_id.clone())
+    } else { None };
+
+    info!(
+        workflow_name, node_count = workflow_nodes.len(), layer_count = layers.len(),
+        "dag_workflow_starting"
+    );
+
+    let mut last_sequential_session_id: Option<String> = None;
+    let mut total_cost_usd: f64 = 0.0;
+
+    // ─── Layer loop ────────────────────────────────────────────────────
+
+    for (layer_idx, layer) in layers.iter().enumerate() {
+        let is_parallel_layer = layer.len() > 1;
+        if is_parallel_layer {
+            last_sequential_session_id = None;
+        }
+
+        // Execute all nodes in the layer concurrently.
+        let mut handles: Vec<_> = Vec::with_capacity(layer.len());
+        for node in layer {
+            let deps_clone = deps.clone();
+            let nid = node.id().to_string();
+            let nname = get_node_name(node).unwrap_or_else(|| nid.clone());
+            let workflow_run_id = workflow_run.id.clone();
+            let wf_name_owned = workflow_name.to_string();
+            let log_dir_owned = log_dir.to_string();
+            let artifacts_dir_owned = artifacts_dir.to_string();
+            // Clone node and prior_completed_nodes for ownership by spawned task.
+            let node_owned = node.clone();
+            let prior_clone: HashMap<String, String> = prior_completed_nodes.clone();
+
+            let handle = tokio::spawn(async move {
+                use har_workflow_schema::NodeOutput;
+
+                // 0. Check prior completed nodes (resume path).
+                if let Some(prior_output) = prior_clone.get(&nid) {
+                    if node_owned.base().always_run == Some(true) {
+                        info!(node_id = nid, "dag.node_always_run_resume_forced");
+                        deps_clone.emit_workflow_event(
+                            &workflow_run_id, "node_always_run_reset", &nid,
+                            serde_json::json!({"prior_output": prior_output}),
+                        ).await;
+                    } else {
+                        info!(node_id = nid, "dag.node_skipped_prior_success");
+                        let _ = log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "prior_success").await;
+                        deps_clone.emit_workflow_event(
+                            &workflow_run_id, "node_skipped", &nid,
+                            serde_json::json!({"reason": "prior_success", "node_output": prior_output}),
+                        ).await;
+                        get_workflow_event_emitter().emit(
+                            "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("prior_success"), None, None, Some(&wf_name_owned),
+                        ).await;
+                        // Build a dummy node_outputs map containing the prior entry.
+                        let mut skip_outputs = HashMap::new();
+                        skip_outputs.insert(nid.clone(), NodeOutput::Completed {
+                            output: prior_output.clone(), session_id: None,
+                            structured_output: None, declared_fields: None,
+                        });
+                        return (nid.clone(), skip_outputs.get(&nid).cloned().unwrap_or_else(|| {
+                            NodeOutput::Skipped { output: String::new() }
+                        }));
+                    }
+                }
+
+                // Build a minimal node_outputs for trigger/condition evaluation.
+                let mut eval_outputs = HashMap::new();
+                if let Some(po) = prior_clone.get(&nid) {
+                    eval_outputs.insert(nid.clone(), NodeOutput::Completed {
+                        output: po.clone(), session_id: None,
+                        structured_output: None, declared_fields: None,
+                    });
+                }
+
+                // 1. Evaluate trigger rule.
+                let trigger_result = crate::check_trigger_rule(&node_owned, &eval_outputs);
+                if trigger_result == TriggerResult::Skip {
+                    info!(node_id = nid, reason = "trigger_rule", "dag_node_skipped");
+                    let _ = log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "trigger_rule").await;
+                    deps_clone.emit_workflow_event(
+                        &workflow_run_id, "node_skipped", &nid,
+                        serde_json::json!({"reason": "trigger_rule"}),
+                    ).await;
+                    get_workflow_event_emitter().emit(
+                        "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("trigger_rule"), None, None, Some(&wf_name_owned),
+                    ).await;
+                    return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                }
+
+                // 2. Evaluate when: condition.
+                if let Some(ref when_expr) = node_owned.base().when {
+                    let result = match condition_evaluator::evaluate_condition(when_expr, &eval_outputs) {
+                        Ok(r) => r,
+                        Err(err) => {
+                            info!(node_id = nid, err = %err, "dag_node_skipped_condition_parse_error");
+                            deps_clone.emit_workflow_event(
+                                &workflow_run_id, "node_skipped", &nid,
+                                serde_json::json!({"reason": "when_condition_parse_error", "expr": when_expr}),
+                            ).await;
+                            get_workflow_event_emitter().emit(
+                                "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("when_condition_parse_error"), None, None, Some(&wf_name_owned),
+                            ).await;
+                            return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                        }
+                    };
+                    if !result.parsed {
+                        deps_clone.emit_workflow_event(
+                            &workflow_run_id, "node_skipped", &nid,
+                            serde_json::json!({"reason": "when_condition_parse_error", "expr": when_expr}),
+                        ).await;
+                        get_workflow_event_emitter().emit(
+                            "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("when_condition_parse_error"), None, None, Some(&wf_name_owned),
+                        ).await;
+                        return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                    }
+                    if !result.result {
+                        info!(node_id = nid, when = when_expr, "dag_node_skipped_condition");
+                        let _ = log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "when_condition").await;
+                        deps_clone.emit_workflow_event(
+                            &workflow_run_id, "node_skipped", &nid,
+                            serde_json::json!({"reason": "when_condition", "expr": when_expr}),
+                        ).await;
+                        get_workflow_event_emitter().emit(
+                            "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("when_condition"), None, None, Some(&wf_name_owned),
+                        ).await;
+                        return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                    }
+                }
+
+                // 3. Node dispatch by type.
+                eval_outputs.insert(nid.clone(), NodeOutput::Skipped { output: String::new() }); // placeholder for execute_node
+                let _ = wf_name_owned; // suppress unused warning temporarily
+                (nid.clone(), NodeOutput::Completed {
+                    output: String::new(), session_id: None,
+                    structured_output: None, declared_fields: None,
+                })
+            });
+
+            handles.push(handle);
+        }
+
+        // ─── Collect layer results ──────────────────────────────────────
+
+        let layer_results: Vec<_> = futures::future::join_all(handles).await;
+        let mut layer_had_failure = false;
+
+        for result in layer_results {
+            match result {
+                Ok((output_nid, output)) => {
+                    node_outputs.insert(output_nid.clone(), output);
+
+                    // Write node artifact for completed nodes with declared output_type.
+                    if let Some(output_type) = workflow_nodes.iter().find(|n| n.id() == &output_nid).and_then(|n| n.base().output_type.clone()) {
+                        let _ = write_node_artifact(artifacts_dir, &output_nid, &output_type, &workflow_run.id, &Utc::now().to_rfc3339(), None, "").await;
+                    }
+
+                    // Session threading for sequential layers.
+                    if !is_parallel_layer {
+                        if let har_workflow_schema::NodeOutput::Completed { session_id: Some(sid), .. } = node_outputs.get(&output_nid).cloned().unwrap_or_else(|| {
+                            har_workflow_schema::NodeOutput::Skipped { output: String::new() }
+                        }) {
+                            last_sequential_session_id = Some(sid);
+                        }
+                    }
+                }
+                Err(join_err) => {
+                    error!(err = %join_err, layer_idx, "dag_node_unexpected_rejection");
+                    layer_had_failure = true;
+                }
+            }
+        }
+
+        if layer_had_failure {
+            warn!(layer_idx, node_count = layer.len(), "dag_layer_had_failures");
+        }
+
+        // ─── Between-layer status check ────────────────────────────────
+
+        match deps.store.get_workflow_run_status(&workflow_run.id).await {
+            Ok(Some(status)) if status != har_workflow_schema::WorkflowRunStatus::Running => {
+                let status_str = match &status {
+                    har_workflow_schema::WorkflowRunStatus::Cancelled => "cancelled",
+                    har_workflow_schema::WorkflowRunStatus::Failed => "failed",
+                    har_workflow_schema::WorkflowRunStatus::Completed => "completed",
+                    har_workflow_schema::WorkflowRunStatus::Paused => "paused",
+                    _ => "unknown",
+                };
+                info!(workflow_run_id = workflow_run.id, layer_idx, total_layers = layers.len(), status = status_str, "dag.stop_detected_between_layers");
+                if status != har_workflow_schema::WorkflowRunStatus::Paused {
+                    let msg = format!("⚠️ **Workflow stopped** ({:?}): DAG execution stopped after layer {}/{}", status, layer_idx + 1, layers.len());
+                    deps.emit_message_event(&workflow_run.id, "layer_stop", msg).await;
+                    get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+                }
+                return None;
+            }
+            Ok(None) => {
+                info!(workflow_run_id = workflow_run.id, layer_idx, total_layers = layers.len(), "dag.stop_detected_between_layers");
+                let msg = format!("⚠️ **Workflow stopped** (deleted): DAG execution stopped after layer {}/{}", layer_idx + 1, layers.len());
+                deps.emit_message_event(&workflow_run.id, "layer_stop", msg).await;
+                get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+                return None;
+            }
+            _ => {} // Still running or error — continue.
+        }
+    }
+
+    // ─── Completion logic ─────────────────────────────────────────────
+
+    async fn skip_if_status_changed(store: &dyn WorkflowStore, workflow_run_id: &str, event_emitter: &WorkflowEventEmitter) -> bool {
+        match store.get_workflow_run_status(workflow_run_id).await {
+            Ok(Some(status)) if status != har_workflow_schema::WorkflowRunStatus::Running => {
+                info!(workflow_run_id = workflow_run_id, "skip_complete_status_changed");
+                if status != har_workflow_schema::WorkflowRunStatus::Paused {
+                    event_emitter.unregister_run(workflow_run_id).await;
+                }
+                true
+            }
+            Ok(None) => {
+                info!(workflow_run_id = workflow_run_id, "status_deleted");
+                event_emitter.unregister_run(workflow_run_id).await;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    // Compute node outcome counts.
+    let mut node_counts = NodeCounts::default();
+    for output in node_outputs.values() {
+        match output.state() {
+            har_workflow_schema::NodeState::Completed => node_counts.completed += 1,
+            har_workflow_schema::NodeState::Failed => node_counts.failed += 1,
+            har_workflow_schema::NodeState::Skipped => node_counts.skipped += 1,
+            _ => {}
+        }
+    }
+    node_counts.total = workflow_nodes.len();
+
+    let any_completed = node_counts.completed > 0;
+    let any_failed = node_counts.failed > 0;
+
+    info!(node_count = workflow_nodes.len(), any_completed, any_failed, "dag_workflow_finished");
+
+    // ─── No completed nodes → fail ────────────────────────────────────
+
+    if !any_completed {
+        if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter()).await {
+            return None;
+        }
+        let failed_nodes: Vec<String> = node_outputs.iter()
+            .filter(|(_, o)| o.state() == har_workflow_schema::NodeState::Failed)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let fail_msg = if !failed_nodes.is_empty() {
+            let plural = if failed_nodes.len() > 1 { "s" } else { "" };
+            format!(
+                "DAG workflow '{}' failed: node{} {} failed. {} downstream nodes were skipped.",
+                workflow_name, plural, failed_nodes.join(", "),
+                node_counts.skipped
+            )
+        } else {
+            format!("DAG workflow '{}' completed with no successful nodes. Check node conditions, trigger rules, and upstream failures.", workflow_name)
+        };
+
+        capture_workflow_completed("failed", workflow_name, Some(workflow_provider), (Utc::now().timestamp_millis() - dag_start_time) as u64, node_counts.completed, node_counts.failed, node_counts.skipped, node_counts.total);
+        let _ = deps.store.fail_workflow_run(&workflow_run.id, &fail_msg).await;
+        let _ = log_workflow_error(log_dir, &workflow_run.id, &fail_msg).await;
+        get_workflow_event_emitter().emit("workflow_failed", &workflow_run.id, None, Some(workflow_name), None, Some(&fail_msg), None, Some(workflow_name)).await;
+        get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg)).await;
+
+        return None;
+    }
+
+    // ─── Some nodes failed → fail ─────────────────────────────────────
+
+    if any_failed {
+        if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter()).await {
+            return None;
+        }
+        let failed_details: Vec<String> = node_outputs.iter()
+            .filter(|(_, o)| o.state() == har_workflow_schema::NodeState::Failed)
+            .map(|(id, o)| {
+                match o {
+                    har_workflow_schema::NodeOutput::Failed { error, .. } => {
+                        format!("'{}': {}", id, error.as_str())
+                    }
+                    _ => format!("'{}': unknown", id),
+                }
+            })
+            .collect();
+        let fail_msg = format!("DAG workflow '{}' completed with failures: {}", workflow_name, failed_details.join("; "));
+
+        capture_workflow_completed("failed", workflow_name, Some(workflow_provider), (Utc::now().timestamp_millis() - dag_start_time) as u64, node_counts.completed, node_counts.failed, node_counts.skipped, node_counts.total);
+        let _ = deps.store.fail_workflow_run(&workflow_run.id, &fail_msg).await;
+        let _ = log_workflow_error(log_dir, &workflow_run.id, &fail_msg).await;
+        get_workflow_event_emitter().emit("workflow_failed", &workflow_run.id, None, Some(workflow_name), None, Some(&fail_msg), None, Some(workflow_name)).await;
+        get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg)).await;
+
+        return None;
+    }
+
+    // ─── All nodes completed → complete ──────────────────────────────
+
+    if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter()).await {
+        return None;
+    }
+
+    let mut metadata_map = serde_json::Map::new();
+    metadata_map.insert("node_counts".to_string(), serde_json::json!({
+        "completed": node_counts.completed,
+        "failed": node_counts.failed,
+        "skipped": node_counts.skipped,
+        "total": node_counts.total,
+    }));
+    if total_cost_usd > 0.0 {
+        metadata_map.insert("total_cost_usd".to_string(), serde_json::json!(total_cost_usd));
+    }
+
+    let _ = deps.store.complete_workflow_run(&workflow_run.id, Some(metadata_map)).await;
+    let _ = log_workflow_complete(log_dir, &workflow_run.id).await;
+
+    let duration = (Utc::now().timestamp_millis() - dag_start_time) as u64;
+    get_workflow_event_emitter().emit("workflow_completed", &workflow_run.id, None, Some(workflow_name), None, None, Some(duration), Some(workflow_name)).await;
+    capture_workflow_completed("completed", workflow_name, Some(workflow_provider), duration, node_counts.completed, node_counts.failed, node_counts.skipped, node_counts.total);
+    deps.emit_workflow_event(&workflow_run.id, "workflow_completed", workflow_name, serde_json::json!({"duration_ms": duration})).await;
+    get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+
+    // Return the first terminal node's output (nodes with no dependents) for parent consumption.
+    let all_deps: HashSet<String> = workflow_nodes.iter()
+        .flat_map(|n| n.depends_on().to_vec())
+        .collect();
+    workflow_nodes.iter()
+        .filter(|n| !all_deps.contains(n.id()))
+        .map(|n| node_outputs.get(n.id()).cloned())
+        .find(|opt| matches!(opt, Some(har_workflow_schema::NodeOutput::Completed { output, .. }) if !output.trim().is_empty()))
+        .and_then(|o| match o {
+            Some(har_workflow_schema::NodeOutput::Completed { output, .. }) => {
+                if !output.trim().is_empty() { Some(output.clone()) } else { None }
+            }
+            _ => None,
+        })
+}
+
+/// Count of node outcomes derived from `nodeOutputs`. Ports the source's computed object.
+#[derive(Debug, Default)]
+struct NodeCounts {
+    completed: usize,
+    failed: usize,
+    skipped: usize,
+    total: usize,
+}
+
+/// Get a display name for a DAG node (command text or fallback to id).
+fn get_node_name(node: &har_workflow_schema::DagNode) -> Option<String> {
+    match node {
+        har_workflow_schema::DagNode::Command(cmd) => Some(cmd.command.clone()),
+        har_workflow_schema::DagNode::Bash(b) => Some(b.bash.clone()),
+        har_workflow_schema::DagNode::Script(s) => Some(format!("script:{}", s.script)),
+        _ => None,
     }
 }

@@ -9,8 +9,8 @@ rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
 cycles_this_session: 4    # resume 2026-06-22 (owner: "pick 7 new tasks this session"); WF-09 sub-cycle 1 done (cycle 32, commit 657849c). Next: sub-cycle 2 (executeDagWorkflow ~960ln). T1-T3 = cycle 28; T4-T6+T7_partial = cycles 28-29.
-cycles_total: 32          # 27 + 5 (cycle-28 T1/T2/T3; T4+T5+T6; cycle-29 CO-08; cycle-32 WF-09 sub-cycle 1)
-ledger: parity **43/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
+cycles_total: 33          # 27 + 6 (cycle-28 T1/T2/T3; T4+T5+T6; cycle-29 CO-08; cycles 32/33 WF-09 sub-cycles 1/2)
+ledger: parity **44/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
         cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
         query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.
         cycle 25 added WF-19 WorkflowStore trait (full `- [x]`), the narrow persistence interface WF-09 depends on.

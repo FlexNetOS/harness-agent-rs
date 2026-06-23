@@ -130,3 +130,16 @@ pub use dag_executor::{
     substitute_node_output_refs,
     TriggerResult,
 };
+
+// WF-09 sub-cycle 2 re-exports (executeDagWorkflow orchestrator)
+pub use dag_executor::{
+    capture_workflow_completed,
+    execute_dag_workflow,
+    get_workflow_event_emitter,
+    log_node_skip,
+    log_workflow_complete,
+    log_workflow_error,
+    write_node_artifact,
+    WorkflowDeps,
+    WorkflowEventEmitter,
+};

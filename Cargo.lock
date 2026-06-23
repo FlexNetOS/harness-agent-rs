@@ -869,6 +869,7 @@ name = "har-dag-executor"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "futures",
  "har-contract",
  "har-coord",
