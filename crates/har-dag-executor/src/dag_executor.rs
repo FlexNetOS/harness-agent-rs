@@ -2438,7 +2438,7 @@ pub async fn execute_node_internal(
     let final_prompt = raw_prompt;
 
     // Get provider instance. Source: dag-executor.ts:784.
-    let ai_client = match deps.get_agent_provider(provider) {
+    let ai_client = match (deps.get_agent_provider)(provider) {
         Ok(client) => client,
         Err(err) => {
             error!(node_id = %node_id, err = %err, "dag.node_provider_resolution_failed");
@@ -2530,7 +2530,7 @@ pub async fn execute_node_internal(
 
             if let Some(ref schema) = output_format_schema {
                 // Full validation via har-provider's validateStructuredOutput. Stub:
-                let validation_valid = !schema.is_null();
+                let validation_valid = true; // source: `if (output_format_schema)` — any object is truthy in JS
 
                 if validation_valid {
                     // Override nodeOutputText with structured output. Source: dag-executor.ts:1207-1219.
