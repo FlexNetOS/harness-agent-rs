@@ -204,3 +204,28 @@ cd ~/Desktop/meta/harness-agent-rs && cargo clippy --all-targets -- -D warnings 
 
 ## CYCLE 28 continued — T4 DONE
 - **T4 CO-04 workflows.ts ** — SqlWorkflowStore store.rs + workflows.rs (664 lines CRUD/CAS impl). Gate: build/clippy clean, +37 tests.
+
+## CYCLES 32–34: WF-09 DAG-executor sub-cycles 1–3 (newest)
+
+**PR #4** opened, auto-merge armed: https://github.com/FlexNetOS/harness-agent-rs/pull/4
+Branch: `feat/wf-09-sub-cycles-1-2-3` → `main`
+
+### Cycle 32 — WF-09 sub-cycle 1 (constants + pure utilities)
+- **commit:** 657849c
+- **parity:** PASS — all 7 constants byte-match; all public APIs produce identical outputs across tested inputs
+- **symbols ported:** `parse_mcp_failure_server_names`, `load_configured_mcp_server_names`, `should_continue_streaming_for_status`, `substitute_node_output_refs`, `check_trigger_rule`, `build_topological_layers` + 5 helpers
+- **tests:** 308 pass (106 dag-executor unit tests)
+- **non-breaking divergences (3):** logging granularity in load_configured_mcp_server_names; exception vs string error type; simplified capability checks
+
+### Cycle 33 — WF-09 sub-cycle 2 (executeDagWorkflow orchestrator)
+- **commit:** 1e362c1
+- **parity:** PASS — all 10 core behaviors structurally identical to source
+- **behaviors ported:** layer iteration via Kahn's + indexed loop; parallel dispatch (tokio::spawn + futures join_all = Promise.allSettled); resume prepopulation from priorCompletedNodes with always_run exclusion; session threading (sequential→forward last_sequential_session_id, parallel→reset to None); between-layer status check via store.getWorkflowRunStatus; completion/failure finalization with skipIfStatusChanged guard; event emission (8 types: workflow_started/failed/completed + node_skipped/failed/completed); node skip logging ({runId}.skipped.log JSON)
+- **non-breaking divergences (3):** cost accumulation placeholder; observability gap in between-layer check; deferred session persistence/platform messaging
+
+### Cycle 34 — WF-09 sub-cycle 3 (executeNodeInternal AI node state machine)
+- **commit:** 5c9490a
+- **symbols ported:** `NodeExecutionResult` struct, `NodeState` enum, `LastToolStart`, `build_reask_prompt`, `emit_reask`, `schedule_reask`, `execute_node_internal` (~602 lines)
+- **lifecycle covered:** stream setup, idle timeout watchdog, validate-and-reask loop (STRUCTURED_OUTPUT_MAX_REASKS=3), tool events, cancel/pause checks, activity heartbeat, post-stream completion
+
+### Ledger update: 44/79 full units
