@@ -134,7 +134,7 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 - [x] unit:WF-09 `dag-executor.ts::substituteNodeOutputRefs` → `workflows::dag_executor::substitute_node_output_refs()` — parity-verified sub-cycle 1 (cycle 32)
 - [x] unit:WF-09 `dag-executor.ts::checkTriggerRule` → `workflows::dag_executor::check_trigger_rule()` — parity-verified sub-cycle 1 (cycle 32)
 - [x] unit:WF-09 `dag-executor.ts::buildTopologicalLayers` → `workflows::dag_executor::build_topological_layers()` — parity-verified sub-cycle 1 (cycle 32)
-- [~] unit:WF-09 `dag-executor.ts::executeDagWorkflow` → `workflows::dag_executor::execute_dag_workflow()` — orchestrator structure parity-verified sub-cycle 2 (cycle 33); dispatch arms: Bash+Cancel verified sub-cycle 4a (cycle 36); Script/Loop/Approval/AI(executeNodeInternal) arms DEFERRED 4b–4f (honest Skipped placeholder)
+- [~] unit:WF-09 `dag-executor.ts::executeDagWorkflow` → `workflows::dag_executor::execute_dag_workflow()` — orchestrator structure parity-verified sub-cycle 2 (cycle 33); dispatch arms: Bash+Cancel verified sub-cycle 4a (cycle 36), Script verified sub-cycle 4b (cycle 37); Loop/Approval/AI(executeNodeInternal) arms DEFERRED 4c–4f (honest Skipped placeholder)
 - [x] unit:WF-09 `dag-executor.ts::CANCEL_CHECK_INTERVAL_MS` → `workflows::dag_executor::CANCEL_CHECK_INTERVAL_MS` — sub-cycle 1 (cycle 32, byte-match)
 - [x] unit:WF-09 `dag-executor.ts::ACTIVITY_HEARTBEAT_INTERVAL_MS` → `workflows::dag_executor::ACTIVITY_HEARTBEAT_INTERVAL_MS` — sub-cycle 1 (cycle 32, byte-match)
 - [x] unit:WF-09 `dag-executor.ts::DEFAULT_NODE_MAX_RETRIES` → `workflows::dag_executor::DEFAULT_NODE_MAX_RETRIES` — sub-cycle 1 (cycle 32, byte-match)
@@ -153,7 +153,7 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 - [~] unit:WF-09 `dag-executor.ts::scheduleReask` → `workflows::dag_executor::schedule_reask()` — sub-cycle 3 structure (cycle 34); full verify with 4c
 - [~] unit:WF-09 `dag-executor.ts::NodeExecutionResult` → `workflows::dag_executor::NodeExecutionResult` — sub-cycle 3 struct (cycle 34)
 - [~] unit:WF-09 `dag-executor.ts::NodeState` → `workflows::dag_executor::NodeState` — sub-cycle 3 enum (cycle 34)
-- [ ] unit:WF-09 `dag-executor.ts::executeScriptNode` → `workflows::dag_executor::execute_script_node()` — sub-cycle 4b (pending)
+- [x] unit:WF-09 `dag-executor.ts::executeScriptNode` → `workflows::dag_executor::execute_script_node()` — parity-verified sub-cycle 4b (cycle 37, findings/parity-WF-09-s4b.md; inline/named × bun/uv argv matrix, narrow 3-key env, discovery-error own try/catch, ENOENT/EACCES/timeout ladder)
 - [ ] unit:WF-09 `dag-executor.ts::executeLoopNode` → `workflows::dag_executor::execute_loop_node()` — sub-cycle 4e (pending)
 - [ ] unit:WF-09 `dag-executor.ts::executeApprovalNode` → `workflows::dag_executor::execute_approval_node()` — sub-cycle 4f (pending)
 > NOTE (harvest gap, cycle 36): the original WF-09 symbol harvest captured only the 16 top-level pure fns/constants and MISSED the core executor fns + sub-cycle-3 reask helpers/types (added above). A full WF-09 re-harvest (`git kb code symbols`) is owed at the pre-DONE sweep to confirm no further WF-09 symbols are unlisted.
@@ -259,8 +259,18 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-18 — script-discovery.ts
 
-- [ ] unit:WF-18 `script-discovery.ts::discoverScriptsForCwd` → `workflows::script_discovery::discover_scripts_for_cwd()`
-- [ ] unit:WF-18 `script-discovery.ts::ScriptDef` → `workflows::script_discovery::ScriptDef`
+- [x] unit:WF-18 `script-discovery.ts::discoverScriptsForCwd` → `har_dag_executor::script_discovery::discover_scripts_for_cwd()` — parity-verified sub-cycle 4b (cycle 37, findings/parity-WF-09-s4b.md; repo>home precedence byte-identical vs live bun)
+- [x] unit:WF-18 `script-discovery.ts::ScriptDefinition` → `har_dag_executor::script_discovery::ScriptDefinition` — sub-cycle 4b (cycle 37)
+- [x] unit:WF-18 `script-discovery.ts::ScriptRuntime` → `har_dag_executor::script_discovery::ScriptRuntime` (bun|uv) — sub-cycle 4b (cycle 37)
+- [x] unit:WF-18 `script-discovery.ts::EXTENSION_RUNTIME_MAP` → `har_dag_executor::script_discovery::EXTENSION_RUNTIME_MAP` — sub-cycle 4b (cycle 37; .ts/.js→bun, .py→uv; others skipped)
+- [x] unit:WF-18 `script-discovery.ts::getRuntimeForExtension` → `har_dag_executor::script_discovery::get_runtime_for_extension()` — sub-cycle 4b (cycle 37)
+- [x] unit:WF-18 `script-discovery.ts::scanScriptDir` → `har_dag_executor::script_discovery::scan_script_dir()` — sub-cycle 4b (cycle 37; MAX depth 1 grouping cap)
+- [x] unit:WF-18 `script-discovery.ts::discoverScripts` → `har_dag_executor::script_discovery::discover_scripts()` — sub-cycle 4b (cycle 37; IndexMap insertion-order = TS Map, verified byte-identical)
+- [x] unit:WF-18 `script-discovery.ts::getDefaultScripts` → `har_dag_executor::script_discovery::get_default_scripts()` — sub-cycle 4b (cycle 37)
+- [x] unit:WF-18 `script-discovery.ts::MAX_SCRIPT_DISCOVERY_DEPTH` → `har_dag_executor::script_discovery::MAX_SCRIPT_DISCOVERY_DEPTH` — sub-cycle 4b (cycle 37)
+- [x] unit:WF-18 `script-discovery.ts::normalizeSep` → `har_dag_executor::script_discovery::normalize_sep()` — sub-cycle 4b (cycle 37, inline)
+- [x] unit:WF-18 `<Node ErrnoException scandir shape>` → `har_dag_executor::script_discovery::node_readdir_error()` — sub-cycle 4b (cycle 37; raw_os_error→symbolic errno + Node scandir message, EACCES/ENOTDIR verified byte-identical vs live)
+- [x] unit:WF-18 `<Map<string,ScriptDefinition>>` → `har_dag_executor::script_discovery::ScriptMap` (IndexMap, preserve insertion order) — sub-cycle 4b (cycle 37)
 
 ### WF-19 — store.ts
 

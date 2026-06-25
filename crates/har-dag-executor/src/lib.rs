@@ -44,6 +44,9 @@ pub mod output_ref;
 // Cycle 7+: WF-09 DAG executor (sub-cycle 1: constants + pure utilities)
 pub mod dag_executor;
 
+// WF-18: script discovery (sub-cycle 4b prerequisite for script node)
+pub mod script_discovery;
+
 // Public re-exports for downstream consumers.
 pub use condition_evaluator::{evaluate_condition, split_outside_quotes, EvaluationResult};
 pub use executor_shared::{
@@ -137,3 +140,12 @@ pub use dag_executor::{
 
 // WF-09 sub-cycle 4a re-exports (platform seam + bash/cancel executor + log helpers)
 pub use dag_executor::{execute_bash_node, log_node_complete, log_node_error, log_node_start};
+
+// WF-09 sub-cycle 4b re-exports (script node executor)
+pub use dag_executor::execute_script_node;
+
+// WF-18 re-exports (script discovery)
+pub use script_discovery::{
+    discover_scripts, discover_scripts_for_cwd, get_default_scripts, get_runtime_for_extension,
+    scan_script_dir, ScriptDefinition, ScriptDiscoveryError, ScriptMap, MAX_SCRIPT_DISCOVERY_DEPTH,
+};

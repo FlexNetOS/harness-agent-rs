@@ -184,7 +184,7 @@ Source lines 93–581 | 7 constants + 6 exported functions + 5 helpers | 52 test
 - Sub-cycle 3: `executeNodeInternal` AI node state machine (~820 ln) — [~] cycle 34 STRUCTURE ported (NodeState enum, reask helpers, lifecycle skeleton); build-health-clean + parity-verified-for-scope **cycle 35**. Streaming execution against `ai_client` (the `_`-prefixed params) DEFERRED to sub-cycle 4 → not yet a working node executor.
 - Sub-cycle 4: node-type execution dispatch — DECOMPOSED by architect (cycle 36) into 4a–4f (findings/WF-09-s4-architecture.md):
   - **4a** platform seam (WorkflowPlatform trait + StreamingMode) + D2 capture-expansion + D3 run_subprocess idiom + log_node_* helpers + **execute_bash_node** + **cancel node** + bash/cancel dispatch arms — **[x] cycle 36, parity-verified vs live bun** (findings/parity-WF-09-s4a.md; gate FAILed first on F1 bash empty-stderr error string + F2 cancel event shape → both fixed + re-verified). Other node types on honest Skipped placeholder.
-  - 4b script node (+ WF-18 discover_scripts_for_cwd) — [ ] pending
+  - **4b** script node (+ WF-18 discover_scripts_for_cwd, full public surface) — **[x] cycle 37, parity-verified vs live bun/uv** (findings/parity-WF-09-s4b.md; gate FAILed first on D-ERR Node-errno-scandir string + D-ORDER HashMap→IndexMap insertion-order → both fixed + re-verified byte-identical). WF-18 now a full unit.
   - 4c AI-node live streaming (executeNodeInternal body + with_idle_timeout + validate_structured_output) — [ ] pending (un-stubs sub-cycle-3 `_`-prefixed params; !B3 validate_structured_output crate-vs-reimpl decision owed)
   - 4d AI-node dispatch wiring + retry wrapper + session persist — [ ] pending
   - 4e loop node — [ ] pending

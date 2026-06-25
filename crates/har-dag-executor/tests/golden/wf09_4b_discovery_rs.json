@@ -1,0 +1,179 @@
+{
+  "for_cwd": {
+    "ok": true,
+    "entries_sorted": [
+      {
+        "key": "bar",
+        "name": "bar",
+        "path": "<ROOT>/repo/.archon/scripts/triage/bar.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "foo",
+        "name": "foo",
+        "path": "<ROOT>/repo/.archon/scripts/foo.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "home_only",
+        "name": "home_only",
+        "path": "<ROOT>/home/scripts/home_only.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "m1",
+        "name": "m1",
+        "path": "<ROOT>/repo/.archon/scripts/m1.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "m2",
+        "name": "m2",
+        "path": "<ROOT>/repo/.archon/scripts/m2.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "m3",
+        "name": "m3",
+        "path": "<ROOT>/repo/.archon/scripts/m3.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "pyroot",
+        "name": "pyroot",
+        "path": "<ROOT>/repo/.archon/scripts/pyroot.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "quux",
+        "name": "quux",
+        "path": "<ROOT>/repo/.archon/scripts/quux.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "shared",
+        "name": "shared",
+        "path": "<ROOT>/repo/.archon/scripts/shared.py",
+        "runtime": "uv"
+      }
+    ],
+    "raw_order": [
+      "home_only",
+      "shared",
+      "m3",
+      "m2",
+      "m1",
+      "bar",
+      "pyroot",
+      "quux",
+      "foo"
+    ]
+  },
+  "repo_scope": {
+    "ok": true,
+    "entries_sorted": [
+      {
+        "key": "bar",
+        "name": "bar",
+        "path": "<ROOT>/repo/.archon/scripts/triage/bar.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "foo",
+        "name": "foo",
+        "path": "<ROOT>/repo/.archon/scripts/foo.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "m1",
+        "name": "m1",
+        "path": "<ROOT>/repo/.archon/scripts/m1.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "m2",
+        "name": "m2",
+        "path": "<ROOT>/repo/.archon/scripts/m2.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "m3",
+        "name": "m3",
+        "path": "<ROOT>/repo/.archon/scripts/m3.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "pyroot",
+        "name": "pyroot",
+        "path": "<ROOT>/repo/.archon/scripts/pyroot.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "quux",
+        "name": "quux",
+        "path": "<ROOT>/repo/.archon/scripts/quux.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "shared",
+        "name": "shared",
+        "path": "<ROOT>/repo/.archon/scripts/shared.py",
+        "runtime": "uv"
+      }
+    ],
+    "raw_order": [
+      "m3",
+      "m2",
+      "m1",
+      "bar",
+      "pyroot",
+      "quux",
+      "foo",
+      "shared"
+    ]
+  },
+  "home_scope": {
+    "ok": true,
+    "entries_sorted": [
+      {
+        "key": "home_only",
+        "name": "home_only",
+        "path": "<ROOT>/home/scripts/home_only.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "shared",
+        "name": "shared",
+        "path": "<ROOT>/home/scripts/shared.ts",
+        "runtime": "bun"
+      }
+    ],
+    "raw_order": [
+      "home_only",
+      "shared"
+    ]
+  },
+  "dup": {
+    "ok": false,
+    "error": "Duplicate script name \"foo\": found \"<ROOT>/dup/foo.py\" and \"<ROOT>/dup/foo.ts\". Script names must be unique across extensions."
+  },
+  "empty": {
+    "ok": true,
+    "entries_sorted": [],
+    "raw_order": []
+  },
+  "nonexistent": {
+    "ok": true,
+    "entries_sorted": [],
+    "raw_order": []
+  },
+  "unreadable": {
+    "ok": false,
+    "error": "Directory read error: EACCES: permission denied, scandir '<ROOT>/unreadable' (EACCES)"
+  },
+  "notadir": {
+    "ok": false,
+    "error": "Directory read error: ENOTDIR: not a directory, scandir '<ROOT>/notadir_file.ts' (ENOTDIR)"
+  },
+  "default_scripts_size": 0
+}
