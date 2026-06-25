@@ -182,8 +182,14 @@ Source lines 93–581 | 7 constants + 6 exported functions + 5 helpers | 52 test
 **Remaining sub-cycles:**
 - Sub-cycle 2: `executeDagWorkflow` orchestrator (~960 ln) — [x] `- [x]` cycle 33 (see below)
 - Sub-cycle 3: `executeNodeInternal` AI node state machine (~820 ln) — [~] cycle 34 STRUCTURE ported (NodeState enum, reask helpers, lifecycle skeleton); build-health-clean + parity-verified-for-scope **cycle 35**. Streaming execution against `ai_client` (the `_`-prefixed params) DEFERRED to sub-cycle 4 → not yet a working node executor.
-- Sub-cycle 4: bash/script/loop executors (~1030 ln) — [ ] pending (needs WF-18 script discovery) — also wires `executeNodeInternal` streaming live (sub-cycle 3's `_`-prefixed params)
-- Sub-cycle 5: approval node + integration verification (~180 ln) — [ ] pending
+- Sub-cycle 4: node-type execution dispatch — DECOMPOSED by architect (cycle 36) into 4a–4f (findings/WF-09-s4-architecture.md):
+  - **4a** platform seam (WorkflowPlatform trait + StreamingMode) + D2 capture-expansion + D3 run_subprocess idiom + log_node_* helpers + **execute_bash_node** + **cancel node** + bash/cancel dispatch arms — **[x] cycle 36, parity-verified vs live bun** (findings/parity-WF-09-s4a.md; gate FAILed first on F1 bash empty-stderr error string + F2 cancel event shape → both fixed + re-verified). Other node types on honest Skipped placeholder.
+  - 4b script node (+ WF-18 discover_scripts_for_cwd) — [ ] pending
+  - 4c AI-node live streaming (executeNodeInternal body + with_idle_timeout + validate_structured_output) — [ ] pending (un-stubs sub-cycle-3 `_`-prefixed params; !B3 validate_structured_output crate-vs-reimpl decision owed)
+  - 4d AI-node dispatch wiring + retry wrapper + session persist — [ ] pending
+  - 4e loop node — [ ] pending
+  - 4f approval node (+ on_reject reuse) — [ ] pending
+- Sub-cycle 5: whole-DAG differential harness + WF-32 web send_structured_event + pre-DONE WF-09 left-behind sweep — [ ] pending
 
 **Build-health (cycle 35, 2026-06-22):** `har-dag-executor` now COMPILES — `cargo check` + `cargo clippy
 --workspace --all-targets -- -D warnings` + `cargo test --workspace` GREEN (2066 passed / 15 ignored). Cycle 34

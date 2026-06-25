@@ -76,10 +76,13 @@ pub use executor_shared::{
     RawSubprocessError,
     SafeSendError,
     SendMessageContext,
+    StreamingMode,
     SubprocessFailure,
     SubprocessLogFields,
     SubstitutionResult,
     UnknownErrorTracker,
+    // Platform seam (D1 — sub-cycle 4a)
+    WorkflowPlatform,
     // Variable substitution
     CONTEXT_VAR_PATTERN_STR,
     FATAL_PATTERNS,
@@ -118,29 +121,19 @@ pub use output_ref::{
 
 // WF-09 sub-cycle 1 re-exports
 pub use dag_executor::{
-    build_topological_layers,
-    check_trigger_rule,
-    get_effective_node_retry_config,
-    load_configured_mcp_server_names,
-    McpFailureEntry,
-    parse_mcp_failure_server_names,
-    resolve_node_provider_and_model_sync,
-    ResolvedProviderAndModel,
-    RetryConfig,
-    should_continue_streaming_for_status,
-    substitute_node_output_refs,
+    build_topological_layers, check_trigger_rule, get_effective_node_retry_config,
+    load_configured_mcp_server_names, parse_mcp_failure_server_names,
+    resolve_node_provider_and_model_sync, should_continue_streaming_for_status,
+    substitute_node_output_refs, McpFailureEntry, ResolvedProviderAndModel, RetryConfig,
     TriggerResult,
 };
 
 // WF-09 sub-cycle 2 re-exports (executeDagWorkflow orchestrator)
 pub use dag_executor::{
-    capture_workflow_completed,
-    execute_dag_workflow,
-    get_workflow_event_emitter,
-    log_node_skip,
-    log_workflow_complete,
-    log_workflow_error,
-    write_node_artifact,
-    WorkflowDeps,
+    capture_workflow_completed, execute_dag_workflow, get_workflow_event_emitter, log_node_skip,
+    log_workflow_complete, log_workflow_error, write_node_artifact, WorkflowDeps,
     WorkflowEventEmitter,
 };
+
+// WF-09 sub-cycle 4a re-exports (platform seam + bash/cancel executor + log helpers)
+pub use dag_executor::{execute_bash_node, log_node_complete, log_node_error, log_node_start};

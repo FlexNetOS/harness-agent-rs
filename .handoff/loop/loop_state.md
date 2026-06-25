@@ -3,13 +3,13 @@ session_started: 2026-06-14T00:00:00Z
 loop: rust-port
 branch: main
 worktree: /home/drdave/Desktop/meta/harness-agent-rs
-source_root: /home/drdave/Desktop/meta/Archon
+source_root: /home/drdave/Desktop/meta/meta-yard/Archon   # relocated 2026-06-25 to Tier-Y yard (ported-from source, out of root build); was meta/Archon
 source_toolchain: bun        # bun 1.3.14 — parity-verifier runs the TS source
 rust_target: /home/drdave/Desktop/meta/harness-agent-rs
 dest_repo: (none — port target IS this repo; no separate Y to merge into)
 cycle_budget: 3
-cycles_this_session: 1    # resume 2026-06-22 (owner: "/harness:rust-port-merge resume" — NO dest_repo, so plain rust-port). cycle 35 = WF-09 build-health gate (the gate cycle 34 SKIPPED): har-dag-executor had 13 HARD compile errors (NOT lint-only as HANDOFF wrongly claimed) → fixed faithfully → WORKSPACE GREEN (build+clippy --all-targets -D warnings+test 2066 passed). Next: WF-09 sub-cycle 4 (wire bash/script/loop executors + stream against ai_client; the `_`-prefixed params in execute_node_internal go live).
-cycles_total: 34          # 27 + 6 + cycle 35 (WF-09 build-health gate: 13 compile errors fixed, 3 sub-cycle-3 test-authoring errors corrected vs TS, workspace green)
+cycles_this_session: 1    # RESUME 2026-06-25 (owner: "/harness:rust-port resume"). Verify-on-resume baseline GREEN (clippy --all-targets clean + 2066 passed). source_root pointer fixed (Archon → meta-yard). CYCLE 36 DONE = WF-09 sub-cycle 4a (platform seam + run_subprocess + log helpers + execute_bash_node + cancel node + bash/cancel dispatch arms), parity-verified vs live bun (gate FAILed first on F1 bash empty-stderr error + F2 cancel event shape → fixed + re-verified). Architect decomposed sub-cycle 4 → 4a-4f (findings/WF-09-s4-architecture.md). Also fixed pre-existing pi env-leak flake (serial_test::serial). NEXT: WF-09 sub-cycle 4b (script node + WF-18 discover_scripts_for_cwd).
+cycles_total: 36          # 27 + 6 + cycle 35 (build-health gate) + cycle 36 (WF-09 sub-cycle 4a, parity-verified)
 ledger: parity **44/79 full units** + **ALL provider ports (PR-01..11) FULLY BOUND** (CLI + 3 Node SDKs).
         cycle 26 started CO-01 (the SQL-backed DB layer): the adapter DIALECT slice is `- [x]` (new crate har-db);
         query/tx trait + concrete sqlite/pg adapters deferred to cycle 27 (`- [ ]`, pending driver decision). CO-01 not yet a full unit.

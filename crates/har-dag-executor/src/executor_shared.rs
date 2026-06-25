@@ -47,6 +47,9 @@ use tracing::{debug, error, warn};
 use har_paths::get_command_folder_search_paths;
 use har_workflow_schema::LoadCommandResult;
 
+// har_contract is needed for MessageChunk (WorkflowPlatform D1 seam).
+use har_contract::MessageChunk;
+
 // ─── Error Classification ─────────────────────────────────────────────────────
 
 /// Result of error classification. executor-shared.ts:27.
@@ -810,6 +813,45 @@ pub async fn safe_send_message(
             Ok(false)
         }
     }
+}
+
+// ─── WorkflowPlatform — D1 platform seam (sub-cycle 4a) ──────────────────────
+
+/// Streaming vs batch delivery mode for workflow output. Source: IWorkflowPlatform.getStreamingMode().
+/// `'stream' | 'batch'` at dag-executor.ts (deps.ts:WF-32).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamingMode {
+    /// Deliver each assistant/tool chunk to the platform as it arrives.
+    Stream,
+    /// Accumulate all chunks and send as a single message at completion.
+    Batch,
+}
+
+/// Full workflow platform seam — super-set of [`MessagePlatform`].
+///
+/// Source: `IWorkflowPlatform` in `packages/workflows/src/deps.ts`. The supertrait
+/// relationship means every `impl WorkflowPlatform` also satisfies `MessagePlatform`
+/// through the vtable; Rust 1.86+ direct-upcasting lets us pass `&dyn WorkflowPlatform`
+/// where `&dyn MessagePlatform` is expected without an extra wrapper.
+///
+/// **D1 keystone** — threaded as `Arc<dyn WorkflowPlatform>` into `execute_dag_workflow`
+/// and cloned into each spawned tokio task.
+///
+/// - `[≠]≠2`: `send_structured_event` has a default no-op body, faithfully mapping the
+///   TypeScript optional `sendStructuredEvent?`. The real web-adapter override lands in
+///   WF-32; without that override the SSE path is silently skipped (same as TS for
+///   non-web platforms). Flag so WF-32 doesn't forget.
+#[async_trait::async_trait]
+pub trait WorkflowPlatform: MessagePlatform + Send + Sync {
+    /// Return the delivery mode for streamed assistant content.
+    fn get_streaming_mode(&self) -> StreamingMode;
+
+    /// Deliver a structured SSE event to the web client.
+    ///
+    /// Default no-op — faithfully maps TS `sendStructuredEvent?` (optional).
+    /// Web adapter override is WF-32 (`deps.rs`).
+    /// - `[≠]≠2`: intentional divergence; tracked for WF-32.
+    async fn send_structured_event(&self, _conversation_id: &str, _chunk: &MessageChunk) {}
 }
 
 // ─── Command Loading ──────────────────────────────────────────────────────────

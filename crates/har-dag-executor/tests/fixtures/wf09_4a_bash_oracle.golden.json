@@ -1,0 +1,51 @@
+{
+  "p1_double_nl": {
+    "state": "completed",
+    "output": "x\n",
+    "stderrSurfaced": null
+  },
+  "p2_trailing_space": {
+    "state": "completed",
+    "output": "x ",
+    "stderrSurfaced": null
+  },
+  "p3_stderr": {
+    "state": "completed",
+    "output": "out",
+    "stderrSurfaced": "warnmsg"
+  },
+  "p4_exit3_nostderr": {
+    "state": "failed",
+    "output": "",
+    "error": "Bash node 'mybash' failed [exit 3]: no diagnostic output",
+    "isTimeout": false,
+    "rawCode": 3,
+    "rawKilled": false
+  },
+  "p5_exit3_stderr": {
+    "state": "failed",
+    "output": "",
+    "error": "Bash node 'mybash' failed [exit 3]: boom",
+    "isTimeout": false,
+    "rawCode": 3,
+    "rawKilled": false
+  },
+  "p6_timeout": {
+    "state": "failed",
+    "output": "",
+    "error": "Bash node 'mybash' timed out after 200ms",
+    "isTimeout": true,
+    "rawCode": null,
+    "rawKilled": true
+  },
+  "p7_env": {
+    "state": "completed",
+    "output": "AD-bar",
+    "stderrSurfaced": null
+  },
+  "p8_empty": {
+    "state": "completed",
+    "output": "",
+    "stderrSurfaced": null
+  }
+}
