@@ -425,6 +425,7 @@ fn test_streaming_tail_completion_logic() {
 }
 
 #[test]
+#[serial_test::serial(pi_coding_agent_cli_env)]
 fn test_find_pi_argv_uses_env_var() {
     // Save original value
     let original = std::env::var("PI_CODING_AGENT_CLI").ok();
@@ -453,6 +454,7 @@ fn test_find_pi_argv_uses_env_var() {
 }
 
 #[test]
+#[serial_test::serial(pi_coding_agent_cli_env)]
 fn test_find_pi_argv_error_when_not_set() {
     // Save original value
     let original = std::env::var("PI_CODING_AGENT_CLI").ok();
@@ -486,6 +488,7 @@ fn test_find_pi_argv_error_when_not_set() {
 // To run: PI_CODING_AGENT_CLI="node /path/to/dist/cli.js" cargo test live_
 
 #[tokio::test]
+#[serial_test::serial(pi_coding_agent_cli_env)]
 async fn live_get_state_no_session() {
     // Gate: skip if PI_CODING_AGENT_CLI is not set.
     let pi_argv = match find_pi_argv() {
@@ -550,6 +553,7 @@ async fn live_get_state_no_session() {
 }
 
 #[tokio::test]
+#[serial_test::serial(pi_coding_agent_cli_env)]
 async fn live_abort_stops_agent() {
     // Gate: skip if PI_CODING_AGENT_CLI is not set.
     if std::env::var("PI_CODING_AGENT_CLI").is_err() {
@@ -599,6 +603,7 @@ async fn live_abort_stops_agent() {
 // ─── LLM test (requires Pi binary + API key + network) ───────────────────────
 
 #[tokio::test]
+#[serial_test::serial(pi_coding_agent_cli_env)]
 async fn live_full_prompt() {
     // Gate: skip if PI_CODING_AGENT_CLI is not set.
     if std::env::var("PI_CODING_AGENT_CLI").is_err() {

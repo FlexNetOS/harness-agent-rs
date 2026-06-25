@@ -1014,6 +1014,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(pi_coding_agent_cli_env)]
     fn test_find_pi_argv_uses_env_var() {
         // Set PI_CODING_AGENT_CLI and verify find_pi_argv returns it split
         // Note: we use a unique value to avoid interfering with other tests
@@ -1038,6 +1039,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(pi_coding_agent_cli_env)]
     fn test_find_pi_argv_error_when_not_set() {
         // Verify returns Err with "pi_binary_not_found" when env var not set
         let original = std::env::var("PI_CODING_AGENT_CLI").ok();

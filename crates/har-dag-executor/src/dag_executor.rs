@@ -13,9 +13,9 @@
 //!     execute_bash_node, execute_script_node, execute_loop_node, execute_approval_node,
 //!     resolve_node_provider_and_model, apply_preset_options
 
-use crate::output_ref::{resolve_node_output_field, FieldResolution};
-use crate::executor_shared::{classify_error, ErrorType};
 use crate::detect_credit_exhaustion;
+use crate::executor_shared::{classify_error, ErrorType};
+use crate::output_ref::{resolve_node_output_field, FieldResolution};
 use har_contract::SendQueryOptions;
 use har_workflow_schema::{DagNode, NodeOutput, TriggerRule};
 use once_cell::sync::Lazy;
@@ -83,7 +83,12 @@ pub fn parse_mcp_failure_server_names(message: &str) -> Vec<McpFailureEntry> {
     let mut entries = vec![];
     for raw in message[MCP_FAILURE_PREFIX.len()..].split(", ") {
         let segment = raw.trim().to_string();
-        if let Some(name) = segment.split(" (").next().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        if let Some(name) = segment
+            .split(" (")
+            .next()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
             if seen.insert(name.to_string()) {
                 entries.push(McpFailureEntry {
                     name: name.to_string(),
@@ -135,7 +140,10 @@ pub async fn load_configured_mcp_server_names(
         Ok(v) => v,
         Err(_) => {
             // Malformed JSON — not a file read failure but a parse failure; still returns empty set.
-            debug!(node_mcp_path = mcp_path, "dag.mcp_filter_config_read_failed");
+            debug!(
+                node_mcp_path = mcp_path,
+                "dag.mcp_filter_config_read_failed"
+            );
             return HashSet::new();
         }
     };
@@ -322,7 +330,10 @@ pub fn substitute_node_output_refs(
 ///   (with an error explaining the missing dependency).
 ///
 /// Source: dag-executor.ts:584-615.
-pub fn check_trigger_rule(node: &DagNode, node_outputs: &std::collections::HashMap<String, NodeOutput>) -> TriggerResult {
+pub fn check_trigger_rule(
+    node: &DagNode,
+    node_outputs: &std::collections::HashMap<String, NodeOutput>,
+) -> TriggerResult {
     let node_deps = node.depends_on();
     if node_deps.is_empty() {
         return TriggerResult::Run;
@@ -330,21 +341,23 @@ pub fn check_trigger_rule(node: &DagNode, node_outputs: &std::collections::HashM
 
     let upstreams: Vec<NodeOutput> = node_deps
         .iter()
-        .map(|id| {
-            match node_outputs.get(id.as_str()) {
-                Some(output) => output.clone(),
-                None => NodeOutput::Failed {
-                    output: String::new(),
-                    session_id: None,
-                    error: format!("upstream '{}' missing from outputs", id),
-                    structured_output: None,
-                    declared_fields: None,
-                },
-            }
+        .map(|id| match node_outputs.get(id.as_str()) {
+            Some(output) => output.clone(),
+            None => NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: format!("upstream '{}' missing from outputs", id),
+                structured_output: None,
+                declared_fields: None,
+            },
         })
         .collect();
 
-    let rule = node.base().trigger_rule.clone().unwrap_or(TriggerRule::AllSuccess);
+    let rule = node
+        .base()
+        .trigger_rule
+        .clone()
+        .unwrap_or(TriggerRule::AllSuccess);
 
     match rule {
         TriggerRule::AllSuccess => {
@@ -362,7 +375,9 @@ pub fn check_trigger_rule(node: &DagNode, node_outputs: &std::collections::HashM
             }
         }
         TriggerRule::NoneFailedMinOneSuccess => {
-            let any_failed = upstreams.iter().any(|u| matches!(u.state(), har_workflow_schema::NodeState::Failed));
+            let any_failed = upstreams
+                .iter()
+                .any(|u| matches!(u.state(), har_workflow_schema::NodeState::Failed));
             let any_succeeded = upstreams.iter().any(|u| u.is_completed());
             if !any_failed && any_succeeded {
                 TriggerResult::Run
@@ -373,7 +388,8 @@ pub fn check_trigger_rule(node: &DagNode, node_outputs: &std::collections::HashM
         TriggerRule::AllDone => {
             if upstreams.iter().all(|u| {
                 let s = u.state();
-                s != har_workflow_schema::NodeState::Pending && s != har_workflow_schema::NodeState::Running
+                s != har_workflow_schema::NodeState::Pending
+                    && s != har_workflow_schema::NodeState::Running
             }) {
                 TriggerResult::Run
             } else {
@@ -413,7 +429,8 @@ impl TriggerResult {
 /// Source: dag-executor.ts:625-665.
 pub fn build_topological_layers(nodes: &[DagNode]) -> Vec<Vec<DagNode>> {
     let mut in_degree: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut dependents: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut dependents: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
 
     for node in nodes {
         in_degree.insert(node.id().to_string(), node.depends_on().len());
@@ -467,9 +484,7 @@ pub fn build_topological_layers(nodes: &[DagNode]) -> Vec<Vec<DagNode>> {
 /// Throw the exact runtime cycle detection error from source dag-executor.ts:659-661.
 #[cold]
 fn throw_runtime_cycle() -> ! {
-    panic!(
-        "[DagExecutor] Cycle detected at runtime — was cycle detection skipped at load?"
-    )
+    panic!("[DagExecutor] Cycle detected at runtime — was cycle detection skipped at load?")
 }
 
 // ─── Retry config helper ──────────────────────────────────────────────────────
@@ -485,8 +500,14 @@ pub fn get_effective_node_retry_config(node: &DagNode) -> RetryConfig {
     if let Some(retry) = &base.retry {
         RetryConfig {
             max_retries: retry.max_attempts as u32,
-            delay_ms: retry.delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_NODE_RETRY_DELAY_MS),
-            on_error: retry.on_error.clone().unwrap_or(har_workflow_schema::OnError::Transient),
+            delay_ms: retry
+                .delay_ms
+                .map(|v| v as u64)
+                .unwrap_or(DEFAULT_NODE_RETRY_DELAY_MS),
+            on_error: retry
+                .on_error
+                .clone()
+                .unwrap_or(har_workflow_schema::OnError::Transient),
         }
     } else {
         RetryConfig {
@@ -556,7 +577,9 @@ pub async fn resolve_node_provider_and_model(
     if let Some(ref node_model) = node.base().model {
         if let Some(profile) = ai_profile {
             let model_spec = crate::model_validation::resolve_model_spec(profile, node_model)
-                .map_err(|e| format!("Node '{}': model spec resolution failed: {}", node.id(), e))?;
+                .map_err(|e| {
+                    format!("Node '{}': model spec resolution failed: {}", node.id(), e)
+                })?;
             match model_spec {
                 crate::model_validation::ResolvedModelSpec::Literal { literal } => {
                     model = Some(literal);
@@ -568,14 +591,14 @@ pub async fn resolve_node_provider_and_model(
                 }
             }
             if node.base().provider.as_deref() != Some(&provider) {
-                    warn!(
-                        node_id = node.id(),
-                        configured_provider,
-                        resolved_provider = %provider,
-                        model_ref = %node_model,
-                        "dag.model_provider_conflict"
-                    );
-                    // Warning delivery would require platform — skip in this utility-only scope.
+                warn!(
+                    node_id = node.id(),
+                    configured_provider,
+                    resolved_provider = %provider,
+                    model_ref = %node_model,
+                    "dag.model_provider_conflict"
+                );
+                // Warning delivery would require platform — skip in this utility-only scope.
             }
         }
     }
@@ -617,23 +640,44 @@ pub async fn resolve_node_provider_and_model(
     // Get provider capabilities.
     let _caps = match har_provider::get_provider_capabilities(&provider) {
         Ok(c) => c,
-        Err(_) => return Err(format!("Node '{}': unable to get capabilities for provider '{}'", node.id(), provider)),
+        Err(_) => {
+            return Err(format!(
+                "Node '{}': unable to get capabilities for provider '{}'",
+                node.id(),
+                provider
+            ))
+        }
     };
 
     // Build capability warnings list.
     let base = node.base();
     let cap_checks: Vec<(&str, bool)> = vec![
-        ("allowed_tools/denied_tools", base.allowed_tools.is_some() || base.denied_tools.is_some()),
+        (
+            "allowed_tools/denied_tools",
+            base.allowed_tools.is_some() || base.denied_tools.is_some(),
+        ),
         ("hooks", base.hooks.is_some()),
         ("mcp", base.mcp.is_some()),
-        ("skills", base.skills.as_ref().map(|s| !s.is_empty()).unwrap_or(false)),
+        (
+            "skills",
+            base.skills.as_ref().map(|s| !s.is_empty()).unwrap_or(false),
+        ),
         ("agents", base.agents.is_some()),
-        ("effort", (base.effort).is_some() || config_env_vars.is_some()), // simplified: effort from workflow level always checked
-        ("thinking", (base.thinking).is_some() || config_env_vars.is_some()), // simplified
+        (
+            "effort",
+            (base.effort).is_some() || config_env_vars.is_some(),
+        ), // simplified: effort from workflow level always checked
+        (
+            "thinking",
+            (base.thinking).is_some() || config_env_vars.is_some(),
+        ), // simplified
         ("maxBudgetUsd", node_max_budget_usd.is_some()),
         ("fallbackModel", (node_fallback_model).is_some()),
         ("sandbox", (base.sandbox).is_some()),
-        ("env", config_env_vars.map(|m| !m.is_empty()).unwrap_or(false)),
+        (
+            "env",
+            config_env_vars.map(|m| !m.is_empty()).unwrap_or(false),
+        ),
     ];
 
     let unsupported: Vec<&str> = cap_checks
@@ -653,7 +697,9 @@ pub async fn resolve_node_provider_and_model(
 
     // Agent + skills ID collision warning.
     if let Some(agents) = &base.agents {
-        if agents.contains_key("dag-node-skills") && base.skills.as_ref().map(|s| !s.is_empty()).unwrap_or(false) {
+        if agents.contains_key("dag-node-skills")
+            && base.skills.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+        {
             warn!(node_id = node.id(), "dag.agents_skills_id_collision");
         }
     }
@@ -825,10 +871,7 @@ pub(crate) fn apply_preset_options(
     };
 
     // Rule 1: Apply thinking if unset at both node and workflow level.
-    if preset_ref.thinking.is_some()
-        && node_effort.is_none()
-        && workflow_effort.is_none()
-    {
+    if preset_ref.thinking.is_some() && node_effort.is_none() && workflow_effort.is_none() {
         // Thinking would be set on the node config (handled upstream).
     }
 
@@ -875,8 +918,8 @@ pub(crate) enum PresetEffect {
 mod tests {
     use super::*;
     use har_workflow_schema::dag_node::{DagNodeBase, PromptNode, TriggerRule};
-    use std::collections::HashMap;
     use serde_json::json;
+    use std::collections::HashMap;
 
     // Pre-register builtin providers so resolve tests pass.
     fn setup() {
@@ -906,9 +949,8 @@ mod tests {
 
     #[test]
     fn parse_mcp_single_server() {
-        let entries = parse_mcp_failure_server_names(
-            "MCP server connection failed: telegram (disconnected)",
-        );
+        let entries =
+            parse_mcp_failure_server_names("MCP server connection failed: telegram (disconnected)");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "telegram");
         assert_eq!(entries[0].segment, "telegram (disconnected)");
@@ -1011,14 +1053,18 @@ mod tests {
     #[test]
     fn shell_quote_or_file_below_threshold_no_dir() {
         let small = "x".repeat(100);
-        assert_eq!(shell_quote_or_file(&small, "n1", None, None), format!("'{}'", small));
+        assert_eq!(
+            shell_quote_or_file(&small, "n1", None, None),
+            format!("'{}'", small)
+        );
     }
 
     #[test]
     fn shell_quote_or_file_above_threshold_creates_file() {
         let large = "x".repeat(NODE_OUTPUT_FILE_THRESHOLD + 1);
         let tmp_dir = std::env::temp_dir();
-        let result = shell_quote_or_file(&large, "n1", Some("field"), Some(tmp_dir.to_str().unwrap()));
+        let result =
+            shell_quote_or_file(&large, "n1", Some("field"), Some(tmp_dir.to_str().unwrap()));
         assert!(result.starts_with("$("));
         assert!(result.ends_with(")"));
     }
@@ -1076,19 +1122,23 @@ mod tests {
         let mut outputs = HashMap::new();
         outputs.insert("first".to_string(), make_completed("alpha"));
         outputs.insert("second".to_string(), make_completed("beta"));
-        let result = substitute_node_output_refs("$first.output + $second.output", &outputs, false, None);
+        let result =
+            substitute_node_output_refs("$first.output + $second.output", &outputs, false, None);
         assert_eq!(result, "alpha + beta");
     }
 
     #[test]
     fn substitute_field_access() {
         let mut outputs = HashMap::new();
-        outputs.insert("n1".to_string(), NodeOutput::Completed {
-            output: r#"{"count": 42, "name": "test"}"#.to_string(),
-            session_id: None,
-            structured_output: Some(json!({"count": 42, "name": "test"})),
-            declared_fields: Some(vec!["count".to_string(), "name".to_string()]),
-        });
+        outputs.insert(
+            "n1".to_string(),
+            NodeOutput::Completed {
+                output: r#"{"count": 42, "name": "test"}"#.to_string(),
+                session_id: None,
+                structured_output: Some(json!({"count": 42, "name": "test"})),
+                declared_fields: Some(vec!["count".to_string(), "name".to_string()]),
+            },
+        );
         let result = substitute_node_output_refs("count: $n1.output.count", &outputs, false, None);
         assert_eq!(result, "count: 42");
     }
@@ -1096,12 +1146,15 @@ mod tests {
     #[test]
     fn substitute_bash_field_quoted() {
         let mut outputs = HashMap::new();
-        outputs.insert("n1".to_string(), NodeOutput::Completed {
-            output: r#"{"name": "hello world"}"#.to_string(),
-            session_id: None,
-            structured_output: Some(json!({"name": "hello world"})),
-            declared_fields: Some(vec!["name".to_string()]),
-        });
+        outputs.insert(
+            "n1".to_string(),
+            NodeOutput::Completed {
+                output: r#"{"name": "hello world"}"#.to_string(),
+                session_id: None,
+                structured_output: Some(json!({"name": "hello world"})),
+                declared_fields: Some(vec!["name".to_string()]),
+            },
+        );
         let result = substitute_node_output_refs("name=$n1.output.name", &outputs, true, None);
         assert_eq!(result, "name='hello world'");
     }
@@ -1109,12 +1162,15 @@ mod tests {
     #[test]
     fn substitute_array_jsonified() {
         let mut outputs = HashMap::new();
-        outputs.insert("n1".to_string(), NodeOutput::Completed {
-            output: r#"{"items": [1, 2, 3]}"#.to_string(),
-            session_id: None,
-            structured_output: Some(json!({"items": vec![1, 2, 3]})),
-            declared_fields: Some(vec!["items".to_string()]),
-        });
+        outputs.insert(
+            "n1".to_string(),
+            NodeOutput::Completed {
+                output: r#"{"items": [1, 2, 3]}"#.to_string(),
+                session_id: None,
+                structured_output: Some(json!({"items": vec![1, 2, 3]})),
+                declared_fields: Some(vec!["items".to_string()]),
+            },
+        );
         let result = substitute_node_output_refs("data=$n1.output.items", &outputs, false, None);
         assert_eq!(result, "data=[1,2,3]");
     }
@@ -1122,12 +1178,15 @@ mod tests {
     #[test]
     fn substitute_boolean_value() {
         let mut outputs = HashMap::new();
-        outputs.insert("n1".to_string(), NodeOutput::Completed {
-            output: r#"{"active": true}"#.to_string(),
-            session_id: None,
-            structured_output: Some(json!({"active": true})),
-            declared_fields: Some(vec!["active".to_string()]),
-        });
+        outputs.insert(
+            "n1".to_string(),
+            NodeOutput::Completed {
+                output: r#"{"active": true}"#.to_string(),
+                session_id: None,
+                structured_output: Some(json!({"active": true})),
+                declared_fields: Some(vec!["active".to_string()]),
+            },
+        );
         let result = substitute_node_output_refs("$n1.output.active", &outputs, false, None);
         assert_eq!(result, "true");
     }
@@ -1136,12 +1195,15 @@ mod tests {
     fn substitute_empty_field_returns_empty() {
         // Node without structuredOutput or declaredFields — schemaless field access throws.
         let mut outputs = HashMap::new();
-        outputs.insert("n1".to_string(), NodeOutput::Completed {
-            output: "just a string".to_string(),
-            session_id: None,
-            structured_output: None,
-            declared_fields: None,
-        });
+        outputs.insert(
+            "n1".to_string(),
+            NodeOutput::Completed {
+                output: "just a string".to_string(),
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            },
+        );
         // This should throw because the output is not JSON and has no declared schema.
         let result = substitute_node_output_refs("$n1.output.field", &outputs, false, None);
         assert!(result.contains("'n1'")); // contains node ID from error message
@@ -1151,12 +1213,15 @@ mod tests {
     #[allow(clippy::approx_constant)] // 3.14 is test data (JSON value string), not approximating PI
     fn substitute_number_field() {
         let mut outputs = HashMap::new();
-        outputs.insert("n1".to_string(), NodeOutput::Completed {
-            output: r#"{"value": 3.14}"#.to_string(),
-            session_id: None,
-            structured_output: Some(json!({"value": 3.14})),
-            declared_fields: Some(vec!["value".to_string()]),
-        });
+        outputs.insert(
+            "n1".to_string(),
+            NodeOutput::Completed {
+                output: r#"{"value": 3.14}"#.to_string(),
+                session_id: None,
+                structured_output: Some(json!({"value": 3.14})),
+                declared_fields: Some(vec!["value".to_string()]),
+            },
+        );
         let result = substitute_node_output_refs("$n1.output.value", &outputs, false, None);
         assert_eq!(result, "3.14");
     }
@@ -1204,7 +1269,10 @@ mod tests {
     #[test]
     fn trigger_no_deps_always_runs() {
         let node = make_node_deps(&[], None);
-        assert_eq!(check_trigger_rule(&node, &HashMap::new()), TriggerResult::Run);
+        assert_eq!(
+            check_trigger_rule(&node, &HashMap::new()),
+            TriggerResult::Run
+        );
     }
 
     #[test]
@@ -1524,13 +1592,7 @@ mod tests {
             prompt: "test".to_string(),
         });
         let assistants: HashMap<String, serde_json::Value> = HashMap::new();
-        let result = resolve_node_provider_and_model_sync(
-            &node,
-            "claude",
-            None,
-            None,
-            &assistants,
-        );
+        let result = resolve_node_provider_and_model_sync(&node, "claude", None, None, &assistants);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown provider"));
     }
@@ -1540,7 +1602,7 @@ mod tests {
     #[test]
     fn trigger_result_as_str() {
         assert_eq!(TriggerResult::Run.as_str(), "run");
-        assert_eq!( TriggerResult::Skip.as_str(), "skip");
+        assert_eq!(TriggerResult::Skip.as_str(), "skip");
     }
 }
 
@@ -1559,6 +1621,12 @@ use tracing::info;
 
 // Import sub-cycle 1 + WF-12 modules.
 use crate::condition_evaluator;
+
+// Sub-cycle 4a: D1 platform seam imports.
+use crate::executor_shared::{
+    format_subprocess_failure, safe_send_message, substitute_workflow_variables,
+    RawSubprocessError, SendMessageContext, WorkflowPlatform,
+};
 
 // ─── Internal types for sub-cycle 2 ──────────────────────────────────────
 
@@ -1594,7 +1662,10 @@ impl WorkflowDeps {
         let data_map = if data.is_object() {
             Some(data.as_object().cloned().unwrap_or_default())
         } else {
-            Some(serde_json::Map::from_iter(std::iter::once(("value".to_string(), data))))
+            Some(serde_json::Map::from_iter(std::iter::once((
+                "value".to_string(),
+                data,
+            ))))
         };
         self.store
             .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
@@ -1618,7 +1689,10 @@ impl WorkflowDeps {
         let data_map = if data.is_object() {
             Some(data.as_object().cloned().unwrap_or_default())
         } else {
-            Some(serde_json::Map::from_iter(std::iter::once(("value".to_string(), data))))
+            Some(serde_json::Map::from_iter(std::iter::once((
+                "value".to_string(),
+                data,
+            ))))
         };
         self.store
             .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
@@ -1633,7 +1707,8 @@ impl WorkflowDeps {
 
     /// Emit a plain message event using WorkflowArtifact as the carrier.
     pub async fn emit_message_event(&self, workflow_run_id: &str, step_name: &str, msg: String) {
-        let data = serde_json::Map::from_iter([("message".to_string(), serde_json::Value::String(msg))]);
+        let data =
+            serde_json::Map::from_iter([("message".to_string(), serde_json::Value::String(msg))]);
         self.store
             .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
                 workflow_run_id: workflow_run_id.to_string(),
@@ -1655,21 +1730,46 @@ pub struct WorkflowEventEmitter {
 impl WorkflowEventEmitter {
     pub async fn register_run(&self, run_id: &str) -> broadcast::Receiver<serde_json::Value> {
         let (tx, rx) = broadcast::channel(64);
-        self.run_channels.lock().await.insert(run_id.to_string(), tx);
+        self.run_channels
+            .lock()
+            .await
+            .insert(run_id.to_string(), tx);
         rx
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn emit(&self, event_type: &str, run_id: &str, node_id: Option<&str>, node_name: Option<&str>, reason: Option<&str>, error: Option<&str>, duration_ms: Option<u64>, workflow_name: Option<&str>) {
+    pub async fn emit(
+        &self,
+        event_type: &str,
+        run_id: &str,
+        node_id: Option<&str>,
+        node_name: Option<&str>,
+        reason: Option<&str>,
+        error: Option<&str>,
+        duration_ms: Option<u64>,
+        workflow_name: Option<&str>,
+    ) {
         let mut map = serde_json::Map::new();
         map.insert("type".to_string(), serde_json::json!(event_type));
         map.insert("runId".to_string(), serde_json::json!(run_id));
-        if let Some(nid) = node_id { map.insert("nodeId".to_string(), serde_json::json!(nid)); }
-        if let Some(nn) = node_name { map.insert("nodeName".to_string(), serde_json::json!(nn)); }
-        if let Some(r) = reason { map.insert("reason".to_string(), serde_json::json!(r)); }
-        if let Some(e) = error { map.insert("error".to_string(), serde_json::json!(e)); }
-        if let Some(d) = duration_ms { map.insert("durationMs".to_string(), serde_json::json!(d)); }
-        if let Some(wn) = workflow_name { map.insert("workflowName".to_string(), serde_json::json!(wn)); }
+        if let Some(nid) = node_id {
+            map.insert("nodeId".to_string(), serde_json::json!(nid));
+        }
+        if let Some(nn) = node_name {
+            map.insert("nodeName".to_string(), serde_json::json!(nn));
+        }
+        if let Some(r) = reason {
+            map.insert("reason".to_string(), serde_json::json!(r));
+        }
+        if let Some(e) = error {
+            map.insert("error".to_string(), serde_json::json!(e));
+        }
+        if let Some(d) = duration_ms {
+            map.insert("durationMs".to_string(), serde_json::json!(d));
+        }
+        if let Some(wn) = workflow_name {
+            map.insert("workflowName".to_string(), serde_json::json!(wn));
+        }
 
         let value = serde_json::Value::Object(map);
         let sender = self.run_channels.lock().await.get(run_id).cloned();
@@ -1715,10 +1815,9 @@ async fn write_log_file(log_dir: &str, filename: &str, line: &str) {
         .await
     {
         Ok(mut file) => {
-            let _ = tokio::io::AsyncWriteExt::write_all(
-                &mut file,
-                format!("{}\n", line).as_bytes(),
-            ).await;
+            let _ =
+                tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", line).as_bytes())
+                    .await;
         }
         Err(err) => {
             warn!(err = %err, path = ?path, "dag.log_file_open_failed");
@@ -1737,6 +1836,77 @@ pub async fn log_node_skip(log_dir: &str, run_id: &str, node_id: &str, reason: &
     });
     if let Ok(line) = serde_json::to_string(&entry) {
         let _ = write_log_file(log_dir, &format!("{}.skipped.log", run_id), &line).await;
+    }
+}
+
+/// Log a node start entry to the workflow JSONL log. Source: logger.ts:181-192.
+///
+/// Writes `{type:"node_start", workflow_id, step, content, ts}` to `{run_id}.jsonl`.
+pub async fn log_node_start(log_dir: &str, run_id: &str, node_id: &str, command_name: &str) {
+    let ts = Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "type": "node_start",
+        "workflow_id": run_id,
+        "step": node_id,
+        "content": command_name,
+        "ts": ts,
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.jsonl", run_id), &line).await;
+    }
+}
+
+/// Log a node completion entry to the workflow JSONL log. Source: logger.ts:195-209.
+///
+/// Writes `{type:"node_complete", workflow_id, step, content, [duration_ms], ts}` to `{run_id}.jsonl`.
+pub async fn log_node_complete(
+    log_dir: &str,
+    run_id: &str,
+    node_id: &str,
+    command_name: &str,
+    duration_ms: Option<u64>,
+) {
+    let ts = Utc::now().to_rfc3339();
+    let mut entry = serde_json::Map::new();
+    entry.insert(
+        "type".to_string(),
+        serde_json::Value::String("node_complete".to_string()),
+    );
+    entry.insert(
+        "workflow_id".to_string(),
+        serde_json::Value::String(run_id.to_string()),
+    );
+    entry.insert(
+        "step".to_string(),
+        serde_json::Value::String(node_id.to_string()),
+    );
+    entry.insert(
+        "content".to_string(),
+        serde_json::Value::String(command_name.to_string()),
+    );
+    if let Some(ms) = duration_ms {
+        entry.insert("duration_ms".to_string(), serde_json::json!(ms));
+    }
+    entry.insert("ts".to_string(), serde_json::Value::String(ts));
+    if let Ok(line) = serde_json::to_string(&serde_json::Value::Object(entry)) {
+        let _ = write_log_file(log_dir, &format!("{}.jsonl", run_id), &line).await;
+    }
+}
+
+/// Log a node error entry to the workflow JSONL log. Source: logger.ts:226-237.
+///
+/// Writes `{type:"node_error", workflow_id, step, error, ts}` to `{run_id}.jsonl`.
+pub async fn log_node_error(log_dir: &str, run_id: &str, node_id: &str, error: &str) {
+    let ts = Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "type": "node_error",
+        "workflow_id": run_id,
+        "step": node_id,
+        "error": error,
+        "ts": ts,
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.jsonl", run_id), &line).await;
     }
 }
 
@@ -1842,12 +2012,19 @@ async fn execute_node(
         har_workflow_schema::DagNode::Approval(_) => har_workflow_schema::NodeState::Completed,
         har_workflow_schema::DagNode::Cancel(cancel_node) => {
             // Emit the cancel message to platform and workflow_cancelled event.
-            let text = if cancel_node.cancel.is_empty() { "no reason provided" } else { &cancel_node.cancel };
+            let text = if cancel_node.cancel.is_empty() {
+                "no reason provided"
+            } else {
+                &cancel_node.cancel
+            };
             let reason_text = crate::substitute_node_output_refs(text, node_outputs, false, None);
             deps.emit_workflow_event(
-                workflow_run_id, "workflow_cancelled", node_id,
+                workflow_run_id,
+                "workflow_cancelled",
+                node_id,
                 serde_json::json!({"reason": reason_text}),
-            ).await;
+            )
+            .await;
             har_workflow_schema::NodeState::Completed
         }
         har_workflow_schema::DagNode::Script(_) => har_workflow_schema::NodeState::Completed,
@@ -1855,15 +2032,23 @@ async fn execute_node(
     };
 
     let output = match node_state {
-        har_workflow_schema::NodeState::Completed if matches!(node, har_workflow_schema::DagNode::Cancel(_)) => {
+        har_workflow_schema::NodeState::Completed
+            if matches!(node, har_workflow_schema::DagNode::Cancel(_)) =>
+        {
             let reason_str = get_cancel_reason(node);
             let reason = crate::substitute_node_output_refs(&reason_str, node_outputs, false, None);
             har_workflow_schema::NodeOutput::Completed {
-                output: reason, session_id: None, structured_output: None, declared_fields: None,
+                output: reason,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
             }
         }
         _ => har_workflow_schema::NodeOutput::Completed {
-            output: String::new(), session_id: None, structured_output: None, declared_fields: None,
+            output: String::new(),
+            session_id: None,
+            structured_output: None,
+            declared_fields: None,
         },
     };
 
@@ -1878,6 +2063,521 @@ fn get_cancel_reason(node: &har_workflow_schema::DagNode) -> String {
     }
 }
 
+// ─── D3 — Subprocess idiom (sub-cycle 4a) ─────────────────────────────────────
+
+/// Outcome of `run_subprocess`. Mirrors the error shape of Node's `execFile` exception.
+///
+/// Source idiom: dag-executor.ts:1580-1585. TS `execFileAsync` throws an error with
+/// `killed`, `code`, and `message` fields. We model each outcome as a distinct variant
+/// so callers can pattern-match the branch the TS code `if (isTimeout) … else if ENOENT …`.
+#[derive(Debug)]
+pub(crate) enum SubprocessOutcome {
+    /// Process exited 0. stdout/stderr captured.
+    Success { stdout: String, stderr: String },
+    /// `tokio::time::timeout` elapsed before the child finished. Child is killed by drop.
+    TimedOut,
+    /// Spawn failed (before the process started). `kind` carries ENOENT / EACCES / etc.
+    SpawnFailed { kind: std::io::ErrorKind },
+    /// Process exited non-zero (or wait_with_output returned an IO error).
+    Failed {
+        exit_code: Option<i32>,
+        #[allow(dead_code)]
+        stdout: String,
+        stderr: String,
+        // `msg` carries the OS-level wait error for the rare IO-error path; bash/script
+        // executors reconstruct Node's `Command failed: …` message themselves (F1).
+        #[allow(dead_code)]
+        msg: String,
+    },
+}
+
+/// D3 — Run a subprocess with a kill-on-drop timeout. Source: dag-executor.ts:1580-1585.
+///
+/// - Env precedence: `.env_clear()` → `std::env::vars()` (process env) → `env_overlay` last.
+///   Matches TS `{ ...process.env, ...envVars }` — overlay wins.
+/// - `kill_on_drop(true)`: if `run_subprocess` is cancelled or drops early (timeout case),
+///   the child is killed automatically (no orphan processes).
+/// - On timeout → `SubprocessOutcome::TimedOut` (TS: `err.killed === true || 'timed out'`).
+/// - On ENOENT/EACCES spawn failure → `SubprocessOutcome::SpawnFailed { kind }`.
+/// - On non-zero exit → `SubprocessOutcome::Failed`.
+pub(crate) async fn run_subprocess(
+    cmd: &str,
+    args: &[&str],
+    cwd: &str,
+    timeout_ms: u64,
+    env_overlay: &HashMap<String, String>,
+) -> SubprocessOutcome {
+    let mut command = tokio::process::Command::new(cmd);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        // Env: start clean, restore host process env, then let overlay win last.
+        // Source: TS `{ ...process.env, ...envVars }` (dag-executor.ts:1564-1578).
+        .env_clear()
+        .envs(std::env::vars())
+        .envs(env_overlay.iter());
+
+    let child = match command.spawn() {
+        Ok(c) => c,
+        Err(err) => {
+            return SubprocessOutcome::SpawnFailed { kind: err.kind() };
+        }
+    };
+
+    let timeout_dur = std::time::Duration::from_millis(timeout_ms);
+    match tokio::time::timeout(timeout_dur, child.wait_with_output()).await {
+        Err(_elapsed) => {
+            // Timeout: child is killed by kill_on_drop when we reassign/drop `child`.
+            // Source TS: `err.killed === true` / message contains 'timed out'.
+            SubprocessOutcome::TimedOut
+        }
+        Ok(Err(io_err)) => SubprocessOutcome::Failed {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            msg: io_err.to_string(),
+        },
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            if output.status.success() {
+                SubprocessOutcome::Success { stdout, stderr }
+            } else {
+                let exit_code = output.status.code();
+                let msg = if !stderr.trim().is_empty() {
+                    stderr.trim().to_string()
+                } else {
+                    format!("exited with code {:?}", exit_code)
+                };
+                SubprocessOutcome::Failed {
+                    exit_code,
+                    stdout,
+                    stderr,
+                    msg,
+                }
+            }
+        }
+    }
+}
+
+// ─── B1 — execute_bash_node (sub-cycle 4a) ────────────────────────────────────
+
+/// Execute a bash DAG node. Source: dag-executor.ts:1504-1676.
+///
+/// All 11 env-overlay keys are set (ARTIFACTS_DIR, LOG_DIR, BASE_BRANCH, USER_MESSAGE,
+/// ARGUMENTS, LOOP_USER_INPUT, LOOP_PREV_OUTPUT, REJECTION_REASON, CONTEXT,
+/// EXTERNAL_CONTEXT, ISSUE_CONTEXT) with `env_vars` overlay winning last.
+///
+/// stdout trailing-`\n` strip: exactly ONE newline via `strip_suffix('\n')`, NOT
+/// `trim_end()` (would eat all trailing whitespace). `- [≠]≠3` only if unavoidable.
+///
+/// Error ladder (source: 1627-1675):
+///   1. timeout (`TimedOut`) → `"Bash node '...' timed out after {timeout_ms}ms"`
+///   2. ENOENT (`SpawnFailed{NotFound}`) → `"… failed: bash executable not found in PATH"`
+///   3. EACCES (`SpawnFailed{PermissionDenied}`) → `"… failed: permission denied (check cwd permissions)"`
+///   4. other → `format_subprocess_failure().user_message`
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_bash_node(
+    deps: &WorkflowDeps,
+    platform: &dyn WorkflowPlatform,
+    conversation_id: &str,
+    cwd: &str,
+    workflow_run: &har_workflow_schema::WorkflowRun,
+    node: &har_workflow_schema::BashNode,
+    artifacts_dir: &str,
+    log_dir: &str,
+    base_branch: &str,
+    docs_dir: &str,
+    node_outputs: &HashMap<String, NodeOutput>,
+    issue_context: Option<&str>,
+    env_vars: Option<&HashMap<String, String>>,
+) -> NodeOutput {
+    let node_start_time = std::time::Instant::now();
+    let node_id = &node.base.id;
+    let node_context = SendMessageContext {
+        workflow_id: Some(workflow_run.id.clone()),
+        node_name: Some(node_id.clone()),
+    };
+
+    // — log_started + store event + emitter — source: 1522-1545
+    info!(node_id = %node_id, r#type = "bash", "dag_node_started");
+    let _ = log_node_start(log_dir, &workflow_run.id, node_id, "<bash>").await;
+
+    deps.emit_workflow_event(
+        &workflow_run.id,
+        "node_started",
+        node_id,
+        serde_json::json!({"type": "bash"}),
+    )
+    .await;
+
+    get_workflow_event_emitter()
+        .emit(
+            "node_started",
+            &workflow_run.id,
+            Some(node_id),
+            Some(node_id),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    // — variable substitution — source: 1547-1561
+    // substituteWorkflowVariables with shellSafe:true (user-controlled vars not inlined).
+    let substituted_script = match substitute_workflow_variables(
+        &node.bash,
+        &workflow_run.id,
+        &workflow_run.user_message,
+        artifacts_dir,
+        base_branch,
+        docs_dir,
+        issue_context,
+        None, // loop_user_input — empty string here (not a loop context)
+        None, // rejection_reason — empty string here
+        None, // loop_prev_output — empty string here
+        true, // shell_safe: true
+    ) {
+        Ok(sr) => sr.prompt,
+        Err(_base_branch_err) => {
+            // BASE_BRANCH empty but referenced — treat as a node failure.
+            let error_msg = format!(
+                "Bash node '{}' failed: $BASE_BRANCH is referenced but no base branch is set",
+                node_id
+            );
+            error!(node_id = %node_id, "dag_node_failed_base_branch_empty");
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "bash"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            return NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            };
+        }
+    };
+
+    // substituteNodeOutputRefs with escaped_for_bash=true, log_dir for file offload.
+    // Source: 1561.
+    let final_script =
+        substitute_node_output_refs(&substituted_script, node_outputs, true, Some(log_dir));
+
+    // — timeout — source: 1563
+    let timeout_ms = node
+        .timeout
+        .map(|t| t as u64)
+        .unwrap_or(SUBPROCESS_DEFAULT_TIMEOUT);
+
+    // — env overlay — source: 1564-1578 (11 fixed keys + envVars wins last)
+    let mut subprocess_env: HashMap<String, String> = HashMap::new();
+    subprocess_env.insert("ARTIFACTS_DIR".to_string(), artifacts_dir.to_string());
+    subprocess_env.insert("LOG_DIR".to_string(), log_dir.to_string());
+    subprocess_env.insert("BASE_BRANCH".to_string(), base_branch.to_string());
+    subprocess_env.insert(
+        "USER_MESSAGE".to_string(),
+        workflow_run.user_message.clone(),
+    );
+    subprocess_env.insert("ARGUMENTS".to_string(), workflow_run.user_message.clone());
+    // Empty-string env vars — LOOP_* and REJECTION_REASON are only populated in loop/approval contexts.
+    subprocess_env.insert("LOOP_USER_INPUT".to_string(), String::new());
+    subprocess_env.insert("LOOP_PREV_OUTPUT".to_string(), String::new());
+    subprocess_env.insert("REJECTION_REASON".to_string(), String::new());
+    // Issue context: substitute empty string when absent. Source: `issueContext ?? ''`.
+    subprocess_env.insert(
+        "CONTEXT".to_string(),
+        issue_context.unwrap_or("").to_string(),
+    );
+    subprocess_env.insert(
+        "EXTERNAL_CONTEXT".to_string(),
+        issue_context.unwrap_or("").to_string(),
+    );
+    subprocess_env.insert(
+        "ISSUE_CONTEXT".to_string(),
+        issue_context.unwrap_or("").to_string(),
+    );
+    // envVars overlay wins last. Source: `...(envVars ?? {})`.
+    if let Some(extra) = env_vars {
+        for (k, v) in extra {
+            subprocess_env.insert(k.clone(), v.clone());
+        }
+    }
+
+    // — subprocess via D3 — source: 1580-1585
+    match run_subprocess(
+        "bash",
+        &["-c", &final_script],
+        cwd,
+        timeout_ms,
+        &subprocess_env,
+    )
+    .await
+    {
+        SubprocessOutcome::Success { stdout, stderr } => {
+            // Trim ONLY a single trailing newline. Source: `/\n$/` (1588).
+            // MUST use strip_suffix('\n'), NOT trim_end() — trim_end() eats ALL trailing whitespace.
+            let output = match stdout.strip_suffix('\n') {
+                Some(s) => s.to_string(),
+                None => stdout,
+            };
+
+            // stderr → warn + safeSendMessage. Source: 1590-1598.
+            if !stderr.trim().is_empty() {
+                warn!(node_id = %node_id, stderr = %stderr.trim(), "bash_node_stderr");
+                let msg = format!(
+                    "Bash node '{}' stderr:\n```\n{}\n```",
+                    node_id,
+                    stderr.trim()
+                );
+                // Upcast to &dyn MessagePlatform — valid since Rust 1.86+ (trait object upcasting).
+                let _ = safe_send_message(
+                    platform as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &msg,
+                    Some(&node_context),
+                    None,
+                    None,
+                )
+                .await;
+            }
+
+            let duration_ms = node_start_time.elapsed().as_millis() as u64;
+            info!(node_id = %node_id, duration_ms, "dag_node_completed");
+            let _ = log_node_complete(
+                log_dir,
+                &workflow_run.id,
+                node_id,
+                "<bash>",
+                Some(duration_ms),
+            )
+            .await;
+
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_completed",
+                node_id,
+                serde_json::json!({
+                    "duration_ms": duration_ms,
+                    "type": "bash",
+                    "node_output": output,
+                }),
+            )
+            .await;
+
+            get_workflow_event_emitter()
+                .emit(
+                    "node_completed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    None,
+                    Some(duration_ms),
+                    None,
+                )
+                .await;
+
+            NodeOutput::Completed {
+                output,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+
+        SubprocessOutcome::TimedOut => {
+            // Source: 1636-1638. `isTimeout = err.killed === true || message.includes('timed out')`.
+            let label = format!("Bash node '{}'", node_id);
+            let error_msg = format!("{} timed out after {}ms", label, timeout_ms);
+            let formatted = format_subprocess_failure(
+                &RawSubprocessError {
+                    message: Some(error_msg.clone()),
+                    killed: Some(true),
+                    ..Default::default()
+                },
+                &label,
+            );
+            error!(
+                node_id = %node_id, node_type = "bash", is_timeout = true,
+                exit_code = ?formatted.log_fields.exit_code,
+                killed = formatted.log_fields.killed,
+                stderr_tail = ?formatted.log_fields.stderr_tail,
+                "dag_node_failed"
+            );
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "bash"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+
+        SubprocessOutcome::SpawnFailed { kind } => {
+            // Source: 1639-1644. ENOENT / EACCES branches.
+            let label = format!("Bash node '{}'", node_id);
+            let error_msg = match kind {
+                std::io::ErrorKind::NotFound => {
+                    format!("{} failed: bash executable not found in PATH", label)
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    format!(
+                        "{} failed: permission denied (check cwd permissions)",
+                        label
+                    )
+                }
+                _ => format!("{} failed: spawn error ({:?})", label, kind),
+            };
+            let formatted = format_subprocess_failure(
+                &RawSubprocessError {
+                    message: Some(error_msg.clone()),
+                    ..Default::default()
+                },
+                &label,
+            );
+            error!(
+                node_id = %node_id, node_type = "bash", is_timeout = false,
+                exit_code = ?formatted.log_fields.exit_code,
+                killed = formatted.log_fields.killed,
+                stderr_tail = ?formatted.log_fields.stderr_tail,
+                "dag_node_failed"
+            );
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "bash"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+
+        SubprocessOutcome::Failed {
+            exit_code,
+            stderr,
+            stdout: _,
+            msg: _,
+        } => {
+            // Source: 1643-1644. `else { errorMsg = formatted.userMessage }`.
+            //
+            // F1 fix: feed `message` in Node's real ExecFileException shape —
+            // `Command failed: bash -c <body>` (dag-executor.ts catch passes the actual
+            // Node `err.message`). `format_subprocess_failure` strips the `Command failed:`
+            // prefix; the diagnostic then comes from `stderr` when present, else (empty body
+            // + empty stderr + prefix-present) maps to the literal `"no diagnostic output"`
+            // — exact parity with TS, and NO `Debug`/`Some(N)` leak from the synthesized
+            // `"exited with code {:?}"` string (which never had the prefix). Exit code is
+            // carried via the `code` field → ` [exit N]` suffix (bare digits). The captured
+            // stderr is threaded so the non-empty-stderr branch still yields the stderr text.
+            let label = format!("Bash node '{}'", node_id);
+            let raw_err = RawSubprocessError {
+                message: Some(format!("Command failed: bash -c {}", final_script)),
+                stderr: Some(stderr.clone()),
+                code: exit_code.map(|c| c.to_string()),
+                killed: Some(false),
+                ..Default::default()
+            };
+            let formatted = format_subprocess_failure(&raw_err, &label);
+            let error_msg = formatted.user_message.clone();
+            error!(
+                node_id = %node_id, node_type = "bash", is_timeout = false,
+                exit_code = ?formatted.log_fields.exit_code,
+                killed = formatted.log_fields.killed,
+                stderr_tail = ?formatted.log_fields.stderr_tail,
+                "dag_node_failed"
+            );
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "bash"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+    }
+}
+
 // ─── execute_dag_workflow — the ~960-line DAG orchestrator ───────────────
 
 /// Execute a DAG workflow from topological layers through to completion or failure.
@@ -1888,11 +2588,12 @@ fn get_cancel_reason(node: &har_workflow_schema::DagNode) -> String {
 pub async fn execute_dag_workflow(
     deps: WorkflowDeps,
     workflow_name: &str,
-    _conversation_id: &str,
+    conversation_id: &str,
     workflow_run: &har_workflow_schema::WorkflowRun,
+    platform: Arc<dyn WorkflowPlatform>,
     workflow_provider: &str,
     _workflow_model: Option<&str>,
-    _config_env_vars: &std::collections::HashMap<String, String>,
+    config_env_vars: &std::collections::HashMap<String, String>,
     _config_assistants: &std::collections::HashMap<String, serde_json::Value>,
     _node_system_prompt: Option<&str>,
     _node_max_budget_usd: Option<f64>,
@@ -1901,23 +2602,40 @@ pub async fn execute_dag_workflow(
     _ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
     _workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
     workflow_nodes: Vec<har_workflow_schema::DagNode>,
+    cwd: &str,
     artifacts_dir: &str,
     log_dir: &str,
     _persist_sessions: bool,
+    base_branch: &str,
+    docs_dir: &str,
     prior_completed_nodes: &HashMap<String, String>,
+    issue_context: Option<&str>,
 ) -> Option<String> {
     let dag_start_time = Utc::now().timestamp_millis();
     let layers = crate::build_topological_layers(&workflow_nodes);
-    let mut node_outputs: std::collections::HashMap<String, har_workflow_schema::NodeOutput> = HashMap::new();
+    let mut node_outputs: std::collections::HashMap<String, har_workflow_schema::NodeOutput> =
+        HashMap::new();
 
     // Emit workflow_started event.
     deps.emit_workflow_event(
-        &workflow_run.id, "workflow_started", workflow_name,
+        &workflow_run.id,
+        "workflow_started",
+        workflow_name,
         serde_json::json!({}),
-    ).await;
+    )
+    .await;
 
     get_workflow_event_emitter()
-        .emit("workflow_started", &workflow_run.id, None, Some(workflow_name), None, None, None, Some(workflow_name))
+        .emit(
+            "workflow_started",
+            &workflow_run.id,
+            None,
+            Some(workflow_name),
+            None,
+            None,
+            None,
+            Some(workflow_name),
+        )
         .await;
 
     // ─── Resume path: pre-populate nodeOutputs ──────────────────────────
@@ -1934,19 +2652,33 @@ pub async fn execute_dag_workflow(
             if always_run_ids.contains(nid.as_str()) {
                 info!(node_id = nid, "dag.node_always_run_resume_forced");
                 deps.emit_workflow_event(
-                    &workflow_run.id, "node_always_run_reset", nid,
+                    &workflow_run.id,
+                    "node_always_run_reset",
+                    nid,
                     serde_json::json!({"prior_output": output}),
-                ).await;
-                get_workflow_event_emitter().emit(
-                    "node_always_run_reset", &workflow_run.id, Some(nid), None, None, None, None, Some(workflow_name),
-                ).await;
+                )
+                .await;
+                get_workflow_event_emitter()
+                    .emit(
+                        "node_always_run_reset",
+                        &workflow_run.id,
+                        Some(nid),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(workflow_name),
+                    )
+                    .await;
                 continue;
             }
             node_outputs.insert(
                 nid.clone(),
                 har_workflow_schema::NodeOutput::Completed {
-                    output: output.clone(), session_id: None,
-                    structured_output: None, declared_fields: None,
+                    output: output.clone(),
+                    session_id: None,
+                    structured_output: None,
+                    declared_fields: None,
                 },
             );
             prepopulated_count += 1;
@@ -1964,10 +2696,14 @@ pub async fn execute_dag_workflow(
     // persist_scope_key: used in sub-cycle 4 (session persistence). Pre-computed here per TS source line 2847.
     let _persist_scope_key: Option<String> = if !workflow_run.conversation_id.is_empty() {
         Some(workflow_run.conversation_id.clone())
-    } else { None };
+    } else {
+        None
+    };
 
     info!(
-        workflow_name, node_count = workflow_nodes.len(), layer_count = layers.len(),
+        workflow_name,
+        node_count = workflow_nodes.len(),
+        layer_count = layers.len(),
         "dag_workflow_starting"
     );
 
@@ -1987,6 +2723,12 @@ pub async fn execute_dag_workflow(
 
         // Execute all nodes in the layer concurrently.
         let mut handles: Vec<_> = Vec::with_capacity(layer.len());
+
+        // D2: snapshot node_outputs from all previous layers so each spawned task
+        // can do node-output-ref substitution referencing upstream results.
+        // Source: TS executors receive `nodeOutputs` which is the accumulated map.
+        let node_outputs_snapshot: HashMap<String, NodeOutput> = node_outputs.clone();
+
         for node in layer {
             let deps_clone = deps.clone();
             let nid = node.id().to_string();
@@ -1994,11 +2736,23 @@ pub async fn execute_dag_workflow(
             let workflow_run_id = workflow_run.id.clone();
             let wf_name_owned = workflow_name.to_string();
             let log_dir_owned = log_dir.to_string();
-            // artifacts_dir_owned: passed to execute_node_internal in sub-cycle 4. Pre-cloned here.
-            let _artifacts_dir_owned = artifacts_dir.to_string();
+            // D2: un-prefix _artifacts_dir_owned (bash + cancel need it).
+            let artifacts_dir_owned = artifacts_dir.to_string();
             // Clone node and prior_completed_nodes for ownership by spawned task.
             let node_owned = node.clone();
             let prior_clone: HashMap<String, String> = prior_completed_nodes.clone();
+
+            // D2: additional owned captures for bash + cancel dispatch (sub-cycle 4a).
+            // Later sub-cycles (4b-4f) will consume the same captured values.
+            let cwd_owned = cwd.to_string();
+            let base_branch_owned = base_branch.to_string();
+            let docs_dir_owned = docs_dir.to_string();
+            let issue_context_owned: Option<String> = issue_context.map(|s| s.to_string());
+            let config_env_vars_owned: HashMap<String, String> = config_env_vars.clone();
+            let platform_clone: Arc<dyn WorkflowPlatform> = platform.clone();
+            let conversation_id_owned = conversation_id.to_string();
+            let workflow_run_owned: har_workflow_schema::WorkflowRun = workflow_run.clone();
+            let node_outputs_task = node_outputs_snapshot.clone();
 
             let handle = tokio::spawn(async move {
                 use har_workflow_schema::NodeOutput;
@@ -2007,59 +2761,111 @@ pub async fn execute_dag_workflow(
                 if let Some(prior_output) = prior_clone.get(&nid) {
                     if node_owned.base().always_run == Some(true) {
                         info!(node_id = nid, "dag.node_always_run_resume_forced");
-                        deps_clone.emit_workflow_event(
-                            &workflow_run_id, "node_always_run_reset", &nid,
-                            serde_json::json!({"prior_output": prior_output}),
-                        ).await;
+                        deps_clone
+                            .emit_workflow_event(
+                                &workflow_run_id,
+                                "node_always_run_reset",
+                                &nid,
+                                serde_json::json!({"prior_output": prior_output}),
+                            )
+                            .await;
                     } else {
                         info!(node_id = nid, "dag.node_skipped_prior_success");
-                        let _ = log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "prior_success").await;
+                        let _ =
+                            log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "prior_success")
+                                .await;
                         deps_clone.emit_workflow_event(
                             &workflow_run_id, "node_skipped", &nid,
                             serde_json::json!({"reason": "prior_success", "node_output": prior_output}),
                         ).await;
-                        get_workflow_event_emitter().emit(
-                            "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("prior_success"), None, None, Some(&wf_name_owned),
-                        ).await;
+                        get_workflow_event_emitter()
+                            .emit(
+                                "node_skipped",
+                                &workflow_run_id,
+                                Some(&nid),
+                                Some(&nname),
+                                Some("prior_success"),
+                                None,
+                                None,
+                                Some(&wf_name_owned),
+                            )
+                            .await;
                         // Build a dummy node_outputs map containing the prior entry.
                         let mut skip_outputs = HashMap::new();
-                        skip_outputs.insert(nid.clone(), NodeOutput::Completed {
-                            output: prior_output.clone(), session_id: None,
-                            structured_output: None, declared_fields: None,
-                        });
-                        return (nid.clone(), skip_outputs.get(&nid).cloned().unwrap_or_else(|| {
-                            NodeOutput::Skipped { output: String::new() }
-                        }));
+                        skip_outputs.insert(
+                            nid.clone(),
+                            NodeOutput::Completed {
+                                output: prior_output.clone(),
+                                session_id: None,
+                                structured_output: None,
+                                declared_fields: None,
+                            },
+                        );
+                        return (
+                            nid.clone(),
+                            skip_outputs.get(&nid).cloned().unwrap_or_else(|| {
+                                NodeOutput::Skipped {
+                                    output: String::new(),
+                                }
+                            }),
+                        );
                     }
                 }
 
                 // Build a minimal node_outputs for trigger/condition evaluation.
                 let mut eval_outputs = HashMap::new();
                 if let Some(po) = prior_clone.get(&nid) {
-                    eval_outputs.insert(nid.clone(), NodeOutput::Completed {
-                        output: po.clone(), session_id: None,
-                        structured_output: None, declared_fields: None,
-                    });
+                    eval_outputs.insert(
+                        nid.clone(),
+                        NodeOutput::Completed {
+                            output: po.clone(),
+                            session_id: None,
+                            structured_output: None,
+                            declared_fields: None,
+                        },
+                    );
                 }
 
                 // 1. Evaluate trigger rule.
                 let trigger_result = crate::check_trigger_rule(&node_owned, &eval_outputs);
                 if trigger_result == TriggerResult::Skip {
                     info!(node_id = nid, reason = "trigger_rule", "dag_node_skipped");
-                    let _ = log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "trigger_rule").await;
-                    deps_clone.emit_workflow_event(
-                        &workflow_run_id, "node_skipped", &nid,
-                        serde_json::json!({"reason": "trigger_rule"}),
-                    ).await;
-                    get_workflow_event_emitter().emit(
-                        "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("trigger_rule"), None, None, Some(&wf_name_owned),
-                    ).await;
-                    return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                    let _ =
+                        log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "trigger_rule").await;
+                    deps_clone
+                        .emit_workflow_event(
+                            &workflow_run_id,
+                            "node_skipped",
+                            &nid,
+                            serde_json::json!({"reason": "trigger_rule"}),
+                        )
+                        .await;
+                    get_workflow_event_emitter()
+                        .emit(
+                            "node_skipped",
+                            &workflow_run_id,
+                            Some(&nid),
+                            Some(&nname),
+                            Some("trigger_rule"),
+                            None,
+                            None,
+                            Some(&wf_name_owned),
+                        )
+                        .await;
+                    return (
+                        nid.clone(),
+                        NodeOutput::Skipped {
+                            output: String::new(),
+                        },
+                    );
                 }
 
                 // 2. Evaluate when: condition.
                 if let Some(ref when_expr) = node_owned.base().when {
-                    let result = match condition_evaluator::evaluate_condition(when_expr, &eval_outputs) {
+                    let result = match condition_evaluator::evaluate_condition(
+                        when_expr,
+                        &eval_outputs,
+                    ) {
                         Ok(r) => r,
                         Err(err) => {
                             info!(node_id = nid, err = %err, "dag_node_skipped_condition_parse_error");
@@ -2067,10 +2873,24 @@ pub async fn execute_dag_workflow(
                                 &workflow_run_id, "node_skipped", &nid,
                                 serde_json::json!({"reason": "when_condition_parse_error", "expr": when_expr}),
                             ).await;
-                            get_workflow_event_emitter().emit(
-                                "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("when_condition_parse_error"), None, None, Some(&wf_name_owned),
-                            ).await;
-                            return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                            get_workflow_event_emitter()
+                                .emit(
+                                    "node_skipped",
+                                    &workflow_run_id,
+                                    Some(&nid),
+                                    Some(&nname),
+                                    Some("when_condition_parse_error"),
+                                    None,
+                                    None,
+                                    Some(&wf_name_owned),
+                                )
+                                .await;
+                            return (
+                                nid.clone(),
+                                NodeOutput::Skipped {
+                                    output: String::new(),
+                                },
+                            );
                         }
                     };
                     if !result.parsed {
@@ -2078,32 +2898,182 @@ pub async fn execute_dag_workflow(
                             &workflow_run_id, "node_skipped", &nid,
                             serde_json::json!({"reason": "when_condition_parse_error", "expr": when_expr}),
                         ).await;
-                        get_workflow_event_emitter().emit(
-                            "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("when_condition_parse_error"), None, None, Some(&wf_name_owned),
-                        ).await;
-                        return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                        get_workflow_event_emitter()
+                            .emit(
+                                "node_skipped",
+                                &workflow_run_id,
+                                Some(&nid),
+                                Some(&nname),
+                                Some("when_condition_parse_error"),
+                                None,
+                                None,
+                                Some(&wf_name_owned),
+                            )
+                            .await;
+                        return (
+                            nid.clone(),
+                            NodeOutput::Skipped {
+                                output: String::new(),
+                            },
+                        );
                     }
                     if !result.result {
-                        info!(node_id = nid, when = when_expr, "dag_node_skipped_condition");
-                        let _ = log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "when_condition").await;
-                        deps_clone.emit_workflow_event(
-                            &workflow_run_id, "node_skipped", &nid,
-                            serde_json::json!({"reason": "when_condition", "expr": when_expr}),
-                        ).await;
-                        get_workflow_event_emitter().emit(
-                            "node_skipped", &workflow_run_id, Some(&nid), Some(&nname), Some("when_condition"), None, None, Some(&wf_name_owned),
-                        ).await;
-                        return (nid.clone(), NodeOutput::Skipped { output: String::new() });
+                        info!(
+                            node_id = nid,
+                            when = when_expr,
+                            "dag_node_skipped_condition"
+                        );
+                        let _ =
+                            log_node_skip(&log_dir_owned, &workflow_run_id, &nid, "when_condition")
+                                .await;
+                        deps_clone
+                            .emit_workflow_event(
+                                &workflow_run_id,
+                                "node_skipped",
+                                &nid,
+                                serde_json::json!({"reason": "when_condition", "expr": when_expr}),
+                            )
+                            .await;
+                        get_workflow_event_emitter()
+                            .emit(
+                                "node_skipped",
+                                &workflow_run_id,
+                                Some(&nid),
+                                Some(&nname),
+                                Some("when_condition"),
+                                None,
+                                None,
+                                Some(&wf_name_owned),
+                            )
+                            .await;
+                        return (
+                            nid.clone(),
+                            NodeOutput::Skipped {
+                                output: String::new(),
+                            },
+                        );
                     }
                 }
 
-                // 3. Node dispatch by type.
-                eval_outputs.insert(nid.clone(), NodeOutput::Skipped { output: String::new() }); // placeholder for execute_node
-                let _ = wf_name_owned; // suppress unused warning temporarily
-                (nid.clone(), NodeOutput::Completed {
-                    output: String::new(), session_id: None,
-                    structured_output: None, declared_fields: None,
-                })
+                // 3. Node dispatch by type (sub-cycle 4a: Bash + Cancel live; others honest Skipped).
+                // Merge prior_clone + layer snapshot into a single node_outputs view for this node.
+                // This mirrors TS: executors receive `nodeOutputs` which is all prior results.
+                let mut all_outputs = node_outputs_task.clone();
+                for (k, v) in &eval_outputs {
+                    all_outputs.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+
+                match &node_owned {
+                    // B1 — Bash node: full subprocess execution. Source: dag-executor.ts:3069-3091.
+                    har_workflow_schema::DagNode::Bash(bash_node) => {
+                        let output = execute_bash_node(
+                            &deps_clone,
+                            platform_clone.as_ref() as &dyn WorkflowPlatform,
+                            &conversation_id_owned,
+                            &cwd_owned,
+                            &workflow_run_owned,
+                            bash_node,
+                            &artifacts_dir_owned,
+                            &log_dir_owned,
+                            &base_branch_owned,
+                            &docs_dir_owned,
+                            &all_outputs,
+                            issue_context_owned.as_deref(),
+                            if config_env_vars_owned.is_empty() {
+                                None
+                            } else {
+                                Some(&config_env_vars_owned)
+                            },
+                        )
+                        .await;
+                        (nid.clone(), output)
+                    }
+
+                    // B7 — Cancel node: substitute reason, send message, emit events, cancel run.
+                    // Source: dag-executor.ts:3113-3142. No subprocess, no AI — fold here as "freebie".
+                    har_workflow_schema::DagNode::Cancel(cancel_node) => {
+                        let reason = substitute_node_output_refs(
+                            &cancel_node.cancel,
+                            &all_outputs,
+                            false,
+                            None,
+                        );
+                        let cancel_msg = format!(
+                            "\u{274c} **Workflow cancelled** (node `{}`): {}",
+                            nid, reason
+                        );
+                        let _ = safe_send_message(
+                            platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                            &conversation_id_owned,
+                            &cancel_msg,
+                            Some(&SendMessageContext {
+                                workflow_id: Some(workflow_run_id.clone()),
+                                node_name: Some(nid.clone()),
+                            }),
+                            None,
+                            None,
+                        )
+                        .await;
+                        deps_clone
+                            .emit_workflow_event(
+                                &workflow_run_id,
+                                "workflow_cancelled",
+                                &nid,
+                                serde_json::json!({"reason": reason}),
+                            )
+                            .await;
+                        // cancelWorkflowRun — store op. Source: 3133.
+                        let _ = deps_clone.store.cancel_workflow_run(&workflow_run_id).await;
+                        // F2 fix: TS WorkflowCancelledEvent shape is {type, runId, nodeId, reason}.
+                        // Source: dag-executor.ts:3134-3139. reason in the `reason` (5th) slot;
+                        // NO error, NO workflow_name (those keys are absent in the TS event).
+                        get_workflow_event_emitter()
+                            .emit(
+                                "workflow_cancelled",
+                                &workflow_run_id,
+                                Some(&nid),
+                                None,
+                                Some(&reason),
+                                None,
+                                None,
+                                None,
+                            )
+                            .await;
+                        // Return Completed — between-layer status check sees 'cancelled' and breaks.
+                        (
+                            nid.clone(),
+                            NodeOutput::Completed {
+                                output: reason,
+                                session_id: None,
+                                structured_output: None,
+                                declared_fields: None,
+                            },
+                        )
+                    }
+
+                    // All other node types (Prompt/Command/Script/Loop/Approval) are NOT ported
+                    // in sub-cycle 4a. They land in 4b-4f. This Skipped arm is an HONEST
+                    // placeholder — not a silent downgrade. The ledger row for each stays `- [~]`
+                    // until its sub-cycle is complete and parity-verified.
+                    _ => {
+                        let _ = wf_name_owned; // suppress unused warning until 4b-4f
+                        let _ = base_branch_owned;
+                        let _ = docs_dir_owned;
+                        let _ = issue_context_owned;
+                        let _ = config_env_vars_owned;
+                        let _ = platform_clone;
+                        let _ = conversation_id_owned;
+                        let _ = workflow_run_owned;
+                        let _ = cwd_owned;
+                        let _ = artifacts_dir_owned;
+                        (
+                            nid.clone(),
+                            NodeOutput::Skipped {
+                                output: String::new(),
+                            },
+                        )
+                    }
+                }
             });
 
             handles.push(handle);
@@ -2120,14 +3090,32 @@ pub async fn execute_dag_workflow(
                     node_outputs.insert(output_nid.clone(), output);
 
                     // Write node artifact for completed nodes with declared output_type.
-                    if let Some(output_type) = workflow_nodes.iter().find(|n| n.id() == output_nid).and_then(|n| n.base().output_type.clone()) {
-                        let _ = write_node_artifact(artifacts_dir, &output_nid, &output_type, &workflow_run.id, &Utc::now().to_rfc3339(), None, "").await;
+                    if let Some(output_type) = workflow_nodes
+                        .iter()
+                        .find(|n| n.id() == output_nid)
+                        .and_then(|n| n.base().output_type.clone())
+                    {
+                        let _ = write_node_artifact(
+                            artifacts_dir,
+                            &output_nid,
+                            &output_type,
+                            &workflow_run.id,
+                            &Utc::now().to_rfc3339(),
+                            None,
+                            "",
+                        )
+                        .await;
                     }
 
                     // Session threading for sequential layers.
                     if !is_parallel_layer {
-                        if let har_workflow_schema::NodeOutput::Completed { session_id: Some(sid), .. } = node_outputs.get(&output_nid).cloned().unwrap_or_else(|| {
-                            har_workflow_schema::NodeOutput::Skipped { output: String::new() }
+                        if let har_workflow_schema::NodeOutput::Completed {
+                            session_id: Some(sid),
+                            ..
+                        } = node_outputs.get(&output_nid).cloned().unwrap_or_else(|| {
+                            har_workflow_schema::NodeOutput::Skipped {
+                                output: String::new(),
+                            }
                         }) {
                             last_sequential_session_id = Some(sid);
                         }
@@ -2141,7 +3129,11 @@ pub async fn execute_dag_workflow(
         }
 
         if layer_had_failure {
-            warn!(layer_idx, node_count = layer.len(), "dag_layer_had_failures");
+            warn!(
+                layer_idx,
+                node_count = layer.len(),
+                "dag_layer_had_failures"
+            );
         }
 
         // ─── Between-layer status check ────────────────────────────────
@@ -2155,19 +3147,45 @@ pub async fn execute_dag_workflow(
                     har_workflow_schema::WorkflowRunStatus::Paused => "paused",
                     _ => "unknown",
                 };
-                info!(workflow_run_id = workflow_run.id, layer_idx, total_layers = layers.len(), status = status_str, "dag.stop_detected_between_layers");
+                info!(
+                    workflow_run_id = workflow_run.id,
+                    layer_idx,
+                    total_layers = layers.len(),
+                    status = status_str,
+                    "dag.stop_detected_between_layers"
+                );
                 if status != har_workflow_schema::WorkflowRunStatus::Paused {
-                    let msg = format!("⚠️ **Workflow stopped** ({:?}): DAG execution stopped after layer {}/{}", status, layer_idx + 1, layers.len());
-                    deps.emit_message_event(&workflow_run.id, "layer_stop", msg).await;
-                    get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+                    let msg = format!(
+                        "⚠️ **Workflow stopped** ({:?}): DAG execution stopped after layer {}/{}",
+                        status,
+                        layer_idx + 1,
+                        layers.len()
+                    );
+                    deps.emit_message_event(&workflow_run.id, "layer_stop", msg)
+                        .await;
+                    get_workflow_event_emitter()
+                        .unregister_run(&workflow_run.id)
+                        .await;
                 }
                 return None;
             }
             Ok(None) => {
-                info!(workflow_run_id = workflow_run.id, layer_idx, total_layers = layers.len(), "dag.stop_detected_between_layers");
-                let msg = format!("⚠️ **Workflow stopped** (deleted): DAG execution stopped after layer {}/{}", layer_idx + 1, layers.len());
-                deps.emit_message_event(&workflow_run.id, "layer_stop", msg).await;
-                get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+                info!(
+                    workflow_run_id = workflow_run.id,
+                    layer_idx,
+                    total_layers = layers.len(),
+                    "dag.stop_detected_between_layers"
+                );
+                let msg = format!(
+                    "⚠️ **Workflow stopped** (deleted): DAG execution stopped after layer {}/{}",
+                    layer_idx + 1,
+                    layers.len()
+                );
+                deps.emit_message_event(&workflow_run.id, "layer_stop", msg)
+                    .await;
+                get_workflow_event_emitter()
+                    .unregister_run(&workflow_run.id)
+                    .await;
                 return None;
             }
             _ => {} // Still running or error — continue.
@@ -2176,10 +3194,17 @@ pub async fn execute_dag_workflow(
 
     // ─── Completion logic ─────────────────────────────────────────────
 
-    async fn skip_if_status_changed(store: &dyn WorkflowStore, workflow_run_id: &str, event_emitter: &WorkflowEventEmitter) -> bool {
+    async fn skip_if_status_changed(
+        store: &dyn WorkflowStore,
+        workflow_run_id: &str,
+        event_emitter: &WorkflowEventEmitter,
+    ) -> bool {
         match store.get_workflow_run_status(workflow_run_id).await {
             Ok(Some(status)) if status != har_workflow_schema::WorkflowRunStatus::Running => {
-                info!(workflow_run_id = workflow_run_id, "skip_complete_status_changed");
+                info!(
+                    workflow_run_id = workflow_run_id,
+                    "skip_complete_status_changed"
+                );
                 if status != har_workflow_schema::WorkflowRunStatus::Paused {
                     event_emitter.unregister_run(workflow_run_id).await;
                 }
@@ -2209,15 +3234,21 @@ pub async fn execute_dag_workflow(
     let any_completed = node_counts.completed > 0;
     let any_failed = node_counts.failed > 0;
 
-    info!(node_count = workflow_nodes.len(), any_completed, any_failed, "dag_workflow_finished");
+    info!(
+        node_count = workflow_nodes.len(),
+        any_completed, any_failed, "dag_workflow_finished"
+    );
 
     // ─── No completed nodes → fail ────────────────────────────────────
 
     if !any_completed {
-        if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter()).await {
+        if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter())
+            .await
+        {
             return None;
         }
-        let failed_nodes: Vec<String> = node_outputs.iter()
+        let failed_nodes: Vec<String> = node_outputs
+            .iter()
             .filter(|(_, o)| o.state() == har_workflow_schema::NodeState::Failed)
             .map(|(id, _)| id.clone())
             .collect();
@@ -2225,19 +3256,47 @@ pub async fn execute_dag_workflow(
             let plural = if failed_nodes.len() > 1 { "s" } else { "" };
             format!(
                 "DAG workflow '{}' failed: node{} {} failed. {} downstream nodes were skipped.",
-                workflow_name, plural, failed_nodes.join(", "),
+                workflow_name,
+                plural,
+                failed_nodes.join(", "),
                 node_counts.skipped
             )
         } else {
             format!("DAG workflow '{}' completed with no successful nodes. Check node conditions, trigger rules, and upstream failures.", workflow_name)
         };
 
-        capture_workflow_completed("failed", workflow_name, Some(workflow_provider), (Utc::now().timestamp_millis() - dag_start_time) as u64, node_counts.completed, node_counts.failed, node_counts.skipped, node_counts.total);
-        let _ = deps.store.fail_workflow_run(&workflow_run.id, &fail_msg).await;
+        capture_workflow_completed(
+            "failed",
+            workflow_name,
+            Some(workflow_provider),
+            (Utc::now().timestamp_millis() - dag_start_time) as u64,
+            node_counts.completed,
+            node_counts.failed,
+            node_counts.skipped,
+            node_counts.total,
+        );
+        let _ = deps
+            .store
+            .fail_workflow_run(&workflow_run.id, &fail_msg)
+            .await;
         let _ = log_workflow_error(log_dir, &workflow_run.id, &fail_msg).await;
-        get_workflow_event_emitter().emit("workflow_failed", &workflow_run.id, None, Some(workflow_name), None, Some(&fail_msg), None, Some(workflow_name)).await;
-        get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
-        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg)).await;
+        get_workflow_event_emitter()
+            .emit(
+                "workflow_failed",
+                &workflow_run.id,
+                None,
+                Some(workflow_name),
+                None,
+                Some(&fail_msg),
+                None,
+                Some(workflow_name),
+            )
+            .await;
+        get_workflow_event_emitter()
+            .unregister_run(&workflow_run.id)
+            .await;
+        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg))
+            .await;
 
         return None;
     }
@@ -2245,28 +3304,59 @@ pub async fn execute_dag_workflow(
     // ─── Some nodes failed → fail ─────────────────────────────────────
 
     if any_failed {
-        if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter()).await {
+        if skip_if_status_changed(&*deps.store, &workflow_run.id, get_workflow_event_emitter())
+            .await
+        {
             return None;
         }
-        let failed_details: Vec<String> = node_outputs.iter()
+        let failed_details: Vec<String> = node_outputs
+            .iter()
             .filter(|(_, o)| o.state() == har_workflow_schema::NodeState::Failed)
-            .map(|(id, o)| {
-                match o {
-                    har_workflow_schema::NodeOutput::Failed { error, .. } => {
-                        format!("'{}': {}", id, error.as_str())
-                    }
-                    _ => format!("'{}': unknown", id),
+            .map(|(id, o)| match o {
+                har_workflow_schema::NodeOutput::Failed { error, .. } => {
+                    format!("'{}': {}", id, error.as_str())
                 }
+                _ => format!("'{}': unknown", id),
             })
             .collect();
-        let fail_msg = format!("DAG workflow '{}' completed with failures: {}", workflow_name, failed_details.join("; "));
+        let fail_msg = format!(
+            "DAG workflow '{}' completed with failures: {}",
+            workflow_name,
+            failed_details.join("; ")
+        );
 
-        capture_workflow_completed("failed", workflow_name, Some(workflow_provider), (Utc::now().timestamp_millis() - dag_start_time) as u64, node_counts.completed, node_counts.failed, node_counts.skipped, node_counts.total);
-        let _ = deps.store.fail_workflow_run(&workflow_run.id, &fail_msg).await;
+        capture_workflow_completed(
+            "failed",
+            workflow_name,
+            Some(workflow_provider),
+            (Utc::now().timestamp_millis() - dag_start_time) as u64,
+            node_counts.completed,
+            node_counts.failed,
+            node_counts.skipped,
+            node_counts.total,
+        );
+        let _ = deps
+            .store
+            .fail_workflow_run(&workflow_run.id, &fail_msg)
+            .await;
         let _ = log_workflow_error(log_dir, &workflow_run.id, &fail_msg).await;
-        get_workflow_event_emitter().emit("workflow_failed", &workflow_run.id, None, Some(workflow_name), None, Some(&fail_msg), None, Some(workflow_name)).await;
-        get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
-        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg)).await;
+        get_workflow_event_emitter()
+            .emit(
+                "workflow_failed",
+                &workflow_run.id,
+                None,
+                Some(workflow_name),
+                None,
+                Some(&fail_msg),
+                None,
+                Some(workflow_name),
+            )
+            .await;
+        get_workflow_event_emitter()
+            .unregister_run(&workflow_run.id)
+            .await;
+        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg))
+            .await;
 
         return None;
     }
@@ -2278,27 +3368,65 @@ pub async fn execute_dag_workflow(
     }
 
     let mut metadata_map = serde_json::Map::new();
-    metadata_map.insert("node_counts".to_string(), serde_json::json!({
-        "completed": node_counts.completed,
-        "failed": node_counts.failed,
-        "skipped": node_counts.skipped,
-        "total": node_counts.total,
-    }));
+    metadata_map.insert(
+        "node_counts".to_string(),
+        serde_json::json!({
+            "completed": node_counts.completed,
+            "failed": node_counts.failed,
+            "skipped": node_counts.skipped,
+            "total": node_counts.total,
+        }),
+    );
     if total_cost_usd > 0.0 {
-        metadata_map.insert("total_cost_usd".to_string(), serde_json::json!(total_cost_usd));
+        metadata_map.insert(
+            "total_cost_usd".to_string(),
+            serde_json::json!(total_cost_usd),
+        );
     }
 
-    let _ = deps.store.complete_workflow_run(&workflow_run.id, Some(metadata_map)).await;
+    let _ = deps
+        .store
+        .complete_workflow_run(&workflow_run.id, Some(metadata_map))
+        .await;
     let _ = log_workflow_complete(log_dir, &workflow_run.id).await;
 
     let duration = (Utc::now().timestamp_millis() - dag_start_time) as u64;
-    get_workflow_event_emitter().emit("workflow_completed", &workflow_run.id, None, Some(workflow_name), None, None, Some(duration), Some(workflow_name)).await;
-    capture_workflow_completed("completed", workflow_name, Some(workflow_provider), duration, node_counts.completed, node_counts.failed, node_counts.skipped, node_counts.total);
-    deps.emit_workflow_event(&workflow_run.id, "workflow_completed", workflow_name, serde_json::json!({"duration_ms": duration})).await;
-    get_workflow_event_emitter().unregister_run(&workflow_run.id).await;
+    get_workflow_event_emitter()
+        .emit(
+            "workflow_completed",
+            &workflow_run.id,
+            None,
+            Some(workflow_name),
+            None,
+            None,
+            Some(duration),
+            Some(workflow_name),
+        )
+        .await;
+    capture_workflow_completed(
+        "completed",
+        workflow_name,
+        Some(workflow_provider),
+        duration,
+        node_counts.completed,
+        node_counts.failed,
+        node_counts.skipped,
+        node_counts.total,
+    );
+    deps.emit_workflow_event(
+        &workflow_run.id,
+        "workflow_completed",
+        workflow_name,
+        serde_json::json!({"duration_ms": duration}),
+    )
+    .await;
+    get_workflow_event_emitter()
+        .unregister_run(&workflow_run.id)
+        .await;
 
     // Return the first terminal node's output (nodes with no dependents) for parent consumption.
-    let all_deps: HashSet<String> = workflow_nodes.iter()
+    let all_deps: HashSet<String> = workflow_nodes
+        .iter()
         .flat_map(|n| n.depends_on().to_vec())
         .collect();
     workflow_nodes.iter()
@@ -2436,29 +3564,47 @@ pub async fn execute_node_internal(
 
     // Load MCP server names for filtering. Source: dag-executor.ts:693.
     // Used in sub-cycle 4 (stream pass MCP filtering). Prefixed until then.
-    let _configured_mcp_names = load_configured_mcp_server_names(node.base().mcp.as_deref(), cwd).await;
+    let _configured_mcp_names =
+        load_configured_mcp_server_names(node.base().mcp.as_deref(), cwd).await;
 
     // Emit node_started event (fire-and-forget on the store side). Source: dag-executor.ts:698-718.
     deps.emit_workflow_event(
-        &workflow_run.id, "node_started", &node_id,
+        &workflow_run.id,
+        "node_started",
+        &node_id,
         serde_json::json!({"provider": provider}),
-    ).await;
+    )
+    .await;
 
     let node_display = node_display_name(node);
-    get_workflow_event_emitter().emit(
-        "node_started", &workflow_run.id, Some(&node_id),
-        Some(&node_display), None, None, None, None,
-    ).await;
+    get_workflow_event_emitter()
+        .emit(
+            "node_started",
+            &workflow_run.id,
+            Some(&node_id),
+            Some(&node_display),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
 
     // Load prompt: either from Command node's command field or PromptNode's prompt field.
     let raw_prompt = match node {
         har_workflow_schema::DagNode::Command(cmd) => cmd.command.clone(),
         har_workflow_schema::DagNode::Prompt(pn) => pn.prompt.clone(),
-        _ => return NodeExecutionResult {
-            state: NodeState::Failed, output: String::new(), structured_output: None,
-            session_id: None, cost_usd: None,
-            error: Some(format!("Node '{}': not an AI node type", node_id)), declared_fields: None,
-        },
+        _ => {
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: None,
+                cost_usd: None,
+                error: Some(format!("Node '{}': not an AI node type", node_id)),
+                declared_fields: None,
+            }
+        }
     };
 
     // Variable substitution + output ref substitution (full impl in sub-cycle 2/1).
@@ -2472,12 +3618,20 @@ pub async fn execute_node_internal(
 
     let provider_caps = match har_provider::get_provider_capabilities(provider) {
         Ok(caps) => caps,
-        Err(_) => return NodeExecutionResult {
-            state: NodeState::Failed, output: String::new(), structured_output: None,
-            session_id: None, cost_usd: None,
-            error: Some(format!("Node '{}': cannot get capabilities for provider '{}'", node_id, provider)),
-            declared_fields: None,
-        },
+        Err(_) => {
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: None,
+                cost_usd: None,
+                error: Some(format!(
+                    "Node '{}': cannot get capabilities for provider '{}'",
+                    node_id, provider
+                )),
+                declared_fields: None,
+            }
+        }
     };
 
     // Stream setup: CancellationToken for abort (AbortController equivalent). Source: dag-executor.ts:798.
@@ -2498,7 +3652,8 @@ pub async fn execute_node_internal(
     let effective_idle_timeout = std::time::Duration::from_secs(60 * 10); // STEP_IDLE_TIMEOUT_MS default: 10 minutes
 
     // Best-effort providers get a bounded validate-and-reask loop. Source: dag-executor.ts:813-817.
-    let max_reasks = if provider_caps.structured_output == har_contract::StructuredOutputCapability::BestEffort
+    let max_reasks = if provider_caps.structured_output
+        == har_contract::StructuredOutputCapability::BestEffort
         && effective_node_options.output_format.is_some()
     {
         STRUCTURED_OUTPUT_MAX_REASKS
@@ -2547,15 +3702,21 @@ pub async fn execute_node_internal(
 
         // When output_format is set and the provider returned structured_output, use it.
         // Source: dag-executor.ts:1172-1175.
-        if effective_node_options.output_format.is_none() { break; }
+        if effective_node_options.output_format.is_none() {
+            break;
+        }
 
         // Don't reask after idle-timeout/abort — those are genuine failures.
         // Source: dag-executor.ts:1179-1180.
-        let can_reask = reask_attempt < max_reasks && !node_idle_timed_out && !abort_token.is_cancelled();
+        let can_reask =
+            reask_attempt < max_reasks && !node_idle_timed_out && !abort_token.is_cancelled();
 
         if let Some(ref so) = structured_output {
             // Validate against the declared schema for EVERY provider. Source: dag-executor.ts:1182-1232.
-            let output_format_schema = effective_node_options.output_format.as_ref().map(|o| &o.schema);
+            let output_format_schema = effective_node_options
+                .output_format
+                .as_ref()
+                .map(|o| &o.schema);
 
             if let Some(_schema) = output_format_schema {
                 // Full validation via har-provider's validateStructuredOutput (sub-cycle 4).
@@ -2573,16 +3734,24 @@ pub async fn execute_node_internal(
                 // Invalid payload — log and optionally reask. Source: dag-executor.ts:1221-1232.
                 warn!(node_id = %node_id, "dag.structured_output_invalid");
                 if can_reask {
-                    let (_, new_prompt) = schedule_reask(&current_prompt, &["schema invalid".to_string()]).await;
-                    reask_attempt += 1; current_prompt = new_prompt;
+                    let (_, new_prompt) =
+                        schedule_reask(&current_prompt, &["schema invalid".to_string()]).await;
+                    reask_attempt += 1;
+                    current_prompt = new_prompt;
                     emit_reask(&node_id, &workflow_run.id, reask_attempt, max_reasks).await;
                     continue;
                 }
 
                 return NodeExecutionResult {
-                    state: NodeState::Failed, output: String::new(), structured_output: None,
-                    session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
-                    error: Some(format!("Node '{}': structured output failed schema validation", node_id)),
+                    state: NodeState::Failed,
+                    output: String::new(),
+                    structured_output: None,
+                    session_id: new_session_id.clone(),
+                    cost_usd: node_cost_usd_pass,
+                    error: Some(format!(
+                        "Node '{}': structured output failed schema validation",
+                        node_id
+                    )),
                     declared_fields: None,
                 };
             }
@@ -2590,8 +3759,13 @@ pub async fn execute_node_internal(
 
         // No structured output — reask if allowed. Source: dag-executor.ts:1235-1243.
         if can_reask {
-            let (_, new_prompt) = schedule_reask(&current_prompt, &["no JSON object was found in the response".to_string()]).await;
-            reask_attempt += 1; current_prompt = new_prompt;
+            let (_, new_prompt) = schedule_reask(
+                &current_prompt,
+                &["no JSON object was found in the response".to_string()],
+            )
+            .await;
+            reask_attempt += 1;
+            current_prompt = new_prompt;
             emit_reask(&node_id, &workflow_run.id, reask_attempt, max_reasks).await;
             continue;
         }
@@ -2609,9 +3783,15 @@ pub async fn execute_node_internal(
 
         // No structured output with max_reasks exhausted. Source: dag-executor.ts:1251-1254.
         return NodeExecutionResult {
-            state: NodeState::Failed, output: String::new(), structured_output: None,
-            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
-            error: Some(format!("Node '{}': output_format declared but no schema-valid structured output.", node_id)),
+            state: NodeState::Failed,
+            output: String::new(),
+            structured_output: None,
+            session_id: new_session_id.clone(),
+            cost_usd: node_cost_usd_pass,
+            error: Some(format!(
+                "Node '{}': output_format declared but no schema-valid structured output.",
+                node_id
+            )),
             declared_fields: None,
         };
     }
@@ -2630,20 +3810,35 @@ pub async fn execute_node_internal(
         info!(node_id = %node_id, duration_ms = duration.as_millis(), "dag_node_cancelled_during_streaming");
 
         deps.emit_workflow_event(
-            &workflow_run.id, "node_failed", &node_id,
+            &workflow_run.id,
+            "node_failed",
+            &node_id,
             serde_json::json!({"error": "Cancelled by user", "duration_ms": duration.as_millis()}),
-        ).await;
+        )
+        .await;
 
         let cancel_node_display = node_display_name(node);
-        get_workflow_event_emitter().emit(
-            "node_failed", &workflow_run.id, Some(&node_id), Some(&cancel_node_display),
-            None, Some("Cancelled by user"), Some(duration.as_millis() as u64), None,
-        ).await;
+        get_workflow_event_emitter()
+            .emit(
+                "node_failed",
+                &workflow_run.id,
+                Some(&node_id),
+                Some(&cancel_node_display),
+                None,
+                Some("Cancelled by user"),
+                Some(duration.as_millis() as u64),
+                None,
+            )
+            .await;
 
         return NodeExecutionResult {
-            state: NodeState::Failed, output: node_output_text.clone(), structured_output: None,
-            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
-            error: Some("Cancelled by user".to_string()), declared_fields: None,
+            state: NodeState::Failed,
+            output: node_output_text.clone(),
+            structured_output: None,
+            session_id: new_session_id.clone(),
+            cost_usd: node_cost_usd_pass,
+            error: Some("Cancelled by user".to_string()),
+            declared_fields: None,
         };
     }
 
@@ -2659,15 +3854,33 @@ pub async fn execute_node_internal(
         warn!(node_id = %node_id, duration_ms = duration.as_millis(), "dag.node_credit_exhausted");
 
         let credit_node_display = node_display_name(node);
-        deps.emit_workflow_event(&workflow_run.id, "node_failed", &node_id, serde_json::json!({"error": &credit_err})).await;
-        get_workflow_event_emitter().emit(
-            "node_failed", &workflow_run.id, Some(&node_id), Some(&credit_node_display),
-            None, Some(&credit_err), None, None,
-        ).await;
+        deps.emit_workflow_event(
+            &workflow_run.id,
+            "node_failed",
+            &node_id,
+            serde_json::json!({"error": &credit_err}),
+        )
+        .await;
+        get_workflow_event_emitter()
+            .emit(
+                "node_failed",
+                &workflow_run.id,
+                Some(&node_id),
+                Some(&credit_node_display),
+                None,
+                Some(&credit_err),
+                None,
+                None,
+            )
+            .await;
 
         return NodeExecutionResult {
-            state: NodeState::Failed, output: node_output_text.clone(), structured_output: None,
-            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass, error: Some(credit_err),
+            state: NodeState::Failed,
+            output: node_output_text.clone(),
+            structured_output: None,
+            session_id: new_session_id.clone(),
+            cost_usd: node_cost_usd_pass,
+            error: Some(credit_err),
             declared_fields: None,
         };
     }
@@ -2684,15 +3897,33 @@ pub async fn execute_node_internal(
         error!(node_id = %node_id, duration_ms = duration.as_millis(), "dag.node_empty_output");
 
         let empty_node_display = node_display_name(node);
-        deps.emit_workflow_event(&workflow_run.id, "node_failed", &node_id, serde_json::json!({"error": empty_err.clone(), "duration_ms": duration.as_millis()})).await;
-        get_workflow_event_emitter().emit(
-            "node_failed", &workflow_run.id, Some(&node_id), Some(&empty_node_display),
-            None, Some(&empty_err), None, None,
-        ).await;
+        deps.emit_workflow_event(
+            &workflow_run.id,
+            "node_failed",
+            &node_id,
+            serde_json::json!({"error": empty_err.clone(), "duration_ms": duration.as_millis()}),
+        )
+        .await;
+        get_workflow_event_emitter()
+            .emit(
+                "node_failed",
+                &workflow_run.id,
+                Some(&node_id),
+                Some(&empty_node_display),
+                None,
+                Some(&empty_err),
+                None,
+                None,
+            )
+            .await;
 
         return NodeExecutionResult {
-            state: NodeState::Failed, output: String::new(), structured_output: None,
-            session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass, error: Some(empty_err),
+            state: NodeState::Failed,
+            output: String::new(),
+            structured_output: None,
+            session_id: new_session_id.clone(),
+            cost_usd: node_cost_usd_pass,
+            error: Some(empty_err),
             declared_fields: None,
         };
     }
@@ -2704,17 +3935,29 @@ pub async fn execute_node_internal(
     info!(node_id = %node_id, duration_ms = duration.as_millis(), "dag_node_completed");
 
     deps.emit_workflow_event(
-        &workflow_run.id, "node_completed", &node_id, serde_json::json!({
+        &workflow_run.id,
+        "node_completed",
+        &node_id,
+        serde_json::json!({
             "duration_ms": duration.as_millis(), "node_output": node_output_text.clone(),
             "cost_usd": node_cost_usd_pass.unwrap_or(0.0),
         }),
-    ).await;
+    )
+    .await;
 
     let completed_node_display = node_display_name(node);
-    get_workflow_event_emitter().emit(
-        "node_completed", &workflow_run.id, Some(&node_id), Some(&completed_node_display),
-        None, None, Some(duration.as_millis() as u64), None,
-    ).await;
+    get_workflow_event_emitter()
+        .emit(
+            "node_completed",
+            &workflow_run.id,
+            Some(&node_id),
+            Some(&completed_node_display),
+            None,
+            None,
+            Some(duration.as_millis() as u64),
+            None,
+        )
+        .await;
 
     // Capture declared fields for downstream $node.output.field resolution. Source: dag-executor.ts:1435-1436.
     let declared_fields = if let Some(ref of) = effective_node_options.output_format {
@@ -2722,14 +3965,21 @@ pub async fn execute_node_internal(
         let har_contract::OutputFormatType::JsonSchema = &of.kind;
         // of.schema is already serde_json::Map<String, Value> — no need to re-destructure.
         Some(of.schema.keys().cloned().collect())
-    } else { None };
+    } else {
+        None
+    };
 
     // Clean up throttle entries on completion. Source: dag-executor.ts:1428-1430.
     let _ = node_output_text.len();
 
     let mut result = NodeExecutionResult {
-        state: NodeState::Completed, output: node_output_text, session_id: new_session_id,
-        cost_usd: node_cost_usd_pass, error: None, declared_fields, structured_output: None,
+        state: NodeState::Completed,
+        output: node_output_text,
+        session_id: new_session_id,
+        cost_usd: node_cost_usd_pass,
+        error: None,
+        declared_fields,
+        structured_output: None,
     };
 
     if structured_output.is_some() {
@@ -2743,7 +3993,11 @@ fn node_display_name(node: &har_workflow_schema::DagNode) -> String {
     match node {
         har_workflow_schema::DagNode::Command(cmd) => cmd.command.clone(),
         har_workflow_schema::DagNode::Prompt(pn) => {
-            if pn.prompt.len() > 50 { pn.prompt[..50].to_string() } else { pn.prompt.clone() }
+            if pn.prompt.len() > 50 {
+                pn.prompt[..50].to_string()
+            } else {
+                pn.prompt.clone()
+            }
         }
         _ => format!("node-{}", node.id()),
     }
@@ -2799,7 +4053,8 @@ mod sub_cycle3_tests {
         // Parity: "rate limit" is a TRANSIENT_PATTERN (executor-shared.ts:43), i.e. retryable —
         // NOT credit exhaustion. detectCreditExhaustion returns null for it (executor-shared.ts:198).
         // Classifying a rate-limit as credit-exhaustion would be a downgrade (kills the retry path).
-        let text = "Your API rate limit has been exceeded. Please wait before making more requests.";
+        let text =
+            "Your API rate limit has been exceeded. Please wait before making more requests.";
         assert!(detect_credit_exhaustion(text).is_none());
     }
 
@@ -2810,16 +4065,25 @@ mod sub_cycle3_tests {
     }
 
     #[test]
-    fn node_state_as_str_completed() { assert_eq!(NodeState::Completed.as_str(), "completed"); }
+    fn node_state_as_str_completed() {
+        assert_eq!(NodeState::Completed.as_str(), "completed");
+    }
 
     #[test]
-    fn node_state_as_str_failed() { assert_eq!(NodeState::Failed.as_str(), "failed"); }
+    fn node_state_as_str_failed() {
+        assert_eq!(NodeState::Failed.as_str(), "failed");
+    }
 
     #[test]
     fn node_execution_result_completed_defaults() {
         let result = NodeExecutionResult {
-            state: NodeState::Completed, output: String::new(), structured_output: None,
-            session_id: None, cost_usd: None, error: None, declared_fields: None,
+            state: NodeState::Completed,
+            output: String::new(),
+            structured_output: None,
+            session_id: None,
+            cost_usd: None,
+            error: None,
+            declared_fields: None,
         };
         assert_eq!(result.state.as_str(), "completed");
     }
@@ -2827,8 +4091,13 @@ mod sub_cycle3_tests {
     #[test]
     fn node_execution_result_failed_with_error() {
         let result = NodeExecutionResult {
-            state: NodeState::Failed, output: String::new(), structured_output: None,
-            session_id: None, cost_usd: Some(0.05), error: Some("test error".to_string()), declared_fields: None,
+            state: NodeState::Failed,
+            output: String::new(),
+            structured_output: None,
+            session_id: None,
+            cost_usd: Some(0.05),
+            error: Some("test error".to_string()),
+            declared_fields: None,
         };
         assert_eq!(result.state.as_str(), "failed");
         assert_eq!(result.error, Some("test error".to_string()));
@@ -2841,18 +4110,31 @@ mod sub_cycle3_tests {
         );
         assert_eq!(entries.len(), 2);
         let configured: HashSet<String> = ["github".to_string()].into_iter().collect();
-        let workflow_failures: Vec<_> = entries.iter().filter(|e| configured.contains(&e.name)).collect();
+        let workflow_failures: Vec<_> = entries
+            .iter()
+            .filter(|e| configured.contains(&e.name))
+            .collect();
         assert_eq!(workflow_failures.len(), 1);
         assert_eq!(workflow_failures[0].name, "github");
-        let plugin_failures: Vec<_> = entries.iter().filter(|e| !configured.contains(&e.name)).collect();
+        let plugin_failures: Vec<_> = entries
+            .iter()
+            .filter(|e| !configured.contains(&e.name))
+            .collect();
         assert_eq!(plugin_failures.len(), 1);
         assert_eq!(plugin_failures[0].name, "telegram");
     }
 
-    #[test] fn cancel_check_continues_for_running() { assert!(should_continue_streaming_for_status(Some("running"))); }
-    #[test] fn cancel_check_continues_for_paused() { assert!(should_continue_streaming_for_status(Some("paused"))); }
+    #[test]
+    fn cancel_check_continues_for_running() {
+        assert!(should_continue_streaming_for_status(Some("running")));
+    }
+    #[test]
+    fn cancel_check_continues_for_paused() {
+        assert!(should_continue_streaming_for_status(Some("paused")));
+    }
 
-    #[test] fn cancel_check_aborts_for_terminal_states() {
+    #[test]
+    fn cancel_check_aborts_for_terminal_states() {
         for state in &[None, Some("cancelled"), Some("failed"), Some("completed")] {
             assert!(!should_continue_streaming_for_status(*state));
         }
@@ -2865,83 +4147,422 @@ mod sub_cycle3_tests {
         assert!(start.elapsed() < std::time::Duration::from_secs(10));
     }
 
-    #[tokio::test] async fn cancel_token_cancels_stream() {
+    #[tokio::test]
+    async fn cancel_token_cancels_stream() {
         let token = CancellationToken::new();
         assert!(!token.is_cancelled());
         token.cancel();
         assert!(token.is_cancelled());
     }
 
-    #[test] fn reask_max_is_structured_output_max_reasks() { assert_eq!(STRUCTURED_OUTPUT_MAX_REASKS, 3); }
+    #[test]
+    fn reask_max_is_structured_output_max_reasks() {
+        assert_eq!(STRUCTURED_OUTPUT_MAX_REASKS, 3);
+    }
 
-    #[test] fn reask_prompt_contains_corrections_marker() {
+    #[test]
+    fn reask_prompt_contains_corrections_marker() {
         let result = build_reask_prompt("original", &["error1".to_string()]);
         assert!(result.contains("--- CORRECTION ---"));
         assert!(result.contains("error1"));
         assert!(result.contains("JSON schema"));
     }
 
-    #[test] fn cost_accumulates_across_passes() {
+    #[test]
+    fn cost_accumulates_across_passes() {
         let mut total: f64 = 0.0;
-        for pass_cost in &[0.10, 0.15, 0.08] { total += pass_cost; }
+        for pass_cost in &[0.10, 0.15, 0.08] {
+            total += pass_cost;
+        }
         assert!((total - 0.33).abs() < f64::EPSILON);
     }
 
-    #[test] fn empty_output_triggers_failure() { assert!("".trim().is_empty()); }
-    #[test] fn non_empty_text_is_detected() { assert!(!"  some output  ".trim().is_empty()); }
-
-    #[test] fn message_chunk_assistant_variant() {
-        let chunk = MessageChunk::Assistant { content: "hello".to_string(), flush: None };
-        match &chunk { MessageChunk::Assistant { content, .. } => assert_eq!(content, "hello"), _ => panic!("expected Assistant") }
+    #[test]
+    fn empty_output_triggers_failure() {
+        assert!("".trim().is_empty());
+    }
+    #[test]
+    fn non_empty_text_is_detected() {
+        assert!(!"  some output  ".trim().is_empty());
     }
 
-    #[test] fn message_chunk_result_variant() {
-        let chunk = MessageChunk::Result { session_id: Some("sess-123".into()), tokens: None, structured_output: Some(json!({"key":"val"})), is_error: Some(false), error_subtype: Some("success".into()), errors: None, cost: Some(0.05), stop_reason: Some("stop_sequence".into()), num_turns: Some(1), model_usage: None };
-        match &chunk { MessageChunk::Result { session_id, .. } => assert_eq!(session_id.as_deref(), Some("sess-123")), _ => panic!("expected Result") }
+    #[test]
+    fn message_chunk_assistant_variant() {
+        let chunk = MessageChunk::Assistant {
+            content: "hello".to_string(),
+            flush: None,
+        };
+        match &chunk {
+            MessageChunk::Assistant { content, .. } => assert_eq!(content, "hello"),
+            _ => panic!("expected Assistant"),
+        }
     }
 
-    #[test] fn message_chunk_tool_variant() {
-        let chunk = MessageChunk::Tool { tool_name: "write_file".to_string(), tool_input: Some(json!({"path":"/tmp/test.txt"})), tool_call_id: None };
-        match &chunk { MessageChunk::Tool { tool_name, .. } => assert_eq!(tool_name, "write_file"), _ => panic!("expected Tool") }
+    #[test]
+    fn message_chunk_result_variant() {
+        let chunk = MessageChunk::Result {
+            session_id: Some("sess-123".into()),
+            tokens: None,
+            structured_output: Some(json!({"key":"val"})),
+            is_error: Some(false),
+            error_subtype: Some("success".into()),
+            errors: None,
+            cost: Some(0.05),
+            stop_reason: Some("stop_sequence".into()),
+            num_turns: Some(1),
+            model_usage: None,
+        };
+        match &chunk {
+            MessageChunk::Result { session_id, .. } => {
+                assert_eq!(session_id.as_deref(), Some("sess-123"))
+            }
+            _ => panic!("expected Result"),
+        }
     }
 
-    #[test] fn message_chunk_system_variant() {
-        let chunk = MessageChunk::System { content: "⚠️ Warning".to_string() };
-        match &chunk { MessageChunk::System { content } => assert!(content.starts_with("⚠️")), _ => panic!("expected System") }
+    #[test]
+    fn message_chunk_tool_variant() {
+        let chunk = MessageChunk::Tool {
+            tool_name: "write_file".to_string(),
+            tool_input: Some(json!({"path":"/tmp/test.txt"})),
+            tool_call_id: None,
+        };
+        match &chunk {
+            MessageChunk::Tool { tool_name, .. } => assert_eq!(tool_name, "write_file"),
+            _ => panic!("expected Tool"),
+        }
     }
 
-    #[test] fn credit_exhaustion_session_limit_detected() {
+    #[test]
+    fn message_chunk_system_variant() {
+        let chunk = MessageChunk::System {
+            content: "⚠️ Warning".to_string(),
+        };
+        match &chunk {
+            MessageChunk::System { content } => assert!(content.starts_with("⚠️")),
+            _ => panic!("expected System"),
+        }
+    }
+
+    #[test]
+    fn credit_exhaustion_session_limit_detected() {
         // "session limit reached" is a literal SESSION_LIMIT_OUTPUT_PATTERN (executor-shared.ts:166).
-        assert!(detect_credit_exhaustion("Error: session limit reached for the current 5-hour window.").is_some());
+        assert!(detect_credit_exhaustion(
+            "Error: session limit reached for the current 5-hour window."
+        )
+        .is_some());
     }
 
-    #[test] fn credit_exhaustion_normal_text_none() {
+    #[test]
+    fn credit_exhaustion_normal_text_none() {
         assert!(detect_credit_exhaustion("Here is a normal response.").is_none());
     }
 
-    #[tokio::test] async fn cancel_detection_via_abort_token() {
-        let token = CancellationToken::new(); token.cancel(); assert!(token.is_cancelled());
+    #[tokio::test]
+    async fn cancel_detection_via_abort_token() {
+        let token = CancellationToken::new();
+        token.cancel();
+        assert!(token.is_cancelled());
     }
 
-    #[test] fn cancel_vs_idle_timeout_distinction() {
-        let abort_token = CancellationToken::new(); abort_token.cancel();
+    #[test]
+    fn cancel_vs_idle_timeout_distinction() {
+        let abort_token = CancellationToken::new();
+        abort_token.cancel();
         let aborted = abort_token.is_cancelled();
         let idle_timed_out = false;
         assert!(aborted && !idle_timed_out);
     }
 
-    #[test] fn idle_timeout_vs_cancel_priority() {
+    #[test]
+    fn idle_timeout_vs_cancel_priority() {
         let _abort_token = CancellationToken::new();
         let idle_timed_out = true;
         assert!(idle_timed_out);
     }
 
-    #[test] fn tool_events_completed_before_started() {
-        let sequence = ["tool_a_started", "tool_a_completed", "tool_b_started", "tool_b_completed"];
+    #[test]
+    fn tool_events_completed_before_started() {
+        let sequence = [
+            "tool_a_started",
+            "tool_a_completed",
+            "tool_b_started",
+            "tool_b_completed",
+        ];
         assert_eq!(sequence[0], "tool_a_started");
         assert_eq!(sequence[1], "tool_a_completed");
         assert_eq!(sequence[2], "tool_b_started");
         assert_eq!(sequence[3], "tool_b_completed");
     }
-
 } // end of sub_cycle3_tests
+
+// ─── Sub-cycle 4a internal tests (D3 subprocess idiom) ───────────────────────
+
+#[cfg(test)]
+mod sub_cycle_4a_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn run_subprocess_echo_success() {
+        let env: HashMap<String, String> = HashMap::new();
+        let out = run_subprocess("bash", &["-c", "echo hello"], "/tmp", 30_000, &env).await;
+        match out {
+            SubprocessOutcome::Success { stdout, .. } => {
+                assert_eq!(stdout, "hello\n");
+            }
+            other => panic!("expected Success, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_subprocess_timeout_fires() {
+        // sleep 60 seconds — should time out in 200ms.
+        let env: HashMap<String, String> = HashMap::new();
+        let out = run_subprocess("bash", &["-c", "sleep 60"], "/tmp", 200, &env).await;
+        assert!(
+            matches!(out, SubprocessOutcome::TimedOut),
+            "expected TimedOut, got {:?}",
+            out
+        );
+    }
+
+    #[tokio::test]
+    async fn run_subprocess_enoent_on_missing_binary() {
+        let env: HashMap<String, String> = HashMap::new();
+        let out = run_subprocess(
+            "/nonexistent_binary_xyz_abc_123",
+            &["arg"],
+            "/tmp",
+            5_000,
+            &env,
+        )
+        .await;
+        match out {
+            SubprocessOutcome::SpawnFailed { kind } => {
+                assert_eq!(kind, std::io::ErrorKind::NotFound);
+            }
+            other => panic!("expected SpawnFailed(NotFound), got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_subprocess_nonzero_exit_is_failed() {
+        let env: HashMap<String, String> = HashMap::new();
+        let out = run_subprocess("bash", &["-c", "exit 42"], "/tmp", 5_000, &env).await;
+        match out {
+            SubprocessOutcome::Failed { exit_code, .. } => {
+                assert_eq!(exit_code, Some(42));
+            }
+            other => panic!("expected Failed, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_subprocess_env_overlay_wins_over_process_env() {
+        // Verify overlay value overrides any ambient env.
+        let mut env: HashMap<String, String> = HashMap::new();
+        env.insert(
+            "SUBPROCESS_TEST_UNIQUE_VAR_4A".to_string(),
+            "overlay_value_4a".to_string(),
+        );
+        let out = run_subprocess(
+            "bash",
+            &["-c", "echo $SUBPROCESS_TEST_UNIQUE_VAR_4A"],
+            "/tmp",
+            5_000,
+            &env,
+        )
+        .await;
+        match out {
+            SubprocessOutcome::Success { stdout, .. } => {
+                assert!(
+                    stdout.contains("overlay_value_4a"),
+                    "expected overlay value in stdout, got: {:?}",
+                    stdout
+                );
+            }
+            other => panic!("expected Success, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_subprocess_stderr_captured_in_failed() {
+        let env: HashMap<String, String> = HashMap::new();
+        let out = run_subprocess(
+            "bash",
+            &["-c", "echo 'err output' >&2; exit 1"],
+            "/tmp",
+            5_000,
+            &env,
+        )
+        .await;
+        match out {
+            SubprocessOutcome::Failed { stderr, .. } => {
+                assert!(stderr.contains("err output"), "stderr: {:?}", stderr);
+            }
+            other => panic!("expected Failed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn subprocess_default_timeout_value() {
+        // Source: dag-executor.ts:1493. Must be 120_000ms (2 minutes).
+        assert_eq!(SUBPROCESS_DEFAULT_TIMEOUT, 120_000);
+    }
+
+    #[test]
+    fn strip_suffix_single_newline_matches_ts_regex() {
+        // TS: stdout.replace(/\n$/, '') — Rust: strip_suffix('\n')
+        let stdout = "output\n";
+        let stripped = stdout
+            .strip_suffix('\n')
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| stdout.to_string());
+        assert_eq!(stripped, "output");
+    }
+
+    #[test]
+    fn strip_suffix_double_newline_leaves_one() {
+        // /\n$/ is not greedy — strips exactly one trailing \n.
+        let stdout = "output\n\n";
+        let stripped = stdout
+            .strip_suffix('\n')
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| stdout.to_string());
+        assert_eq!(stripped, "output\n");
+    }
+
+    // ─── F1 regression — nonzero exit, EMPTY stderr → "no diagnostic output" ────
+    //
+    // Exercises the REAL F1 path: live subprocess → execute_bash_node's Failed-arm
+    // message reconstruction (`Command failed: bash -c <body>`) → real
+    // `format_subprocess_failure`. Locks the divergence the live-bun differential
+    // caught. Source: dag-executor.ts:1627-1644 + executor-shared.ts:116-161.
+
+    #[tokio::test]
+    async fn f1_nonzero_exit_empty_stderr_yields_no_diagnostic_output() {
+        let env: HashMap<String, String> = HashMap::new();
+        let final_script = "exit 3";
+        let out = run_subprocess("bash", &["-c", final_script], "/tmp", 5_000, &env).await;
+
+        let (exit_code, stderr) = match out {
+            SubprocessOutcome::Failed {
+                exit_code, stderr, ..
+            } => (exit_code, stderr),
+            other => panic!("expected Failed, got {:?}", other),
+        };
+        assert_eq!(exit_code, Some(3));
+        assert!(
+            stderr.trim().is_empty(),
+            "stderr should be empty: {:?}",
+            stderr
+        );
+
+        // Reconstruct exactly as execute_bash_node's Failed arm does (the F1 fix).
+        let label = "Bash node 'mybash'".to_string();
+        let raw_err = crate::executor_shared::RawSubprocessError {
+            message: Some(format!("Command failed: bash -c {}", final_script)),
+            stderr: Some(stderr.clone()),
+            code: exit_code.map(|c| c.to_string()),
+            killed: Some(false),
+            ..Default::default()
+        };
+        let user_message =
+            crate::executor_shared::format_subprocess_failure(&raw_err, &label).user_message;
+
+        // Exact TS parity string.
+        assert_eq!(
+            user_message,
+            "Bash node 'mybash' failed [exit 3]: no diagnostic output"
+        );
+        // No Rust Debug `Some(N)` leak anywhere.
+        assert!(
+            !user_message.contains("Some("),
+            "Debug leak in user_message: {}",
+            user_message
+        );
+        assert!(!user_message.contains("exited with code"));
+    }
+
+    #[tokio::test]
+    async fn f1_nonzero_exit_with_stderr_still_uses_stderr() {
+        // Regression guard: the non-empty-stderr branch must still surface stderr
+        // (this probe PASSED in the differential; F1 fix must not break it).
+        let env: HashMap<String, String> = HashMap::new();
+        let final_script = "echo boom >&2; exit 3";
+        let out = run_subprocess("bash", &["-c", final_script], "/tmp", 5_000, &env).await;
+        let (exit_code, stderr) = match out {
+            SubprocessOutcome::Failed {
+                exit_code, stderr, ..
+            } => (exit_code, stderr),
+            other => panic!("expected Failed, got {:?}", other),
+        };
+        let label = "Bash node 'mybash'".to_string();
+        let raw_err = crate::executor_shared::RawSubprocessError {
+            message: Some(format!("Command failed: bash -c {}", final_script)),
+            stderr: Some(stderr.clone()),
+            code: exit_code.map(|c| c.to_string()),
+            killed: Some(false),
+            ..Default::default()
+        };
+        let user_message =
+            crate::executor_shared::format_subprocess_failure(&raw_err, &label).user_message;
+        assert_eq!(user_message, "Bash node 'mybash' failed [exit 3]: boom");
+    }
+
+    // ─── F2 regression — cancel emitter event shape {type,runId,nodeId,reason} ──
+    //
+    // Exercises the REAL emit helper with the exact arg pattern the cancel dispatch
+    // arm now uses. Asserts `reason` key carries the value, and `error` /
+    // `workflowName` keys are ABSENT. Source: dag-executor.ts:3134-3139.
+
+    #[tokio::test]
+    async fn f2_cancel_emitter_event_shape() {
+        let emitter = get_workflow_event_emitter();
+        let run_id = "f2-cancel-run-unique-id";
+        let mut rx = emitter.register_run(run_id).await;
+
+        let nid = "cancel-node-1";
+        let reason = "user requested stop";
+        // Exact arg pattern from the fixed cancel dispatch arm (F2):
+        // reason in 5th slot; error=None; workflow_name=None.
+        emitter
+            .emit(
+                "workflow_cancelled",
+                run_id,
+                Some(nid),
+                None,
+                Some(reason),
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        let event = rx.recv().await.expect("should receive cancel event");
+        let obj = event.as_object().expect("event is object");
+
+        assert_eq!(
+            obj.get("type").and_then(|v| v.as_str()),
+            Some("workflow_cancelled")
+        );
+        assert_eq!(obj.get("runId").and_then(|v| v.as_str()), Some(run_id));
+        assert_eq!(obj.get("nodeId").and_then(|v| v.as_str()), Some(nid));
+        // reason carries the value (TS WorkflowCancelledEvent.reason).
+        assert_eq!(obj.get("reason").and_then(|v| v.as_str()), Some(reason));
+        // error / workflowName keys MUST be absent (the F2 bug put reason under error).
+        assert!(
+            obj.get("error").is_none(),
+            "error key must be absent: {:?}",
+            obj
+        );
+        assert!(
+            obj.get("workflowName").is_none(),
+            "workflowName key must be absent: {:?}",
+            obj
+        );
+
+        emitter.unregister_run(run_id).await;
+    }
+}

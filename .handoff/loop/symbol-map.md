@@ -128,22 +128,35 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-09 — dag-executor.ts (exported functions)
 
-- [ ] unit:WF-09 `dag-executor.ts::parseMcpFailureServerNames` → `workflows::dag_executor::parse_mcp_failure_server_names()`
-- [ ] unit:WF-09 `dag-executor.ts::loadConfiguredMcpServerNames` → `workflows::dag_executor::load_configured_mcp_server_names()`
-- [ ] unit:WF-09 `dag-executor.ts::shouldContinueStreamingForStatus` → `workflows::dag_executor::should_continue_streaming_for_status()`
-- [ ] unit:WF-09 `dag-executor.ts::substituteNodeOutputRefs` → `workflows::dag_executor::substitute_node_output_refs()`
-- [ ] unit:WF-09 `dag-executor.ts::checkTriggerRule` → `workflows::dag_executor::check_trigger_rule()`
-- [ ] unit:WF-09 `dag-executor.ts::buildTopologicalLayers` → `workflows::dag_executor::build_topological_layers()`
-- [ ] unit:WF-09 `dag-executor.ts::executeDagWorkflow` → `workflows::dag_executor::execute_dag_workflow()`
-- [ ] unit:WF-09 `dag-executor.ts::CANCEL_CHECK_INTERVAL_MS` → `workflows::dag_executor::CANCEL_CHECK_INTERVAL_MS`
-- [ ] unit:WF-09 `dag-executor.ts::ACTIVITY_HEARTBEAT_INTERVAL_MS` → `workflows::dag_executor::ACTIVITY_HEARTBEAT_INTERVAL_MS`
-- [ ] unit:WF-09 `dag-executor.ts::DEFAULT_NODE_MAX_RETRIES` → `workflows::dag_executor::DEFAULT_NODE_MAX_RETRIES`
-- [ ] unit:WF-09 `dag-executor.ts::DEFAULT_NODE_RETRY_DELAY_MS` → `workflows::dag_executor::DEFAULT_NODE_RETRY_DELAY_MS`
-- [ ] unit:WF-09 `dag-executor.ts::STRUCTURED_OUTPUT_MAX_REASKS` → `workflows::dag_executor::STRUCTURED_OUTPUT_MAX_REASKS`
-- [ ] unit:WF-09 `dag-executor.ts::SUBPROCESS_DEFAULT_TIMEOUT` → `workflows::dag_executor::SUBPROCESS_DEFAULT_TIMEOUT`
-- [ ] unit:WF-09 `dag-executor.ts::NODE_OUTPUT_FILE_THRESHOLD` → `workflows::dag_executor::NODE_OUTPUT_FILE_THRESHOLD`
-- [ ] unit:WF-09 `dag-executor.ts::MCP_FAILURE_PREFIX` → `workflows::dag_executor::MCP_FAILURE_PREFIX`
-- [ ] unit:WF-09 `dag-executor.ts::McpFailureEntry` → `workflows::dag_executor::McpFailureEntry`
+- [x] unit:WF-09 `dag-executor.ts::parseMcpFailureServerNames` → `workflows::dag_executor::parse_mcp_failure_server_names()` — parity-verified sub-cycle 1 (cycle 32, findings/parity-WF-09-s1.md)
+- [x] unit:WF-09 `dag-executor.ts::loadConfiguredMcpServerNames` → `workflows::dag_executor::load_configured_mcp_server_names()` — parity-verified sub-cycle 1 (cycle 32; non-breaking [≈] logging granularity)
+- [x] unit:WF-09 `dag-executor.ts::shouldContinueStreamingForStatus` → `workflows::dag_executor::should_continue_streaming_for_status()` — parity-verified sub-cycle 1 (cycle 32)
+- [x] unit:WF-09 `dag-executor.ts::substituteNodeOutputRefs` → `workflows::dag_executor::substitute_node_output_refs()` — parity-verified sub-cycle 1 (cycle 32)
+- [x] unit:WF-09 `dag-executor.ts::checkTriggerRule` → `workflows::dag_executor::check_trigger_rule()` — parity-verified sub-cycle 1 (cycle 32)
+- [x] unit:WF-09 `dag-executor.ts::buildTopologicalLayers` → `workflows::dag_executor::build_topological_layers()` — parity-verified sub-cycle 1 (cycle 32)
+- [~] unit:WF-09 `dag-executor.ts::executeDagWorkflow` → `workflows::dag_executor::execute_dag_workflow()` — orchestrator structure parity-verified sub-cycle 2 (cycle 33); dispatch arms: Bash+Cancel verified sub-cycle 4a (cycle 36); Script/Loop/Approval/AI(executeNodeInternal) arms DEFERRED 4b–4f (honest Skipped placeholder)
+- [x] unit:WF-09 `dag-executor.ts::CANCEL_CHECK_INTERVAL_MS` → `workflows::dag_executor::CANCEL_CHECK_INTERVAL_MS` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::ACTIVITY_HEARTBEAT_INTERVAL_MS` → `workflows::dag_executor::ACTIVITY_HEARTBEAT_INTERVAL_MS` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::DEFAULT_NODE_MAX_RETRIES` → `workflows::dag_executor::DEFAULT_NODE_MAX_RETRIES` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::DEFAULT_NODE_RETRY_DELAY_MS` → `workflows::dag_executor::DEFAULT_NODE_RETRY_DELAY_MS` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::STRUCTURED_OUTPUT_MAX_REASKS` → `workflows::dag_executor::STRUCTURED_OUTPUT_MAX_REASKS` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::SUBPROCESS_DEFAULT_TIMEOUT` → `workflows::dag_executor::SUBPROCESS_DEFAULT_TIMEOUT` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::NODE_OUTPUT_FILE_THRESHOLD` → `workflows::dag_executor::NODE_OUTPUT_FILE_THRESHOLD` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::MCP_FAILURE_PREFIX` → `workflows::dag_executor::MCP_FAILURE_PREFIX` — sub-cycle 1 (cycle 32, byte-match)
+- [x] unit:WF-09 `dag-executor.ts::McpFailureEntry` → `workflows::dag_executor::McpFailureEntry` — sub-cycle 1 (cycle 32)
+- [x] unit:WF-09 `dag-executor.ts::executeBashNode` → `workflows::dag_executor::execute_bash_node()` — parity-verified sub-cycle 4a (cycle 36, findings/parity-WF-09-s4a.md; 12 branches incl. nonzero-exit-empty-stderr→`no diagnostic output`, ENOENT/EACCES, timeout, env precedence, 1-newline strip)
+- [x] unit:WF-09 `dag-executor.ts::<cancel-node dispatch>` → `workflows::dag_executor::execute_dag_workflow` Cancel arm — parity-verified sub-cycle 4a (cycle 36; emits WorkflowCancelledEvent {type,runId,nodeId,reason})
+- [x] unit:WF-09 `<D3 subprocess idiom for execFileAsync>` → `workflows::dag_executor::run_subprocess()` — parity-verified sub-cycle 4a (cycle 36; tokio::process, kill_on_drop, timeout, env-clear+overlay, ENOENT/EACCES)
+- [~] unit:WF-09 `dag-executor.ts::executeNodeInternal` → `workflows::dag_executor::execute_node_internal()` — STRUCTURE parity-verified-for-scope sub-cycle 3 (cycle 34/35); live streaming against ai_client DEFERRED to sub-cycle 4c
+- [~] unit:WF-09 `dag-executor.ts::buildReaskPrompt` → `workflows::dag_executor::build_reask_prompt()` — sub-cycle 3 structure (cycle 34); full verify with 4c
+- [~] unit:WF-09 `dag-executor.ts::emitReask` → `workflows::dag_executor::emit_reask()` — sub-cycle 3 structure (cycle 34); full verify with 4c
+- [~] unit:WF-09 `dag-executor.ts::scheduleReask` → `workflows::dag_executor::schedule_reask()` — sub-cycle 3 structure (cycle 34); full verify with 4c
+- [~] unit:WF-09 `dag-executor.ts::NodeExecutionResult` → `workflows::dag_executor::NodeExecutionResult` — sub-cycle 3 struct (cycle 34)
+- [~] unit:WF-09 `dag-executor.ts::NodeState` → `workflows::dag_executor::NodeState` — sub-cycle 3 enum (cycle 34)
+- [ ] unit:WF-09 `dag-executor.ts::executeScriptNode` → `workflows::dag_executor::execute_script_node()` — sub-cycle 4b (pending)
+- [ ] unit:WF-09 `dag-executor.ts::executeLoopNode` → `workflows::dag_executor::execute_loop_node()` — sub-cycle 4e (pending)
+- [ ] unit:WF-09 `dag-executor.ts::executeApprovalNode` → `workflows::dag_executor::execute_approval_node()` — sub-cycle 4f (pending)
+> NOTE (harvest gap, cycle 36): the original WF-09 symbol harvest captured only the 16 top-level pure fns/constants and MISSED the core executor fns + sub-cycle-3 reask helpers/types (added above). A full WF-09 re-harvest (`git kb code symbols`) is owed at the pre-DONE sweep to confirm no further WF-09 symbols are unlisted.
 
 ### WF-10 — executor.ts
 
@@ -296,10 +309,10 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-29 — logger.ts
 
-- [ ] unit:WF-29 `logger.ts::logNodeStart` → `workflows::logger::log_node_start()` [≠] maps to tracing::info!
-- [ ] unit:WF-29 `logger.ts::logNodeComplete` → `workflows::logger::log_node_complete()` [≠] maps to tracing::info!
-- [ ] unit:WF-29 `logger.ts::logNodeSkip` → `workflows::logger::log_node_skip()` [≠] maps to tracing::info!
-- [ ] unit:WF-29 `logger.ts::logNodeError` → `workflows::logger::log_node_error()` [≠] maps to tracing::error!
+- [x] unit:WF-29 `logger.ts::logNodeStart` → `har_dag_executor::dag_executor::log_node_start()` — parity-verified sub-cycle 4a (cycle 36); faithful `{runId}.jsonl` write per logger.ts:181-237 (the planned `[≠] tracing::info!` downgrade is SUPERSEDED by a byte-shape-faithful port)
+- [x] unit:WF-29 `logger.ts::logNodeComplete` → `har_dag_executor::dag_executor::log_node_complete()` — parity-verified sub-cycle 4a (cycle 36); faithful jsonl write. NOTE: emitter event key `durationMs` vs TS `duration` tracked separately (shared WF-15 `emit()` helper, out of 4a scope)
+- [x] unit:WF-29 `logger.ts::logNodeSkip` → `har_dag_executor::dag_executor::log_node_skip()` — ported sub-cycle 2 (cycle 33; `{runId}.skipped.log` JSON)
+- [x] unit:WF-29 `logger.ts::logNodeError` → `har_dag_executor::dag_executor::log_node_error()` — parity-verified sub-cycle 4a (cycle 36); faithful jsonl write
 - [ ] unit:WF-29 `logger.ts::logAssistant` → `workflows::logger::log_assistant()` [≠] maps to tracing::debug!
 - [ ] unit:WF-29 `logger.ts::logTool` → `workflows::logger::log_tool()` [≠] maps to tracing::debug!
 - [ ] unit:WF-29 `logger.ts::logWorkflowComplete` → `workflows::logger::log_workflow_complete()` [≠] maps to tracing::info!
@@ -317,7 +330,7 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 - [ ] unit:WF-32 `deps.ts::WorkflowMessageMetadata` → `workflows::deps::WorkflowMessageMetadata`
 - [ ] unit:WF-32 `deps.ts::WorkflowMessageCategory` → `workflows::deps::WorkflowMessageCategory`
-- [ ] unit:WF-32 `deps.ts::IWorkflowPlatform` → `workflows::deps::IWorkflowPlatform` (trait)
+- [~] unit:WF-32 `deps.ts::IWorkflowPlatform` → `har_dag_executor::executor_shared::WorkflowPlatform` (trait) — sub-cycle 4a (cycle 36) landed the SURFACE WF-09 needs: `WorkflowPlatform: MessagePlatform` + `get_streaming_mode()→StreamingMode{Stream,Batch}` + `send_structured_event()` ([≠]2 default no-op; web/SSE override owed to the full WF-32 deps.rs port). Full IWorkflowPlatform surface remains pending under WF-32.
 - [ ] unit:WF-32 `deps.ts::WorkflowConfig` → `workflows::deps::WorkflowConfig`
 - [ ] unit:WF-32 `deps.ts::AgentProviderFactory` → `workflows::deps::AgentProviderFactory`
 - [ ] unit:WF-32 `deps.ts::WorkflowDeps` → `workflows::deps::WorkflowDeps`
