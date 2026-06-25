@@ -334,7 +334,13 @@ NEEDS-HUMAN resolved: workflow-node-session.ts read; actual shape confirmed. 8 f
 
 ### WF-31 — providers/src/shared/structured-output.ts
 
-- [ ] unit:WF-31 `shared/structured-output.ts::validateStructuredOutput` → `providers::shared::structured_output::validate_structured_output()`
+- [x] unit:WF-31 `shared/structured-output.ts::validateStructuredOutput` → `har_provider::shared::structured_output::validate_structured_output()` — parity-verified cycle 38 (findings/parity-WF-31.md; 26/26 verdicts byte-exact vs live Ajv 8.20.0, fail-safe-on-uncompilable holds, draft-07 pin verified via jsonschema crate 0.46). [≠] WF-31-msg-wording (Ajv English wording vs crate; sole consumer dag-executor.ts:1187-1231 only join()s into a reask prompt, no text assert), WF-31-allerrors-order, WF-31-no-cache.
+- [x] unit:WF-31 `shared/structured-output.ts::formatSchemaErrors` → `har_provider::shared::structured_output::format_schema_errors()` — parity-verified cycle 38 ((root)/`/path` JSON-Pointer + missing-property-name + empty→generic line byte-exact)
+- [x] unit:WF-31 `shared/structured-output.ts::StructuredValidationResult` → `har_provider::shared::structured_output::StructuredValidationResult` — cycle 38 (2-variant Valid|Invalid{errors}; compile-error maps to Valid via on_compile_error hook, not a 3rd variant)
+- [x] unit:WF-31 `shared/structured-output.ts::tryParseStructuredOutput` → `har_provider::shared::structured_output::try_parse_structured_output()` — parity-verified (jsonrepair-rs; bounded [≈] NaN/Infinity/+N sliver) — ported earlier (PR-track), harvest-gap corrected cycle 38
+- [x] unit:WF-31 `shared/structured-output.ts::augmentPromptForJsonSchema` → `har_provider::shared::structured_output::augment_prompt_for_json_schema()` — parity-verified (byte-exact key order via serde_json::Map) — ported earlier (PR-10 track), harvest-gap corrected cycle 38
+- [x] unit:WF-31 `shared/structured-output.ts::normalizeJsonSchemaForOpenAiStrict` → `har_provider::codex::provider::normalize_json_schema_for_openai_strict()` — parity-verified cycle 17 (18-case 0-diff vs live TS) — harvest-gap corrected cycle 38
+- [x] unit:WF-31 `shared/structured-output.ts::hasOpenAdditionalProperties` → `har_provider::codex::provider::has_open_additional_properties()` — parity-verified cycle 17 (with the normalizer) — harvest-gap corrected cycle 38
 
 ### WF-32 — deps.ts
 

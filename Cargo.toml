@@ -75,6 +75,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # JSON repair (matches npm jsonrepair's throw-on-trailing-garbage + recover-malformed behavior)
 jsonrepair-rs = "0.2.1"
 
+# JSON Schema validation — Draft-07 pinned (Ajv 8 default; port of validateStructuredOutput / WF-31)
+jsonschema = "0.46"
+
 # Regex
 regex = "1"
 
