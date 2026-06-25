@@ -17,7 +17,7 @@ use crate::detect_credit_exhaustion;
 use crate::executor_shared::{classify_error, ErrorType};
 use crate::output_ref::{resolve_node_output_field, FieldResolution};
 use har_contract::SendQueryOptions;
-use har_workflow_schema::{DagNode, NodeOutput, TriggerRule};
+use har_workflow_schema::{DagNode, NodeOutput, ScriptRuntime, TriggerRule};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashSet;
@@ -1624,9 +1624,11 @@ use crate::condition_evaluator;
 
 // Sub-cycle 4a: D1 platform seam imports.
 use crate::executor_shared::{
-    format_subprocess_failure, safe_send_message, substitute_workflow_variables,
+    format_subprocess_failure, is_inline_script, safe_send_message, substitute_workflow_variables,
     RawSubprocessError, SendMessageContext, WorkflowPlatform,
 };
+// Sub-cycle 4b: WF-18 script discovery.
+use crate::script_discovery::discover_scripts_for_cwd;
 
 // ─── Internal types for sub-cycle 2 ──────────────────────────────────────
 
@@ -2578,6 +2580,572 @@ pub async fn execute_bash_node(
     }
 }
 
+// ─── B2 — execute_script_node (sub-cycle 4b) ──────────────────────────────────
+
+/// Execute a script DAG node (bun or uv). Source: dag-executor.ts:1683-1945.
+///
+/// # Key differences from B1 (bash node)
+/// - `node_started` event carries the `runtime` field (`"bun"` | `"uv"`).
+/// - Variable substitution uses `shell_safe: false` (script is not inlined into a shell).
+/// - `substitute_node_output_refs` with `escaped_for_bash=false`.
+/// - Env overlay is NARROWER: only `ARTIFACTS_DIR`, `LOG_DIR`, `BASE_BRANCH` + `env_vars`
+///   (NO `USER_MESSAGE`, `ARGUMENTS`, `LOOP_*`, `REJECTION_REASON`, `CONTEXT*`).
+///   Source: 1739-1745.
+/// - Inline scripts dispatch directly; named scripts require `discover_scripts_for_cwd`
+///   which has its **own** inner try/catch (1774-1806) — discovery failure is NOT the
+///   outer catch's EACCES branch.
+/// - ENOENT message format: `"'${cmd}'"` (single-quoted cmd name). Source: 1907-1908.
+///
+/// # Error ladder (source: 1896-1943)
+/// 1. timeout  (`TimedOut`)                 → `"Script node '...' timed out after {ms}ms"`
+/// 2. ENOENT   (`SpawnFailed{NotFound}`)    → `"… failed: '${cmd}' executable not found in PATH"`
+/// 3. EACCES   (`SpawnFailed{Permission}`)  → `"… failed: permission denied (check cwd permissions)"`
+/// 4. other                                 → `format_subprocess_failure().user_message`
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_script_node(
+    deps: &WorkflowDeps,
+    platform: &dyn WorkflowPlatform,
+    conversation_id: &str,
+    cwd: &str,
+    workflow_run: &har_workflow_schema::WorkflowRun,
+    node: &har_workflow_schema::ScriptNode,
+    artifacts_dir: &str,
+    log_dir: &str,
+    base_branch: &str,
+    docs_dir: &str,
+    node_outputs: &HashMap<String, NodeOutput>,
+    issue_context: Option<&str>,
+    env_vars: Option<&HashMap<String, String>>,
+) -> NodeOutput {
+    let node_start_time = std::time::Instant::now();
+    let node_id = &node.base.id;
+    let node_context = SendMessageContext {
+        workflow_id: Some(workflow_run.id.clone()),
+        node_name: Some(node_id.clone()),
+    };
+
+    // runtime string for events / logging. Source: 1701, 1708-1710.
+    let runtime_str = match &node.runtime {
+        ScriptRuntime::Bun => "bun",
+        ScriptRuntime::Uv => "uv",
+    };
+
+    // — log_started + store event + emitter — source: 1701-1724
+    info!(node_id = %node_id, r#type = "script", runtime = runtime_str, "dag_node_started");
+    let _ = log_node_start(log_dir, &workflow_run.id, node_id, "<script>").await;
+
+    deps.emit_workflow_event(
+        &workflow_run.id,
+        "node_started",
+        node_id,
+        serde_json::json!({"type": "script", "runtime": runtime_str}),
+    )
+    .await;
+
+    get_workflow_event_emitter()
+        .emit(
+            "node_started",
+            &workflow_run.id,
+            Some(node_id),
+            Some(node_id),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    // — variable substitution — source: 1726-1736
+    // substituteWorkflowVariables WITHOUT shellSafe (B2 differs from B1 here).
+    let substituted_script = match substitute_workflow_variables(
+        &node.script,
+        &workflow_run.id,
+        &workflow_run.user_message,
+        artifacts_dir,
+        base_branch,
+        docs_dir,
+        issue_context,
+        None,  // loop_user_input
+        None,  // rejection_reason
+        None,  // loop_prev_output
+        false, // shell_safe: false (no shell-quoting — script is not inlined into bash)
+    ) {
+        Ok(sr) => sr.prompt,
+        Err(_base_branch_err) => {
+            let error_msg = format!(
+                "Script node '{}' failed: $BASE_BRANCH is referenced but no base branch is set",
+                node_id
+            );
+            error!(node_id = %node_id, "dag_node_failed_base_branch_empty");
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "script"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            return NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            };
+        }
+    };
+
+    // substituteNodeOutputRefs with escaped_for_bash=false. Source: 1736.
+    let final_script = substitute_node_output_refs(&substituted_script, node_outputs, false, None);
+
+    // — timeout — source: 1738
+    let timeout_ms = node
+        .timeout
+        .map(|t| t as u64)
+        .unwrap_or(SUBPROCESS_DEFAULT_TIMEOUT);
+
+    // — env overlay — source: 1739-1745 (NARROWER than bash: only 3 fixed keys + envVars)
+    // ARTIFACTS_DIR, LOG_DIR, BASE_BRANCH — NO USER_MESSAGE, ARGUMENTS, LOOP_*, CONTEXT*.
+    let mut subprocess_env: HashMap<String, String> = HashMap::new();
+    subprocess_env.insert("ARTIFACTS_DIR".to_string(), artifacts_dir.to_string());
+    subprocess_env.insert("LOG_DIR".to_string(), log_dir.to_string());
+    subprocess_env.insert("BASE_BRANCH".to_string(), base_branch.to_string());
+    // envVars overlay wins last. Source: `...(envVars ?? {})`.
+    if let Some(extra) = env_vars {
+        for (k, v) in extra {
+            subprocess_env.insert(k.clone(), v.clone());
+        }
+    }
+
+    // — command build — source: 1747-1848
+    // Build (cmd, args) from runtime + inline vs named.
+    // This block contains its own inner error paths that return early (discovery failure,
+    // script-not-found) — they DO NOT fall through to the outer catch ladder.
+    let (cmd, args): (&str, Vec<String>) = {
+        let node_deps: Vec<String> = node.deps.clone().unwrap_or_default();
+
+        if is_inline_script(&final_script) {
+            // — Inline code execution — source: 1754-1767
+            match &node.runtime {
+                ScriptRuntime::Bun => {
+                    // bun --no-env-file -e <script>
+                    // Source: 1757-1761.
+                    (
+                        "bun",
+                        vec![
+                            "--no-env-file".to_string(),
+                            "-e".to_string(),
+                            final_script.clone(),
+                        ],
+                    )
+                }
+                ScriptRuntime::Uv => {
+                    // uv run [--with dep1 --with dep2] python -c <script>
+                    // Source: 1763-1766.
+                    let mut uv_args: Vec<String> = vec!["run".to_string()];
+                    for dep in &node_deps {
+                        uv_args.push("--with".to_string());
+                        uv_args.push(dep.clone());
+                    }
+                    uv_args.push("python".to_string());
+                    uv_args.push("-c".to_string());
+                    uv_args.push(final_script.clone());
+                    ("uv", uv_args)
+                }
+            }
+        } else {
+            // — Named script — discover across repo + home scopes — source: 1769-1847
+            //
+            // Discovery is wrapped in its own try/catch so a permission error on
+            // ~/.archon/scripts/ is NOT mis-attributed to the outer catch's EACCES branch.
+            // Source: 1771-1806.
+            let scripts = match discover_scripts_for_cwd(std::path::Path::new(cwd)).await {
+                Ok(s) => s,
+                Err(disc_err) => {
+                    let error_msg = format!(
+                        "Script node '{}': failed to discover scripts — {}",
+                        node_id, disc_err
+                    );
+                    error!(
+                        node_id = %node_id,
+                        cwd,
+                        err = %disc_err,
+                        "script_discovery_failed"
+                    );
+                    let _ = safe_send_message(
+                        platform as &dyn crate::executor_shared::MessagePlatform,
+                        conversation_id,
+                        &error_msg,
+                        Some(&node_context),
+                        None,
+                        None,
+                    )
+                    .await;
+                    let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+                    deps.emit_workflow_event(
+                        &workflow_run.id,
+                        "node_failed",
+                        node_id,
+                        serde_json::json!({"error": &error_msg, "type": "script"}),
+                    )
+                    .await;
+                    get_workflow_event_emitter()
+                        .emit(
+                            "node_failed",
+                            &workflow_run.id,
+                            Some(node_id),
+                            Some(node_id),
+                            None,
+                            Some(&error_msg),
+                            None,
+                            None,
+                        )
+                        .await;
+                    return NodeOutput::Failed {
+                        output: String::new(),
+                        session_id: None,
+                        error: error_msg,
+                        structured_output: None,
+                        declared_fields: None,
+                    };
+                }
+            };
+
+            // scripts.get(finalScript) — source: 1807.
+            let script_def = match scripts.get(&final_script) {
+                Some(def) => def.clone(),
+                None => {
+                    // Source: 1809-1836.
+                    let error_msg = format!(
+                        "Script node '{}': named script '{}' not found in \
+                         .archon/scripts/ or ~/.archon/scripts/",
+                        node_id, final_script
+                    );
+                    error!(
+                        node_id = %node_id,
+                        script_name = %final_script,
+                        "script_not_found"
+                    );
+                    let _ = safe_send_message(
+                        platform as &dyn crate::executor_shared::MessagePlatform,
+                        conversation_id,
+                        &error_msg,
+                        Some(&node_context),
+                        None,
+                        None,
+                    )
+                    .await;
+                    let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+                    deps.emit_workflow_event(
+                        &workflow_run.id,
+                        "node_failed",
+                        node_id,
+                        serde_json::json!({"error": &error_msg, "type": "script"}),
+                    )
+                    .await;
+                    get_workflow_event_emitter()
+                        .emit(
+                            "node_failed",
+                            &workflow_run.id,
+                            Some(node_id),
+                            Some(node_id),
+                            None,
+                            Some(&error_msg),
+                            None,
+                            None,
+                        )
+                        .await;
+                    return NodeOutput::Failed {
+                        output: String::new(),
+                        session_id: None,
+                        error: error_msg,
+                        structured_output: None,
+                        declared_fields: None,
+                    };
+                }
+            };
+
+            // Use scriptDef.runtime (canonical source) instead of re-deriving.
+            // Source: 1839-1847.
+            match script_def.runtime {
+                ScriptRuntime::Uv => {
+                    // uv run [--with dep1 --with dep2] <path>
+                    let mut uv_args: Vec<String> = vec!["run".to_string()];
+                    for dep in &node_deps {
+                        uv_args.push("--with".to_string());
+                        uv_args.push(dep.clone());
+                    }
+                    uv_args.push(script_def.path.clone());
+                    ("uv", uv_args)
+                }
+                ScriptRuntime::Bun => {
+                    // bun --no-env-file run <path>
+                    (
+                        "bun",
+                        vec![
+                            "--no-env-file".to_string(),
+                            "run".to_string(),
+                            script_def.path.clone(),
+                        ],
+                    )
+                }
+            }
+        }
+    };
+
+    // — subprocess via D3 — source: 1850-1854
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    match run_subprocess(cmd, &args_refs, cwd, timeout_ms, &subprocess_env).await {
+        SubprocessOutcome::Success { stdout, stderr } => {
+            // Trim ONLY a single trailing newline. Source: `/\n$/` (1857).
+            // Must use strip_suffix('\n'), NOT trim_end().
+            let output = match stdout.strip_suffix('\n') {
+                Some(s) => s.to_string(),
+                None => stdout,
+            };
+
+            // stderr → warn + safeSendMessage. Source: 1859-1867.
+            if !stderr.trim().is_empty() {
+                warn!(node_id = %node_id, stderr = %stderr.trim(), "script_node_stderr");
+                let msg = format!(
+                    "Script node '{}' stderr:\n```\n{}\n```",
+                    node_id,
+                    stderr.trim()
+                );
+                let _ = safe_send_message(
+                    platform as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &msg,
+                    Some(&node_context),
+                    None,
+                    None,
+                )
+                .await;
+            }
+
+            let duration_ms = node_start_time.elapsed().as_millis() as u64;
+            info!(node_id = %node_id, duration_ms, "dag_node_completed");
+            let _ = log_node_complete(
+                log_dir,
+                &workflow_run.id,
+                node_id,
+                "<script>",
+                Some(duration_ms),
+            )
+            .await;
+
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_completed",
+                node_id,
+                serde_json::json!({
+                    "duration_ms": duration_ms,
+                    "type": "script",
+                    "node_output": output,
+                }),
+            )
+            .await;
+
+            get_workflow_event_emitter()
+                .emit(
+                    "node_completed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    None,
+                    Some(duration_ms),
+                    None,
+                )
+                .await;
+
+            NodeOutput::Completed {
+                output,
+                session_id: None,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+
+        SubprocessOutcome::TimedOut => {
+            // Source: 1905-1906.
+            let label = format!("Script node '{}'", node_id);
+            let error_msg = format!("{} timed out after {}ms", label, timeout_ms);
+            let formatted = format_subprocess_failure(
+                &RawSubprocessError {
+                    message: Some(error_msg.clone()),
+                    killed: Some(true),
+                    ..Default::default()
+                },
+                &label,
+            );
+            error!(
+                node_id = %node_id, node_type = "script", is_timeout = true,
+                exit_code = ?formatted.log_fields.exit_code,
+                killed = formatted.log_fields.killed,
+                stderr_tail = ?formatted.log_fields.stderr_tail,
+                "dag_node_failed"
+            );
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "script"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+
+        SubprocessOutcome::SpawnFailed { kind } => {
+            // Source: 1907-1910. Note: ENOENT format uses `'${cmd}'` (single-quoted).
+            let label = format!("Script node '{}'", node_id);
+            let error_msg = match kind {
+                std::io::ErrorKind::NotFound => {
+                    // `'${cmd}'` — backtick-quoted in TS source, single-quote delimiters.
+                    format!("{} failed: '{}' executable not found in PATH", label, cmd)
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    format!(
+                        "{} failed: permission denied (check cwd permissions)",
+                        label
+                    )
+                }
+                _ => format!("{} failed: spawn error ({:?})", label, kind),
+            };
+            let formatted = format_subprocess_failure(
+                &RawSubprocessError {
+                    message: Some(error_msg.clone()),
+                    ..Default::default()
+                },
+                &label,
+            );
+            error!(
+                node_id = %node_id, node_type = "script", is_timeout = false,
+                exit_code = ?formatted.log_fields.exit_code,
+                killed = formatted.log_fields.killed,
+                stderr_tail = ?formatted.log_fields.stderr_tail,
+                "dag_node_failed"
+            );
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "script"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+
+        SubprocessOutcome::Failed {
+            exit_code,
+            stderr,
+            stdout: _,
+            msg: _,
+        } => {
+            // Source: 1911-1913. `else { errorMsg = formatted.userMessage }`.
+            let label = format!("Script node '{}'", node_id);
+            // Build the synthesized error message shape matching TS ExecFileException.
+            let cmd_line = std::iter::once(cmd)
+                .chain(args.iter().map(|s| s.as_str()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let raw_err = RawSubprocessError {
+                message: Some(format!("Command failed: {}", cmd_line)),
+                stderr: Some(stderr.clone()),
+                code: exit_code.map(|c| c.to_string()),
+                killed: Some(false),
+                ..Default::default()
+            };
+            let formatted = format_subprocess_failure(&raw_err, &label);
+            let error_msg = formatted.user_message.clone();
+            error!(
+                node_id = %node_id, node_type = "script", is_timeout = false,
+                exit_code = ?formatted.log_fields.exit_code,
+                killed = formatted.log_fields.killed,
+                stderr_tail = ?formatted.log_fields.stderr_tail,
+                "dag_node_failed"
+            );
+            let _ = log_node_error(log_dir, &workflow_run.id, node_id, &error_msg).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                node_id,
+                serde_json::json!({"error": &error_msg, "type": "script"}),
+            )
+            .await;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(node_id),
+                    Some(node_id),
+                    None,
+                    Some(&error_msg),
+                    None,
+                    None,
+                )
+                .await;
+            NodeOutput::Failed {
+                output: String::new(),
+                session_id: None,
+                error: error_msg,
+                structured_output: None,
+                declared_fields: None,
+            }
+        }
+    }
+}
+
 // ─── execute_dag_workflow — the ~960-line DAG orchestrator ───────────────
 
 /// Execute a DAG workflow from topological layers through to completion or failure.
@@ -3051,12 +3619,37 @@ pub async fn execute_dag_workflow(
                         )
                     }
 
-                    // All other node types (Prompt/Command/Script/Loop/Approval) are NOT ported
-                    // in sub-cycle 4a. They land in 4b-4f. This Skipped arm is an HONEST
+                    // B2 — Script node: bun/uv subprocess. Source: dag-executor.ts:3092-3111.
+                    har_workflow_schema::DagNode::Script(script_node) => {
+                        let output = execute_script_node(
+                            &deps_clone,
+                            platform_clone.as_ref() as &dyn WorkflowPlatform,
+                            &conversation_id_owned,
+                            &cwd_owned,
+                            &workflow_run_owned,
+                            script_node,
+                            &artifacts_dir_owned,
+                            &log_dir_owned,
+                            &base_branch_owned,
+                            &docs_dir_owned,
+                            &all_outputs,
+                            issue_context_owned.as_deref(),
+                            if config_env_vars_owned.is_empty() {
+                                None
+                            } else {
+                                Some(&config_env_vars_owned)
+                            },
+                        )
+                        .await;
+                        (nid.clone(), output)
+                    }
+
+                    // All other node types (Prompt/Command/Loop/Approval) are NOT ported
+                    // in sub-cycle 4b. They land in 4c-4f. This Skipped arm is an HONEST
                     // placeholder — not a silent downgrade. The ledger row for each stays `- [~]`
                     // until its sub-cycle is complete and parity-verified.
                     _ => {
-                        let _ = wf_name_owned; // suppress unused warning until 4b-4f
+                        let _ = wf_name_owned; // suppress unused warning until 4c-4f
                         let _ = base_branch_owned;
                         let _ = docs_dir_owned;
                         let _ = issue_context_owned;

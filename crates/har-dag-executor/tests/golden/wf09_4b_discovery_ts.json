@@ -1,0 +1,160 @@
+{"level":30,"time":1782429369262,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","count":2,"dir":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/home/scripts","msg":"scripts_discovery_completed"}
+{"level":30,"time":1782429369263,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","count":8,"dir":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/repo/.archon/scripts","msg":"scripts_discovery_completed"}
+{"level":30,"time":1782429369264,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","count":8,"dir":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/repo/.archon/scripts","msg":"scripts_discovery_completed"}
+{"level":30,"time":1782429369264,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","count":2,"dir":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/home/scripts","msg":"scripts_discovery_completed"}
+{"level":30,"time":1782429369264,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","count":0,"dir":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/empty","msg":"scripts_discovery_completed"}
+{"level":30,"time":1782429369264,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","count":0,"dir":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/does_not_exist_xyz","msg":"scripts_discovery_completed"}
+{"level":40,"time":1782429369264,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","err":{"type":"Error","message":"EACCES: permission denied, scandir '/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/unreadable'","stack":"Error: EACCES: permission denied, scandir '/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/unreadable'\n    at async scanScriptDir (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/script-discovery.ts:70:21)\n    at async discoverScripts (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/script-discovery.ts:132:9)\n    at async tryDiscover (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/_oracle_wf18.ts:10:61)\n    at async <anonymous> (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/_oracle_wf18.ts:27:26)","code":"EACCES","path":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/unreadable","syscall":"scandir","errno":-13},"dirPath":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/unreadable","msg":"script_directory_read_error"}
+{"level":40,"time":1782429369265,"pid":1709319,"hostname":"drdave-TRX50-AI-TOP","module":"workflow.script-discovery","err":{"type":"Error","message":"ENOTDIR: not a directory, scandir '/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/notadir_file.ts'","stack":"Error: ENOTDIR: not a directory, scandir '/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/notadir_file.ts'\n    at async scanScriptDir (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/script-discovery.ts:70:21)\n    at async discoverScripts (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/script-discovery.ts:132:9)\n    at async tryDiscover (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/_oracle_wf18.ts:10:61)\n    at async <anonymous> (/home/drdave/Desktop/meta/meta-yard/Archon/packages/workflows/src/_oracle_wf18.ts:28:23)","code":"ENOTDIR","path":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/notadir_file.ts","syscall":"scandir","errno":-20},"dirPath":"/tmp/claude-1000/-home-drdave-Desktop-meta-harness-agent-rs/69d242cc-5c7b-4323-92d5-74c6fd112723/scratchpad/wf18/fx/notadir_file.ts","msg":"script_directory_read_error"}
+{
+  "for_cwd": {
+    "ok": true,
+    "entries": [
+      {
+        "key": "home_only",
+        "name": "home_only",
+        "path": "<ROOT>/home/scripts/home_only.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "shared",
+        "name": "shared",
+        "path": "<ROOT>/repo/.archon/scripts/shared.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "m3",
+        "name": "m3",
+        "path": "<ROOT>/repo/.archon/scripts/m3.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "m2",
+        "name": "m2",
+        "path": "<ROOT>/repo/.archon/scripts/m2.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "m1",
+        "name": "m1",
+        "path": "<ROOT>/repo/.archon/scripts/m1.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "bar",
+        "name": "bar",
+        "path": "<ROOT>/repo/.archon/scripts/triage/bar.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "pyroot",
+        "name": "pyroot",
+        "path": "<ROOT>/repo/.archon/scripts/pyroot.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "quux",
+        "name": "quux",
+        "path": "<ROOT>/repo/.archon/scripts/quux.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "foo",
+        "name": "foo",
+        "path": "<ROOT>/repo/.archon/scripts/foo.ts",
+        "runtime": "bun"
+      }
+    ]
+  },
+  "repo_scope": {
+    "ok": true,
+    "entries": [
+      {
+        "key": "m3",
+        "name": "m3",
+        "path": "<ROOT>/repo/.archon/scripts/m3.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "m2",
+        "name": "m2",
+        "path": "<ROOT>/repo/.archon/scripts/m2.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "m1",
+        "name": "m1",
+        "path": "<ROOT>/repo/.archon/scripts/m1.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "bar",
+        "name": "bar",
+        "path": "<ROOT>/repo/.archon/scripts/triage/bar.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "pyroot",
+        "name": "pyroot",
+        "path": "<ROOT>/repo/.archon/scripts/pyroot.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "quux",
+        "name": "quux",
+        "path": "<ROOT>/repo/.archon/scripts/quux.js",
+        "runtime": "bun"
+      },
+      {
+        "key": "foo",
+        "name": "foo",
+        "path": "<ROOT>/repo/.archon/scripts/foo.ts",
+        "runtime": "bun"
+      },
+      {
+        "key": "shared",
+        "name": "shared",
+        "path": "<ROOT>/repo/.archon/scripts/shared.py",
+        "runtime": "uv"
+      }
+    ]
+  },
+  "home_scope": {
+    "ok": true,
+    "entries": [
+      {
+        "key": "home_only",
+        "name": "home_only",
+        "path": "<ROOT>/home/scripts/home_only.py",
+        "runtime": "uv"
+      },
+      {
+        "key": "shared",
+        "name": "shared",
+        "path": "<ROOT>/home/scripts/shared.ts",
+        "runtime": "bun"
+      }
+    ]
+  },
+  "dup": {
+    "ok": false,
+    "error": "Duplicate script name \"foo\": found \"<ROOT>/dup/foo.py\" and \"<ROOT>/dup/foo.ts\". Script names must be unique across extensions."
+  },
+  "empty": {
+    "ok": true,
+    "entries": []
+  },
+  "nonexistent": {
+    "ok": true,
+    "entries": []
+  },
+  "unreadable": {
+    "ok": false,
+    "error": "Directory read error: EACCES: permission denied, scandir '<ROOT>/unreadable' (EACCES)"
+  },
+  "notadir": {
+    "ok": false,
+    "error": "Directory read error: ENOTDIR: not a directory, scandir '<ROOT>/notadir_file.ts' (ENOTDIR)"
+  },
+  "default_scripts_size": 0
+}
