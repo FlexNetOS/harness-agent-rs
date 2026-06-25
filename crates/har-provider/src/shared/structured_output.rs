@@ -146,6 +146,132 @@ fn try_json_parse_object(text: &str) -> Option<Value> {
     }
 }
 
+// ─── Schema validation (jsonschema crate, Draft-07 pinned) ───────────────────
+
+/// Port of `StructuredValidationResult` (structured-output.ts:259).
+///
+/// EXACTLY 2 variants — the compile-error case maps to `Valid` (fail-safe),
+/// it is NOT a third variant. Mirrors the TS discriminated union:
+/// `{ valid: true } | { valid: false; errors: string[] }`.
+#[derive(Debug, PartialEq)]
+pub enum StructuredValidationResult {
+    /// The value satisfies the schema.
+    Valid,
+    /// The value violates the schema. `errors` contains `"path: detail"` lines.
+    Invalid { errors: Vec<String> },
+}
+
+/// Port of `validateStructuredOutput` (structured-output.ts:278-298).
+///
+/// Validates a parsed structured-output value against the node's declared JSON
+/// Schema. Used for EVERY provider that declares `output_format` — even
+/// SDK-enforced ones (Claude/Codex) need this net for refusal /
+/// `max_tokens`-truncation edges that bypass grammar-constrained decoding.
+///
+/// **Draft-07 pinned** via `jsonschema::draft7::new` — Ajv 8's default for schemas
+/// that omit `$schema` (all real Archon `output_format` schemas). The crate's
+/// default is 2020-12; explicit pinning is a fidelity requirement (see architecture
+/// §4 risk flag 1). Format validation is OFF (matches Ajv without `ajv-formats`).
+///
+/// **Fail-SAFE on uncompilable schema** (e.g. `$ref` to missing `$defs`): returns
+/// `Valid` and fires `on_compile_error` if provided. An uncompilable schema must
+/// NEVER turn a correct provider response into a spurious node failure. This
+/// preserves Ajv's `try { ajv.compile(schema) } catch { onCompileError?.(msg); return
+/// { valid: true }; }` semantics exactly.
+///
+/// **`on_compile_error`** is `&mut dyn FnMut` (not `Fn`) because the dag-executor's
+/// closure mutates a warning sink — faithful to the TS `onCompileError?.(message)`
+/// hook side-effect model.
+///
+/// **`allErrors: true`** equivalent: uses `iter_errors` (not `is_valid`) so every
+/// failure is surfaced for the reask prompt.
+///
+/// `- [≠] WF-31-no-cache`: Ajv uses a `WeakMap` keyed by object identity; per-call
+/// compile is observably identical (deterministic in the schema) and simpler.
+/// Deferred as parity-neutral per architecture §4 risk flag 4.
+pub fn validate_structured_output(
+    value: &Value,
+    schema: &Value,
+    on_compile_error: Option<&mut dyn FnMut(String)>,
+) -> StructuredValidationResult {
+    // Compile the schema pinned to Draft-07.
+    // `jsonschema::draft7::new` is `options().build()` with Draft7 selected.
+    match jsonschema::draft7::new(schema) {
+        Err(e) => {
+            // Fail-safe branch: schema cannot be compiled (unresolvable $ref,
+            // exotic dialect, etc.). Fire the hook and return Valid so an
+            // uncompilable schema never blocks a correct provider response.
+            // Maps to: `onCompileError?.(message); return { valid: true };`
+            if let Some(cb) = on_compile_error {
+                cb(e.to_string());
+            }
+            StructuredValidationResult::Valid
+        }
+        Ok(validator) => {
+            // allErrors equivalent: collect ALL failures (not short-circuit).
+            // `iter_errors` borrows `validator` and `value` for lifetime 'i;
+            // we convert to Vec<ValidationError<'i>> while both are in scope,
+            // then `format_schema_errors` converts each to an owned String.
+            let errors: Vec<_> = validator.iter_errors(value).collect();
+            if errors.is_empty() {
+                StructuredValidationResult::Valid
+            } else {
+                StructuredValidationResult::Invalid {
+                    errors: format_schema_errors(errors),
+                }
+            }
+        }
+    }
+}
+
+/// Port of `formatSchemaErrors` (structured-output.ts:306-316).
+///
+/// Renders `jsonschema::ValidationError` items as `"path: detail"` lines for
+/// reask prompts and logs.
+///
+/// Mapping:
+/// - Empty `instance_path` (root-level failure, e.g. missing required at root) →
+///   `"(root)"`. Matches Ajv's `instancePath === ''` → `'(root)'` check.
+/// - Non-empty `instance_path` → the JSON Pointer string (e.g. `"/count"`).
+/// - Empty or null error list → the single generic line
+///   `"value does not match the declared schema"`.
+///
+/// The property name in missing-required errors comes from the crate's Display
+/// message (e.g. `"summary" is a required property`), which satisfies the oracle
+/// assertion `line.includes('summary')`. The TS source uses `e.params.missingProperty`
+/// to append the name separately; the crate embeds it in the message directly.
+/// Both approaches produce a line that contains the property name — contractually
+/// identical per the oracle.
+///
+/// `- [≠] WF-31-msg-wording`: exact English differs from Ajv's
+/// (crate: `"summary" is a required property` vs Ajv: `must have required property
+/// 'summary'`). The VERDICT + path + property-name presence are the contract;
+/// the surrounding English is not load-bearing. See architecture §3.
+pub fn format_schema_errors<'a>(
+    errors: impl IntoIterator<Item = jsonschema::ValidationError<'a>>,
+) -> Vec<String> {
+    let errors: Vec<_> = errors.into_iter().collect();
+    if errors.is_empty() {
+        return vec!["value does not match the declared schema".to_owned()];
+    }
+    errors
+        .into_iter()
+        .map(|e| {
+            let path_str = e.instance_path().as_str();
+            let path = if path_str.is_empty() {
+                "(root)".to_owned()
+            } else {
+                path_str.to_owned()
+            };
+            // `e` (Display for ValidationError) gives the human-readable message:
+            //   "\"two\" is not of type \"number\""  — for type errors
+            //   "\"summary\" is a required property" — for missing-required errors
+            // Path + message → "path: message" lines for reask prompts.
+            format!("{path}: {e}")
+        })
+        .collect()
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -323,5 +449,174 @@ mod tests {
         let result = try_parse_structured_output(r#"{"outer": {"inner": "v"}}"#);
         assert!(result.is_some());
         assert_eq!(result.unwrap()["outer"]["inner"], "v");
+    }
+
+    // ── validate_structured_output oracle (WF-31) ────────────────────────────
+    // 1:1 port of `describe('validateStructuredOutput')` (structured-output.test.ts:127-174)
+    // and `describe('formatSchemaErrors')` (lines 176-191).
+    // Test names mirror the TS descriptions so the parity verifier can match them.
+
+    fn oracle_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "summary": { "type": "string" },
+                "count":   { "type": "number" }
+            },
+            "required": ["summary"]
+        })
+    }
+
+    /// Oracle: "valid value passes" (structured-output.test.ts:134)
+    #[test]
+    fn validate_so_valid_value_passes() {
+        let schema = oracle_schema();
+        let value = serde_json::json!({"summary": "hi", "count": 2});
+        let r = validate_structured_output(&value, &schema, None);
+        assert_eq!(r, StructuredValidationResult::Valid);
+    }
+
+    /// Oracle: "missing required field fails with a root-level error" (test.ts:139)
+    #[test]
+    fn validate_so_missing_required_field_fails_with_root_error_containing_field_name() {
+        let schema = oracle_schema();
+        let value = serde_json::json!({"count": 2});
+        let r = validate_structured_output(&value, &schema, None);
+        assert!(
+            matches!(r, StructuredValidationResult::Invalid { .. }),
+            "missing required should be Invalid"
+        );
+        let errors = match r {
+            StructuredValidationResult::Invalid { errors } => errors,
+            _ => unreachable!(),
+        };
+        assert!(!errors.is_empty(), "error list must not be empty");
+        assert!(
+            errors.iter().any(|e| e.contains("summary")),
+            "at least one error must mention 'summary'; got: {errors:?}"
+        );
+    }
+
+    /// Oracle: "wrong type fails with a path-scoped error" (test.ts:147)
+    #[test]
+    fn validate_so_wrong_type_fails_with_path_scoped_error() {
+        let schema = oracle_schema();
+        let value = serde_json::json!({"summary": "hi", "count": "two"});
+        let r = validate_structured_output(&value, &schema, None);
+        assert!(
+            matches!(r, StructuredValidationResult::Invalid { .. }),
+            "wrong type should be Invalid"
+        );
+        let errors = match r {
+            StructuredValidationResult::Invalid { errors } => errors,
+            _ => unreachable!(),
+        };
+        assert!(
+            errors.iter().any(|e| e.starts_with("/count")),
+            "at least one error must start with '/count'; got: {errors:?}"
+        );
+    }
+
+    /// Oracle: "enum violation fails" (test.ts:154)
+    #[test]
+    fn validate_so_enum_violation_fails_and_valid_enum_member_passes() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": { "kind": { "enum": ["A", "B"] } }
+        });
+        assert!(
+            matches!(
+                validate_structured_output(&serde_json::json!({"kind": "C"}), &schema, None),
+                StructuredValidationResult::Invalid { .. }
+            ),
+            "enum violation must be Invalid"
+        );
+        assert_eq!(
+            validate_structured_output(&serde_json::json!({"kind": "A"}), &schema, None),
+            StructuredValidationResult::Valid,
+            "valid enum member must be Valid"
+        );
+    }
+
+    /// Oracle: "optional field absent is still valid (additionalProperties not required)"
+    /// (test.ts:160)
+    #[test]
+    fn validate_so_optional_field_absent_is_valid() {
+        let schema = oracle_schema();
+        let value = serde_json::json!({"summary": "hi"});
+        // `count` is NOT in `required` — absent is valid.
+        // `additionalProperties` is also not required (not an OpenAI strict-mode concern).
+        assert_eq!(
+            validate_structured_output(&value, &schema, None),
+            StructuredValidationResult::Valid
+        );
+    }
+
+    /// Oracle: "uncompilable schema fails SAFE (valid:true) and reports via onCompileError"
+    /// (test.ts:164)
+    #[test]
+    fn validate_so_uncompilable_ref_fails_safe_and_fires_hook() {
+        // `$ref` to `#/$defs/missing` — `$defs/missing` does not exist in the schema.
+        // `jsonschema::draft7::new` returns `Err` → fail-safe branch: Valid + hook.
+        let broken = serde_json::json!({
+            "type": "object",
+            "properties": { "a": { "$ref": "#/$defs/missing" } }
+        });
+        let mut compile_error: Option<String> = None;
+        let r = validate_structured_output(
+            &serde_json::json!({"a": 1}),
+            &broken,
+            Some(&mut |msg: String| {
+                compile_error = Some(msg);
+            }),
+        );
+        assert_eq!(
+            r,
+            StructuredValidationResult::Valid,
+            "uncompilable schema must fail-safe to Valid"
+        );
+        assert!(
+            compile_error.is_some(),
+            "on_compile_error hook must have been called; compile_error was None"
+        );
+    }
+
+    // ── format_schema_errors oracle (WF-31) ──────────────────────────────────
+
+    /// Oracle: "renders root-level missing-property failures with the property name"
+    /// (test.ts:177) — via validateStructuredOutput (which calls formatSchemaErrors).
+    #[test]
+    fn format_so_root_missing_property_line_starts_with_root_and_contains_name() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": { "name": { "type": "string" } },
+            "required": ["name"]
+        });
+        let value = serde_json::json!({});
+        let r = validate_structured_output(&value, &schema, None);
+        let errors = match r {
+            StructuredValidationResult::Invalid { errors } => errors,
+            _ => panic!("expected Invalid, got Valid"),
+        };
+        assert!(
+            errors
+                .iter()
+                .any(|line| line.starts_with("(root):") && line.contains("name")),
+            "expected a line starting with '(root):' that contains 'name'; got: {errors:?}"
+        );
+    }
+
+    /// Oracle: "returns a generic line for null/empty error input" (test.ts:187)
+    /// TS: `formatSchemaErrors(null)` and `formatSchemaErrors([])` both → generic line.
+    /// Rust: `null` has no equivalent; test both `vec![]` (empty) forms.
+    #[test]
+    fn format_so_empty_errors_returns_generic_line() {
+        // Equivalent to TS `formatSchemaErrors([])`:
+        let result = format_schema_errors(Vec::<jsonschema::ValidationError<'_>>::new());
+        assert_eq!(
+            result,
+            vec!["value does not match the declared schema"],
+            "empty error list must produce the generic line"
+        );
     }
 }

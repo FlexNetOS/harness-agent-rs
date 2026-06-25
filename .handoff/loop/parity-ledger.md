@@ -504,11 +504,18 @@ never-throws; `get_completed_dag_node_outputs` is `Result<IndexMap<..>, StoreErr
 
 - [ ] `ValidationParser` — parses structured output validation errors; exact interface NEEDS-HUMAN
 
-### UNIT WF-31: Structured Output Validator
+### UNIT WF-31: Structured Output Validator — FULL `- [x]` (cycle 38)
 **Source:** `packages/providers/src/shared/structured-output.ts`
-**Rust target:** `crates/providers/src/shared/structured_output.rs`
+**Rust target:** `crates/har-provider/src/shared/structured_output.rs` (+ normalizer in codex/provider.rs)
 
-- [ ] `validateStructuredOutput(output: unknown, schema: Record, onCompileError: fn) -> { valid: bool, errors: Vec<String> }` — validates against JSON Schema; fail-safe on uncompilable schema (dag-executor.ts:1186-1206)
+- [x] `validateStructuredOutput(value, schema, onCompileError) -> StructuredValidationResult` — parity-verified cycle 38
+  (findings/parity-WF-31.md). Decision (supersedes !B3): Ajv 8 delegates to the Rust `jsonschema` crate 0.46 **pinned to
+  draft-07** + a `format_schema_errors` adapter — 26/26 verdicts byte-exact vs live Ajv 8.20.0, **fail-safe-on-uncompilable**
+  (`$ref` to missing → onCompileError + Valid) holds, draft-07 pin verified (tuple-items `/pair/1` Invalid; integer 1.0 ok / 1.5
+  reject). Bounded `- [≠]`: WF-31-msg-wording (Ajv English vs crate; sole consumer dag-executor.ts:1187-1231 only join()s into a
+  reask prompt — no text assert), WF-31-allerrors-order, WF-31-no-cache. All 7 WF-31 symbols now `- [x]` in symbol-map (harvest
+  gap corrected: tryParse/augment/normalize/hasOpen/formatSchemaErrors/StructuredValidationResult ported earlier under PR-track).
+  **Un-stub of dag_executor.rs:2562 (execute_node_internal validation_valid) is WF-09 sub-cycle 4c — this unit just makes the validator callable.**
 
 ### UNIT WF-33: Per-Node Session Store (SQL builders + row helpers)
 **Source:** `packages/workflows/src/schemas/workflow-node-session.ts` (schema types, ported as WF-08 in har-workflow-schema) + `packages/core/src/db/workflow-node-sessions.ts` (CRUD SQL patterns)
