@@ -311,11 +311,14 @@ event/heartbeat persistence, which already goes through `WorkflowStore` (the led
 - **!B6 · WF-06 `is_approval_context` unported.** Loop-resume (4e) and approval-resume (4f) both read
   `metadata.approval` through it. Confirm WF-06 status before 4e; if unported, port the guard as a prerequisite
   (small) rather than blocking the executor.
-- **!B3 · `validate_structured_output` location.** Needs a JSON-schema validator. Check `har-provider` for an
-  existing `validateStructuredOutput` port; if absent, reimplement against the same schema subset Archon uses
-  (it compiles `output_format` → validates) — choose a Rust JSON-schema crate (e.g. `jsonschema`) OR port
-  Archon's hand-rolled validator. **Decision owed to orchestrator:** crate-vs-reimpl; do NOT leave `:2562`
-  stubbed as `true`.
+- **!B3 · `validate_structured_output` location. — RESOLVED (cycle 37, orchestrator):** PORT Archon's OWN
+  hand-rolled validator `packages/providers/src/shared/structured-output.ts::validateStructuredOutput`
+  (structured-output.ts:278) — do **NOT** use a third-party `jsonschema` crate (it would diverge from Archon's
+  exact validation rules/messages on edge cases = a silent downgrade). har-provider already ports sibling
+  structured-output helpers (`normalizeJsonSchemaForOpenAiStrict` codex/provider.rs:709, `jsonSchemaToZodShape`
+  claude/native_tools.rs) — land `validate_structured_output` in a shared location (har-provider shared or
+  har-contract) as its own portable unit, differentially verify it vs `structured-output.test.ts`, then call it
+  from `execute_node_internal` to un-stub `:2562`. Never leave `:2562` as `true`.
 
 ## 5. Genuinely deferred to sub-cycle 5+ (honest placeholder removal — no hidden stubs)
 
