@@ -4195,16 +4195,42 @@ pub async fn execute_dag_workflow(
                         (nid.clone(), output, exec_cost)
                     }
 
-                    // Approval node: honest Skipped placeholder until sub-cycle 4f.
-                    _ => {
-                        (
-                            nid.clone(),
-                            NodeOutput::Skipped {
-                                output: String::new(),
+                    // 4f — Approval node dispatch. Source: dag-executor.ts:3087-3110.
+                    // Pauses for human review; on rejection-resume re-runs the on_reject
+                    // prompt via execute_node_internal, then re-pauses. The approval gate
+                    // never reports cost upstream (its NodeOutput has no costUsd) → cost None.
+                    har_workflow_schema::DagNode::Approval(approval_node) => {
+                        let output = execute_approval_node(
+                            &deps_clone,
+                            platform_clone.clone(),
+                            &conversation_id_owned,
+                            approval_node,
+                            &workflow_run_owned,
+                            &workflow_provider_owned,
+                            workflow_model_owned.as_deref(),
+                            &cwd_owned,
+                            &artifacts_dir_owned,
+                            &log_dir_owned,
+                            &base_branch_owned,
+                            &docs_dir_owned,
+                            &all_outputs,
+                            if config_env_vars_owned.is_empty() {
+                                None
+                            } else {
+                                Some(&config_env_vars_owned)
                             },
-                            None,
+                            &config_assistants_owned,
+                            configured_command_folder_owned.as_deref(),
+                            issue_context_owned.as_deref(),
+                            ai_profile_owned.as_ref(),
+                            workflow_preset_owned.as_ref(),
                         )
+                        .await;
+                        (nid.clone(), output, None)
                     }
+                    // NOTE: after sub-cycle 4f all seven DagNode variants (Bash, Cancel,
+                    // Script, Command, Prompt, Loop, Approval) route to a real executor —
+                    // the match is exhaustive, the honest-Skipped placeholder is fully gone.
                 }
             });
 
@@ -7086,6 +7112,384 @@ pub async fn execute_loop_node(
         session_id: None,
         cost_usd: loop_total_cost_usd,
         error: Some(error_msg),
+        declared_fields: None,
+    }
+}
+
+/// Replicates the `executeDagWorkflow` dispatch-level catch (dag-executor.ts:3387-3416)
+/// for the throw-equivalent operations inside `execute_approval_node` (variable
+/// substitution, provider/model resolution, and `pauseWorkflowRun`). The TS approval
+/// node body is wrapped by that catch; in Rust those operations return `Result`, so we
+/// route their `Err` through here to reproduce the identical side effects:
+/// `node_failed` store event + emitter (nodeName = `node.command ?? node.id` → `node.id`
+/// for an approval node) + the "failed before execution" platform message + a `Failed`
+/// output carrying the error string.
+async fn approval_pre_exec_failure(
+    deps: &WorkflowDeps,
+    platform: &dyn WorkflowPlatform,
+    conversation_id: &str,
+    run_id: &str,
+    node_id: &str,
+    err: String,
+) -> NodeOutput {
+    error!(node_id = %node_id, error = %err, "dag_node_pre_execution_failed");
+    deps.emit_workflow_event(
+        run_id,
+        "node_failed",
+        node_id,
+        serde_json::json!({ "error": err }),
+    )
+    .await;
+    get_workflow_event_emitter()
+        .emit(
+            "node_failed",
+            run_id,
+            Some(node_id),
+            Some(node_id),
+            None,
+            Some(err.as_str()),
+            None,
+            None,
+        )
+        .await;
+    let _ = safe_send_message(
+        platform as &dyn crate::executor_shared::MessagePlatform,
+        conversation_id,
+        &format!("Node '{}' failed before execution: {}", node_id, err),
+        Some(&SendMessageContext {
+            workflow_id: Some(run_id.to_string()),
+            node_name: Some(node_id.to_string()),
+        }),
+        None,
+        None,
+    )
+    .await;
+    NodeOutput::Failed {
+        output: String::new(),
+        session_id: None,
+        error: err,
+        structured_output: None,
+        declared_fields: None,
+    }
+}
+
+/// Execute an approval node — pauses the workflow for human review.
+///
+/// On rejection resume (when `on_reject` is configured): runs the `on_reject` prompt via
+/// the AI node (`execute_node_internal`), then re-pauses at the approval gate. After
+/// `max_attempts` rejections, cancels the run normally.
+///
+/// Source: `dag-executor.ts:2565-2747` (`executeApprovalNode`). Returns `NodeOutput`
+/// (never a `NodeExecutionResult`) — the approval gate never reports cost upstream.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_approval_node(
+    deps: &WorkflowDeps,
+    platform: Arc<dyn WorkflowPlatform>,
+    conversation_id: &str,
+    node: &har_workflow_schema::ApprovalNode,
+    workflow_run: &har_workflow_schema::WorkflowRun,
+    workflow_provider: &str,
+    workflow_model: Option<&str>,
+    cwd: &str,
+    artifacts_dir: &str,
+    log_dir: &str,
+    base_branch: &str,
+    docs_dir: &str,
+    node_outputs: &HashMap<String, NodeOutput>,
+    config_env_vars: Option<&HashMap<String, String>>,
+    config_assistants: &HashMap<String, serde_json::Value>,
+    configured_command_folder: Option<&str>,
+    issue_context: Option<&str>,
+    ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
+    workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
+) -> NodeOutput {
+    let node_id = &node.base.id;
+    let msg_context = SendMessageContext {
+        workflow_id: Some(workflow_run.id.clone()),
+        node_name: Some(node_id.clone()),
+    };
+
+    // ── Detect rejection resume — read metadata for a rejection_reason set by the
+    //    reject handler, gated on a matching `approval`-type approval context for THIS
+    //    node. Source: ts:2588-2598. ──
+    let approval_meta = workflow_run
+        .metadata
+        .get("approval")
+        .filter(|v| har_workflow_schema::is_approval_context(v));
+    let type_is_approval = approval_meta
+        .and_then(|m| m.get("type"))
+        .and_then(|t| t.as_str())
+        == Some("approval");
+    let node_matches = approval_meta
+        .and_then(|m| m.get("nodeId"))
+        .and_then(|n| n.as_str())
+        == Some(node_id.as_str());
+    let raw_rejection = workflow_run
+        .metadata
+        .get("rejection_reason")
+        .and_then(serde_json::Value::as_str);
+    let rejection_reason: String = if type_is_approval && node_matches {
+        // `typeof rawRejection === 'string' && rawRejection !== ''`. Source: ts:2595-2597.
+        raw_rejection.filter(|s| !s.is_empty()).unwrap_or("").to_string()
+    } else {
+        String::new()
+    };
+
+    // ── On rejection resume with on_reject configured: run the on_reject prompt via AI.
+    //    Source: ts:2601-2702. ──
+    if !rejection_reason.is_empty() {
+        if let Some(on_reject) = &node.approval.on_reject {
+            // `node.approval.on_reject.max_attempts ?? 3`. Source: ts:2602.
+            let max_attempts: u8 = on_reject.max_attempts.unwrap_or(3);
+            // `(metadata?.rejection_count as number | undefined) ?? 0`. Source: ts:2603.
+            // TS compares as a JS number; read as f64 to preserve a non-integer count.
+            let rejection_count = workflow_run
+                .metadata
+                .get("rejection_count")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+
+            // ── max_attempts exhausted → cancel the run normally. Source: ts:2606-2630. ──
+            if rejection_count >= f64::from(max_attempts) {
+                // cancelWorkflowRun — store op (errors ignored, mirroring the cancel-node
+                // arm convention). Source: ts:2607.
+                let _ = deps.store.cancel_workflow_run(&workflow_run.id).await;
+                let reason = format!("max_attempts ({}) exhausted", max_attempts);
+                // workflow_cancelled store event (fire-and-forget). Source: ts:2608-2620.
+                deps.emit_workflow_event(
+                    &workflow_run.id,
+                    "workflow_cancelled",
+                    node_id,
+                    serde_json::json!({ "reason": reason }),
+                )
+                .await;
+                // WorkflowCancelledEvent { type, runId, nodeId, reason }. Source: ts:2621-2626.
+                get_workflow_event_emitter()
+                    .emit(
+                        "workflow_cancelled",
+                        &workflow_run.id,
+                        Some(node_id),
+                        None,
+                        Some(reason.as_str()),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await;
+                let cancel_msg = format!(
+                    "\u{274c} Approval node `{}` cancelled after {} rejections.",
+                    node_id, max_attempts
+                );
+                let _ = safe_send_message(
+                    platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &cancel_msg,
+                    Some(&msg_context),
+                    None,
+                    None,
+                )
+                .await;
+                return NodeOutput::Completed {
+                    output: String::new(),
+                    session_id: None,
+                    structured_output: None,
+                    declared_fields: None,
+                };
+            }
+
+            // ── Build the on_reject prompt. substituteWorkflowVariables is called with
+            //    rejectionReason and NO shellSafe (defaults false) + no loopUserInput /
+            //    loopPrevOutput. Source: ts:2632-2643. A `$BASE_BRANCH`-with-empty-base
+            //    error throws in TS → caught by the dispatch catch; mirror via the helper. ──
+            let substituted = match substitute_workflow_variables(
+                &on_reject.prompt,
+                &workflow_run.id,
+                &workflow_run.user_message,
+                artifacts_dir,
+                base_branch,
+                docs_dir,
+                issue_context,
+                None,                    // loop_user_input
+                Some(&rejection_reason), // rejection_reason
+                None,                    // loop_prev_output
+                false,                   // shell_safe
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return approval_pre_exec_failure(
+                        deps,
+                        platform.as_ref(),
+                        conversation_id,
+                        &workflow_run.id,
+                        node_id,
+                        e.to_string(),
+                    )
+                    .await;
+                }
+            };
+
+            // ── Synthetic PromptNode with a distinct `${node.id}:on_reject` id so the
+            //    node_completed event written by execute_node_internal does NOT collide
+            //    with the approval gate's own id in getCompletedDagNodeOutputs — otherwise
+            //    a resumed run would treat the gate as already completed and bypass the
+            //    human gate. Copies depends_on + idle_timeout only (NOT provider/model/
+            //    system_prompt — the on_reject run resolves the workflow defaults).
+            //    Source: ts:2645-2663. ──
+            let synthetic_base = har_workflow_schema::DagNodeBase {
+                id: format!("{}:on_reject", node_id),
+                depends_on: node.base.depends_on.clone(),
+                idle_timeout: node.base.idle_timeout,
+                ..Default::default()
+            };
+            let synthetic_node = DagNode::Prompt(har_workflow_schema::PromptNode {
+                base: synthetic_base,
+                prompt: substitute_node_output_refs(&substituted.prompt, node_outputs, false, None),
+            });
+
+            // ── Resolve provider/model for the synthetic node (its own None overrides →
+            //    workflow defaults). A resolve error throws in TS → dispatch catch. Source:
+            //    ts:2665-2677. ──
+            let resolved = match resolve_node_provider_and_model(
+                &synthetic_node,
+                workflow_provider,
+                workflow_model,
+                config_env_vars,
+                config_assistants,
+                None, // node_system_prompt — synthetic node has none
+                None, // node_max_budget_usd
+                None, // node_fallback_model
+                None, // node_output_format
+                ai_profile,
+                workflow_preset,
+            )
+            .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    return approval_pre_exec_failure(
+                        deps,
+                        platform.as_ref(),
+                        conversation_id,
+                        &workflow_run.id,
+                        node_id,
+                        e,
+                    )
+                    .await;
+                }
+            };
+
+            // ── Re-run the AI node (fresh session). Source: ts:2679-2696. ──
+            let exec_result = execute_node_internal(
+                deps,
+                platform.clone(),
+                conversation_id,
+                cwd,
+                workflow_run,
+                &synthetic_node,
+                &resolved.provider,
+                Some(resolved.base_options.clone()),
+                artifacts_dir,
+                log_dir,
+                base_branch,
+                docs_dir,
+                node_outputs,
+                None, // fresh session
+                configured_command_folder,
+                issue_context,
+            )
+            .await;
+
+            // ── Failed-passthrough: a failed on_reject run propagates its NodeOutput
+            //    unchanged; do NOT re-pause. Source: ts:2698-2700. ──
+            if exec_result.state == NodeState::Failed {
+                return NodeOutput::Failed {
+                    output: exec_result.output,
+                    session_id: exec_result.session_id,
+                    error: exec_result.error.unwrap_or_default(),
+                    structured_output: exec_result.structured_output,
+                    declared_fields: exec_result.declared_fields,
+                };
+            }
+            // Otherwise fall through to re-pause at the approval gate. Source: ts:2701.
+        }
+    }
+
+    // ── Standard approval gate — render $nodeId.output refs so the human sees concrete
+    //    values, send the message, then pause. Source: ts:2704-2746. ──
+    let rendered_message = substitute_node_output_refs(&node.approval.message, node_outputs, false, None);
+    let approval_msg = format!(
+        "\u{23f8} **Approval required**: {}\n\nRun ID: `{}`\nApprove: `/workflow approve {}` | Reject: `/workflow reject {}`",
+        rendered_message, workflow_run.id, workflow_run.id, workflow_run.id
+    );
+    let _ = safe_send_message(
+        platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+        conversation_id,
+        &approval_msg,
+        Some(&msg_context),
+        None,
+        None,
+    )
+    .await;
+
+    // approval_requested store event (fire-and-forget). Source: ts:2714-2726.
+    deps.emit_typed_event(
+        &workflow_run.id,
+        har_ledger::store::WorkflowEventType::ApprovalRequested,
+        node_id,
+        serde_json::json!({ "message": rendered_message }),
+    )
+    .await;
+
+    // pauseWorkflowRun with the approval-gate context. Source: ts:2728-2735. A pause
+    // throw in TS propagates to the dispatch catch → Failed; mirror via the helper.
+    let approval_ctx = har_workflow_schema::ApprovalContext {
+        node_id: node_id.clone(),
+        message: rendered_message.clone(),
+        approval_type: Some(har_workflow_schema::ApprovalContextType::Approval),
+        iteration: None,
+        session_id: None,
+        capture_response: node.approval.capture_response,
+        on_reject_prompt: node.approval.on_reject.as_ref().map(|r| r.prompt.clone()),
+        on_reject_max_attempts: node
+            .approval
+            .on_reject
+            .as_ref()
+            .and_then(|r| r.max_attempts)
+            .map(f64::from),
+    };
+    if let Err(e) = deps.store.pause_workflow_run(&workflow_run.id, approval_ctx).await {
+        return approval_pre_exec_failure(
+            deps,
+            platform.as_ref(),
+            conversation_id,
+            &workflow_run.id,
+            node_id,
+            e.to_string(),
+        )
+        .await;
+    }
+
+    // approval_pending emitter (message is a WF-15 emitter-slot gap; it is observable via
+    // the gate message + the approval_requested event). Source: ts:2737-2742.
+    get_workflow_event_emitter()
+        .emit(
+            "approval_pending",
+            &workflow_run.id,
+            Some(node_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    // Return completed — the between-layer status check sees 'paused' and breaks. On
+    // resume, the approve endpoint writes a real node_completed event. Source: ts:2744-2746.
+    NodeOutput::Completed {
+        output: String::new(),
+        session_id: None,
+        structured_output: None,
         declared_fields: None,
     }
 }
