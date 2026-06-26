@@ -121,6 +121,32 @@ fn script_for(prompt: &str) -> Vec<MessageChunk> {
             num_turns: None,
             model_usage: None,
         }]
+    } else if prompt.contains("COSTOMIT") {
+        // A completing AI node whose Result OMITS cost/stop_reason/num_turns — pins fix #7
+        // (cost_usd OMIT-when-absent). The node_completed event must NOT carry cost_usd; a
+        // revert to `f64 = 0.0` would surface `cost_usd: 0.0` and diverge from the bun golden.
+        received_prompts()
+            .lock()
+            .unwrap()
+            .insert("costq".into(), prompt.to_string());
+        vec![
+            MessageChunk::Assistant {
+                content: "noncost-output".into(),
+                flush: None,
+            },
+            MessageChunk::Result {
+                session_id: None,
+                tokens: None,
+                structured_output: None,
+                is_error: Some(false),
+                error_subtype: Some("success".into()),
+                errors: None,
+                cost: None,
+                stop_reason: None,
+                num_turns: None,
+                model_usage: None,
+            },
+        ]
     } else {
         vec![
             MessageChunk::Assistant {
@@ -633,13 +659,46 @@ async fn wholedag_differential_vs_live_bun() {
         drive_named(nodes, &run, cwd, "wf-cancel").await
     };
 
+    // ── Workflow 4: cost-omit DAG (single completing AI node, cost OMITTED) ──
+    // Discriminating coverage for fix #7: node_completed must OMIT cost_usd.
+    let costomit = {
+        let run = make_run("run-costomit", "conv-costomit");
+        let nodes = vec![prompt_node(
+            "costq",
+            &[],
+            None,
+            "COSTOMIT produce output without cost",
+        )];
+        drive_named(nodes, &run, cwd, "wf-costomit").await
+    };
+
+    // Explicit guard (independent of the golden diff): the completing cost-omit node's
+    // node_completed event must NOT contain a cost_usd key. If the impl regressed
+    // Option<f64> → f64=0.0, this key would be present as 0.0 and this assertion fails.
+    {
+        let costq_events = costomit["node_events"]["costq"]
+            .as_array()
+            .expect("costq node_events present");
+        let completed = costq_events
+            .iter()
+            .find(|e| e["event_type"] == json!("node_completed"))
+            .expect("costq node_completed present");
+        assert!(
+            completed["data"].get("cost_usd").is_none(),
+            "fix #7: node_completed for a cost-omit node must OMIT cost_usd, got: {}",
+            completed["data"]
+        );
+        assert_eq!(completed["data"]["node_output"], json!("noncost-output"));
+    }
+
     let mut rust_all = json!({
         "success": success,
         "fail": fail,
         "cancel": cancel,
+        "costomit": costomit,
     });
     let mut golden = golden;
-    for wf in ["success", "fail", "cancel"] {
+    for wf in ["success", "fail", "cancel", "costomit"] {
         canon_unordered(rust_all.get_mut(wf).unwrap());
         canon_unordered(golden.get_mut(wf).unwrap());
     }

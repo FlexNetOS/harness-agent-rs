@@ -69,6 +69,15 @@
           }
         }
       ],
+      "gated": [
+        {
+          "event_type": "node_skipped",
+          "data": {
+            "expr": "$sidecar.output == 'nope'",
+            "reason": "when_condition"
+          }
+        }
+      ],
       "summary": [
         {
           "event_type": "node_started",
@@ -85,15 +94,6 @@
             "node_output": "final-summary",
             "num_turns": 1,
             "stop_reason": "stop"
-          }
-        }
-      ],
-      "gated": [
-        {
-          "event_type": "node_skipped",
-          "data": {
-            "expr": "$sidecar.output == 'nope'",
-            "reason": "when_condition"
           }
         }
       ]
@@ -205,5 +205,43 @@
       "run-cancel"
     ],
     "received_prompts": {}
+  },
+  "costomit": {
+    "return_value": "noncost-output",
+    "node_events": {
+      "costq": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "command": null,
+            "provider": "claude"
+          }
+        },
+        {
+          "event_type": "node_completed",
+          "data": {
+            "duration_ms": "<n>",
+            "node_output": "noncost-output"
+          }
+        }
+      ]
+    },
+    "workflow_events": [
+      {
+        "event_type": "workflow_completed",
+        "data": {
+          "duration_ms": "<n>"
+        }
+      }
+    ],
+    "messages_sorted": [
+      "noncost-output"
+    ],
+    "structured_events": [],
+    "pauses": [],
+    "cancels": [],
+    "received_prompts": {
+      "costq": "COSTOMIT produce output without cost"
+    }
   }
 }
