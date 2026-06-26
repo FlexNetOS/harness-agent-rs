@@ -4113,7 +4113,89 @@ pub async fn execute_dag_workflow(
                         (nid.clone(), output, exec_cost)
                     }
 
-                    // Loop/Approval nodes: honest Skipped placeholder until sub-cycles 4e-4f.
+                    // 4e — Loop node dispatch. Source: dag-executor.ts:3049-3084.
+                    // Resolve provider/model (like the AI arm), then run the iterative loop.
+                    har_workflow_schema::DagNode::Loop(loop_node) => {
+                        let resolve_result = resolve_node_provider_and_model(
+                            &node_owned,
+                            &workflow_provider_owned,
+                            workflow_model_owned.as_deref(),
+                            if config_env_vars_owned.is_empty() { None } else { Some(&config_env_vars_owned) },
+                            &config_assistants_owned,
+                            node_system_prompt_owned.as_deref(),
+                            node_max_budget_usd_copy,
+                            node_fallback_model_owned.as_deref(),
+                            node_output_format_owned.as_ref(),
+                            ai_profile_owned.as_ref(),
+                            workflow_preset_owned.as_ref(),
+                        ).await;
+
+                        let resolved = match resolve_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                // Pre-execution resolve failure → dispatch-level catch (TS:3387).
+                                // nodeName = node.command ?? node.id; a loop has no command → node.id.
+                                warn!(node_id = nid, error = %err, "dag_node_provider_resolve_failed");
+                                deps_clone.emit_workflow_event(&workflow_run_id, "node_failed", &nid,
+                                    serde_json::json!({"error": err})).await;
+                                get_workflow_event_emitter().emit("node_failed", &workflow_run_id, Some(&nid),
+                                    Some(nid.as_str()), None, Some(err.as_str()), None, None).await;
+                                let _ = safe_send_message(
+                                    platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                    &conversation_id_owned,
+                                    &format!("Node '{}' failed before execution: {}", nid, err),
+                                    Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                    None, None,
+                                ).await;
+                                return (nid.clone(), har_workflow_schema::NodeOutput::Failed {
+                                    output: String::new(),
+                                    session_id: None,
+                                    error: err,
+                                    structured_output: None,
+                                    declared_fields: None,
+                                }, None);
+                            }
+                        };
+
+                        let exec_result = execute_loop_node(
+                            &deps_clone,
+                            platform_clone.clone(),
+                            &conversation_id_owned,
+                            &cwd_owned,
+                            &workflow_run_owned,
+                            loop_node,
+                            &resolved.provider,
+                            Some(resolved.base_options.clone()),
+                            &artifacts_dir_owned,
+                            &log_dir_owned,
+                            &base_branch_owned,
+                            &docs_dir_owned,
+                            &all_outputs,
+                            if config_env_vars_owned.is_empty() { None } else { Some(&config_env_vars_owned) },
+                            issue_context_owned.as_deref(),
+                        ).await;
+
+                        // D-2: capture cost before NodeExecutionResult → NodeOutput (TS:3427).
+                        let exec_cost = exec_result.cost_usd;
+                        let output = match exec_result.state {
+                            NodeState::Completed => har_workflow_schema::NodeOutput::Completed {
+                                output: exec_result.output,
+                                session_id: exec_result.session_id,
+                                structured_output: exec_result.structured_output,
+                                declared_fields: exec_result.declared_fields,
+                            },
+                            NodeState::Failed => har_workflow_schema::NodeOutput::Failed {
+                                output: exec_result.output,
+                                session_id: exec_result.session_id,
+                                error: exec_result.error.unwrap_or_default(),
+                                structured_output: exec_result.structured_output,
+                                declared_fields: exec_result.declared_fields,
+                            },
+                        };
+                        (nid.clone(), output, exec_cost)
+                    }
+
+                    // Approval node: honest Skipped placeholder until sub-cycle 4f.
                     _ => {
                         (
                             nid.clone(),
@@ -6020,6 +6102,1005 @@ fn node_display_name(node: &har_workflow_schema::DagNode) -> String {
 /// Source: dag-executor.ts:800 (`const shouldForkSession = resumeSessionId !== undefined`).
 fn should_fork_session(resume_session_id: Option<&str>) -> bool {
     resume_session_id.is_some()
+}
+
+// ─── executeLoopNode — iterative AI loop (4e complete port) ──────────────────
+
+/// Truncate a single tool-input value exactly as the loop node does (TS 2223-2225):
+/// string values longer than 500 UTF-16 code units are sliced to 500 + "...".
+/// Non-string values pass through unchanged. Matches JS `.length`/`.slice` (UTF-16
+/// semantics) rather than Rust char counts so a >500-unit string truncates identically.
+fn truncate_loop_tool_input_value(v: &serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::String(s) = v {
+        let units: Vec<u16> = s.encode_utf16().collect();
+        if units.len() > 500 {
+            let head = String::from_utf16_lossy(&units[..500]);
+            return serde_json::Value::String(format!("{}...", head));
+        }
+    }
+    v.clone()
+}
+
+/// Build the loop's per-tool truncated `tool_input` object. Source: dag-executor.ts:2221-2228.
+/// `Object.fromEntries(Object.entries(toolInput).map(...))` over an object; a missing or
+/// non-object input yields `{}` (matching the JS `msg.toolInput ? … : {}` + `Object.entries`).
+fn build_loop_tool_input(tool_input: Option<&serde_json::Value>) -> serde_json::Value {
+    match tool_input {
+        Some(serde_json::Value::Object(map)) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                out.insert(k.clone(), truncate_loop_tool_input_value(v));
+            }
+            serde_json::Value::Object(out)
+        }
+        _ => serde_json::Value::Object(serde_json::Map::new()),
+    }
+}
+
+/// Execute a loop DAG node — runs a prompt repeatedly until a completion signal,
+/// a deterministic `until_bash` condition, an interactive gate, or `max_iterations`.
+///
+/// Returns `NodeExecutionResult` (the DAG executor maps it to `NodeOutput` + accumulates
+/// `cost_usd`). Per-iteration AI streaming reuses the 4c stream-pass shape (`with_idle_timeout`
+/// re-arm via `tokio::time::timeout`, tool-event pairing, result capture, SDK-error throw,
+/// abort via `CancellationToken`). Source: dag-executor.ts:1955-2558.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_loop_node(
+    deps: &WorkflowDeps,
+    platform: Arc<dyn WorkflowPlatform>,
+    conversation_id: &str,
+    cwd: &str,
+    workflow_run: &har_workflow_schema::WorkflowRun,
+    node: &har_workflow_schema::LoopNode,
+    workflow_provider: &str,
+    resolved_options: Option<SendQueryOptions>,
+    artifacts_dir: &str,
+    log_dir: &str,
+    base_branch: &str,
+    docs_dir: &str,
+    node_outputs: &HashMap<String, har_workflow_schema::NodeOutput>,
+    env_vars: Option<&HashMap<String, String>>,
+    issue_context: Option<&str>,
+) -> NodeExecutionResult {
+    let lc = &node.loop_config;
+    let node_id = node.base.id.clone();
+    let run_id = workflow_run.id.clone();
+    let node_context = SendMessageContext {
+        workflow_id: Some(run_id.clone()),
+        node_name: Some(node_id.clone()),
+    };
+
+    // ── Resolve AI client — fail fast with a descriptive error. Source: ts:1976-1987. ──
+    // The Rust `get_agent_provider` seam is infallible (returns `&dyn`), so we mirror the
+    // TS `getAgentProvider` throw by validating against the capability registry: an
+    // unregistered provider name = the fail-fast branch. The "Original:" suffix is
+    // implementation-specific (the TS text is the JS Error message) and is not parity-probed.
+    if har_provider::get_provider_capabilities(workflow_provider).is_err() {
+        let error_msg = format!(
+            "Invalid provider '{}' for loop node '{}'. Check workflow YAML or .archon/config.yaml. Original: provider '{}' is not registered",
+            workflow_provider, node_id, workflow_provider
+        );
+        error!(node_id = %node_id, provider = %workflow_provider, "loop_node.provider_failed");
+        return NodeExecutionResult {
+            state: NodeState::Failed,
+            output: String::new(),
+            structured_output: None,
+            session_id: None,
+            cost_usd: None,
+            error: Some(error_msg),
+            declared_fields: None,
+        };
+    }
+    let ai_client = (deps.get_agent_provider)(workflow_provider);
+    let streaming_mode = platform.get_streaming_mode();
+
+    // ── Detect interactive-loop resume from metadata.approval. Source: ts:1989-1997. ──
+    let raw_approval = workflow_run.metadata.get("approval");
+    let loop_gate_meta = raw_approval.filter(|v| har_workflow_schema::is_approval_context(v));
+    let is_loop_resume = loop_gate_meta
+        .map(|m| {
+            m.get("type").and_then(|t| t.as_str()) == Some("interactive_loop")
+                && m.get("nodeId").and_then(|n| n.as_str()) == Some(node_id.as_str())
+        })
+        .unwrap_or(false);
+    let start_iteration: u32 = if is_loop_resume {
+        let iter = loop_gate_meta
+            .and_then(|m| m.get("iteration"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        (iter as u32) + 1
+    } else {
+        1
+    };
+    let mut current_session_id: Option<String> = if is_loop_resume {
+        loop_gate_meta
+            .and_then(|m| m.get("sessionId"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    };
+    let loop_user_input: String = if is_loop_resume {
+        workflow_run
+            .metadata
+            .get("loop_user_input")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        String::new()
+    };
+
+    // ── Cross-iteration accumulators. Source: ts:1999-2003. ──
+    let mut last_iteration_output = String::new();
+    let mut last_iteration_structured_output: Option<serde_json::Value> = None;
+    let mut loop_total_cost_usd: Option<f64> = None;
+    let mut loop_final_stop_reason: Option<String> = None;
+    let mut loop_total_num_turns: Option<u64> = None;
+
+    // Idle timeout: per-node override or default 30 min. Source: ts:2092, idle-timeout.ts:22.
+    let effective_idle_timeout = std::time::Duration::from_millis(
+        node.base
+            .idle_timeout
+            .map(|ms| ms as u64)
+            .unwrap_or(STEP_IDLE_TIMEOUT_MS),
+    );
+
+    for i in start_iteration..=lc.max_iterations {
+        let iteration_start = Instant::now();
+
+        // ── Between-iteration status check. Source: ts:2017-2031. ──
+        // `paused` is tolerated (a sibling approval node may pause the run); only a
+        // non-running/non-paused status stops the loop.
+        let run_status = match deps.store.get_workflow_run_status(&run_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                // TS `getWorkflowRunStatus` throw propagates to the dispatch-level catch
+                // (ts:3387), which surfaces a Failed node output. We mirror that here; the
+                // raw DB-error text is not parity-checkable across store backends.
+                error!(node_id = %node_id, err = %e, iteration = i, "loop_node.status_check_failed");
+                return NodeExecutionResult {
+                    state: NodeState::Failed,
+                    output: String::new(),
+                    structured_output: None,
+                    session_id: None,
+                    cost_usd: None,
+                    error: Some(e.to_string()),
+                    declared_fields: None,
+                };
+            }
+        };
+        let status_str = run_status.as_ref().map(workflow_run_status_str);
+        if !should_continue_streaming_for_status(status_str) {
+            let effective_status = status_str.unwrap_or("deleted");
+            info!(
+                workflow_run_id = %run_id, node_id = %node_id, iteration = i,
+                status = effective_status, "loop_node.stop_detected"
+            );
+            let _ = safe_send_message(
+                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                conversation_id,
+                &format!(
+                    "Loop node '{}' stopped at iteration {} ({})",
+                    node_id, i, effective_status
+                ),
+                Some(&node_context),
+                None,
+                None,
+            )
+            .await;
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: None,
+                cost_usd: None,
+                error: Some(format!("Workflow {}", effective_status)),
+                declared_fields: None,
+            };
+        }
+
+        // ── Emit loop_iteration_started (emitter + store). Source: ts:2033-2050. ──
+        get_workflow_event_emitter()
+            .emit(
+                "loop_iteration_started",
+                &run_id,
+                Some(&node_id),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        deps.emit_typed_event(
+            &run_id,
+            har_ledger::store::WorkflowEventType::LoopIterationStarted,
+            &node_id,
+            serde_json::json!({
+                "iteration": i,
+                "maxIterations": lc.max_iterations,
+                "nodeId": node_id,
+            }),
+        )
+        .await;
+
+        // ── Per-iteration stream pass (try-block equivalent). Source: ts:2056-2245. ──
+        // `'body` returns Ok(()) on a clean stream, or Err(message) for any thrown error
+        // (prompt-substitution throw or SDK-error throw) — both route to the catch below.
+        let mut iteration_idle_timed_out = false;
+        let mut full_output = String::new();
+        let mut clean_output = String::new();
+        let iteration_abort = CancellationToken::new();
+
+        let thrown: Result<(), String> = 'body: {
+            // Build prompt. Source: ts:2070-2082. `$LOOP_USER_INPUT` carries loopUserInput
+            // only on the first iteration of this run; `$LOOP_PREV_OUTPUT` is empty on the
+            // first iteration and the previous cleaned output otherwise.
+            let lui = if i == start_iteration {
+                loop_user_input.as_str()
+            } else {
+                ""
+            };
+            let lpo = if i == start_iteration {
+                ""
+            } else {
+                last_iteration_output.as_str()
+            };
+            let substituted = match substitute_workflow_variables(
+                &lc.prompt,
+                &run_id,
+                &workflow_run.user_message,
+                artifacts_dir,
+                base_branch,
+                docs_dir,
+                issue_context,
+                Some(lui),
+                None,
+                Some(lpo),
+                false,
+            ) {
+                Ok(r) => r.prompt,
+                Err(e) => break 'body Err(e.to_string()),
+            };
+            let final_prompt = substitute_node_output_refs(&substituted, node_outputs, false, None);
+
+            // Session threading: fresh on iteration 1 or when fresh_context. Source: ts:2052-2054.
+            let needs_fresh_session = lc.fresh_context || i == 1;
+            let resume_session = if needs_fresh_session {
+                None
+            } else {
+                current_session_id.clone()
+            };
+
+            let iteration_options = resolved_options.clone();
+            let dag_cancel =
+                std::sync::Arc::new(DagNodeCancelToken(iteration_abort.child_token()));
+            let stream = ai_client.send_query(
+                final_prompt,
+                cwd.to_string(),
+                resume_session,
+                iteration_options,
+                dag_cancel,
+            );
+            let mut stream = Box::pin(stream);
+            let mut last_tool_started: Option<LastToolStart> = None;
+
+            // Stream loop with per-chunk idle timeout (withIdleTimeout). Source: ts:2094-2245.
+            'stream: loop {
+                let chunk_result =
+                    tokio::time::timeout(effective_idle_timeout, stream.as_mut().next()).await;
+                let msg = match chunk_result {
+                    Err(_elapsed) => {
+                        // Idle timeout fired. Source: ts:2094-2101.
+                        iteration_idle_timed_out = true;
+                        warn!(
+                            node_id = %node_id, iteration = i,
+                            timeout_ms = effective_idle_timeout.as_millis(),
+                            "loop_node.idle_timeout_reached"
+                        );
+                        iteration_abort.cancel();
+                        break 'stream;
+                    }
+                    Ok(None) => break 'stream,
+                    Ok(Some(c)) => c,
+                };
+
+                match msg {
+                    // ── assistant chunk. Source: ts:2102-2109. ──
+                    MessageChunk::Assistant { content, .. } => {
+                        full_output.push_str(&content);
+                        let cleaned = crate::executor_shared::strip_completion_tags(
+                            &content,
+                            Some(&lc.until),
+                        );
+                        clean_output.push_str(&cleaned);
+                        if matches!(
+                            streaming_mode,
+                            crate::executor_shared::StreamingMode::Stream
+                        ) && !cleaned.is_empty()
+                        {
+                            let _ = safe_send_message(
+                                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                conversation_id,
+                                &cleaned,
+                                Some(&node_context),
+                                None,
+                                None,
+                            )
+                            .await;
+                        }
+                        log_assistant(log_dir, &run_id, &content).await;
+                    }
+
+                    // ── result chunk. Source: ts:2110-2174. ──
+                    MessageChunk::Result {
+                        session_id,
+                        tokens: _,
+                        structured_output: so,
+                        is_error,
+                        error_subtype,
+                        errors,
+                        cost,
+                        stop_reason,
+                        num_turns,
+                        model_usage: _,
+                    } => {
+                        // Emit tool_completed for the LAST tool. Source: ts:2112-2135.
+                        if let Some(prev) = last_tool_started.take() {
+                            let dur_ms =
+                                Instant::now().duration_since(prev.started_at).as_millis() as u64;
+                            get_workflow_event_emitter()
+                                .emit(
+                                    "tool_completed",
+                                    &run_id,
+                                    Some(&node_id),
+                                    None,
+                                    None,
+                                    None,
+                                    Some(dur_ms),
+                                    None,
+                                )
+                                .await;
+                            deps.emit_typed_event(
+                                &run_id,
+                                har_ledger::store::WorkflowEventType::ToolCompleted,
+                                &node_id,
+                                serde_json::json!({
+                                    "tool_name": prev.tool_name,
+                                    "duration_ms": dur_ms,
+                                }),
+                            )
+                            .await;
+                        }
+                        // Capture session/cost/stop/turns/structured. Source: ts:2136-2146.
+                        if let Some(sid) = session_id {
+                            current_session_id = Some(sid);
+                        }
+                        if let Some(c) = cost {
+                            loop_total_cost_usd = Some(loop_total_cost_usd.unwrap_or(0.0) + c);
+                        }
+                        if let Some(sr) = stop_reason {
+                            loop_final_stop_reason = Some(sr);
+                        }
+                        if let Some(nt) = num_turns {
+                            loop_total_num_turns =
+                                Some(loop_total_num_turns.unwrap_or(0) + nt as u64);
+                        }
+                        if let Some(so_val) = so {
+                            last_iteration_structured_output = Some(so_val);
+                        }
+
+                        // Fail the iteration loudly on SDK error (subtype != 'success').
+                        // Source: ts:2156-2173.
+                        if is_error == Some(true) && error_subtype.as_deref() != Some("success") {
+                            let subtype = error_subtype.as_deref().unwrap_or("unknown");
+                            let errors_detail = errors
+                                .as_ref()
+                                .filter(|e| !e.is_empty())
+                                .map(|e| format!(" — {}", e.join("; ")))
+                                .unwrap_or_default();
+                            error!(
+                                node_id = %node_id, iteration = i, error_subtype = subtype,
+                                "loop_node.iteration_sdk_error"
+                            );
+                            break 'body Err(format!(
+                                "Loop '{}' iteration {} failed: SDK returned {}{}",
+                                node_id, i, subtype, errors_detail
+                            ));
+                        }
+                        break 'stream; // Result is the "done" signal. Source: ts:2174.
+                    }
+
+                    // ── tool chunk. Source: ts:2175-2240. ──
+                    MessageChunk::Tool {
+                        tool_name,
+                        tool_input,
+                        tool_call_id,
+                    } => {
+                        let now = Instant::now();
+                        // Emit tool_completed for the PREVIOUS tool. Source: ts:2179-2198.
+                        if let Some(prev) = last_tool_started.take() {
+                            let dur_ms = now.duration_since(prev.started_at).as_millis() as u64;
+                            get_workflow_event_emitter()
+                                .emit(
+                                    "tool_completed",
+                                    &run_id,
+                                    Some(&node_id),
+                                    None,
+                                    None,
+                                    None,
+                                    Some(dur_ms),
+                                    None,
+                                )
+                                .await;
+                            deps.emit_typed_event(
+                                &run_id,
+                                har_ledger::store::WorkflowEventType::ToolCompleted,
+                                &node_id,
+                                serde_json::json!({
+                                    "tool_name": prev.tool_name,
+                                    "duration_ms": dur_ms,
+                                }),
+                            )
+                            .await;
+                        }
+                        last_tool_started = Some(LastToolStart {
+                            tool_name: tool_name.clone(),
+                            started_at: now,
+                        });
+
+                        // Emit tool_started (fire-and-forget, frontend-only). Source: ts:2202-2207.
+                        get_workflow_event_emitter()
+                            .emit(
+                                "tool_started",
+                                &run_id,
+                                Some(&node_id),
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                            )
+                            .await;
+
+                        // Streaming mode: formatted tool call + structured SSE event.
+                        // Source: ts:2209-2219.
+                        if matches!(
+                            streaming_mode,
+                            crate::executor_shared::StreamingMode::Stream
+                        ) {
+                            let tool_msg = format_tool_call(&tool_name, tool_input.as_ref());
+                            if !tool_msg.is_empty() {
+                                let meta = serde_json::json!({"category": "tool_call_formatted"});
+                                let _ = safe_send_message(
+                                    platform.as_ref()
+                                        as &dyn crate::executor_shared::MessagePlatform,
+                                    conversation_id,
+                                    &tool_msg,
+                                    Some(&node_context),
+                                    Some(&meta),
+                                    None,
+                                )
+                                .await;
+                            }
+                            platform
+                                .send_structured_event(
+                                    conversation_id,
+                                    &MessageChunk::Tool {
+                                        tool_name: tool_name.clone(),
+                                        tool_input: tool_input.clone(),
+                                        tool_call_id: tool_call_id.clone(),
+                                    },
+                                )
+                                .await;
+                        }
+
+                        // Truncate long string values then log + persist. Source: ts:2221-2240.
+                        let tool_input_truncated = build_loop_tool_input(tool_input.as_ref());
+                        log_tool(log_dir, &run_id, &tool_name, Some(&tool_input_truncated)).await;
+                        deps.emit_typed_event(
+                            &run_id,
+                            har_ledger::store::WorkflowEventType::ToolCalled,
+                            &node_id,
+                            serde_json::json!({
+                                "tool_name": tool_name,
+                                "tool_input": tool_input_truncated,
+                            }),
+                        )
+                        .await;
+                    }
+
+                    // ── tool_result chunk. Source: ts:2241-2243. ──
+                    // Note: NOT gated on streaming mode (unlike executeNodeInternal) — the
+                    // loop forwards every tool_result to the structured SSE channel.
+                    MessageChunk::ToolResult {
+                        tool_name,
+                        tool_output,
+                        tool_call_id,
+                    } => {
+                        platform
+                            .send_structured_event(
+                                conversation_id,
+                                &MessageChunk::ToolResult {
+                                    tool_name,
+                                    tool_output,
+                                    tool_call_id,
+                                },
+                            )
+                            .await;
+                    }
+
+                    // rate_limit / system / thinking / dispatch: not surfaced. Source: ts:2244.
+                    _ => {}
+                }
+            } // end 'stream loop
+            Ok(())
+        }; // end 'body block
+
+        // ── Per-iteration catch. Source: ts:2246-2273. ──
+        if let Err(err_msg) = thrown {
+            let duration = iteration_start.elapsed();
+            error!(node_id = %node_id, iteration = i, error = %err_msg, "loop_node.iteration_failed");
+            get_workflow_event_emitter()
+                .emit(
+                    "loop_iteration_failed",
+                    &run_id,
+                    Some(&node_id),
+                    None,
+                    None,
+                    Some(err_msg.as_str()),
+                    None,
+                    None,
+                )
+                .await;
+            deps.emit_typed_event(
+                &run_id,
+                har_ledger::store::WorkflowEventType::LoopIterationFailed,
+                &node_id,
+                serde_json::json!({
+                    "iteration": i,
+                    "error": err_msg,
+                    "duration": duration.as_millis(),
+                    "nodeId": node_id,
+                }),
+            )
+            .await;
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: None,
+                cost_usd: loop_total_cost_usd,
+                error: Some(format!("Loop iteration {} failed: {}", i, err_msg)),
+                declared_fields: None,
+            };
+        }
+
+        // ── Idle-timeout notice. Source: ts:2275-2283. ──
+        if iteration_idle_timed_out {
+            let _ = safe_send_message(
+                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                conversation_id,
+                &format!(
+                    "Loop node '{}' iteration {} completed via idle timeout (no output for {} min)",
+                    node_id,
+                    i,
+                    idle_timeout_minutes(effective_idle_timeout)
+                ),
+                Some(&node_context),
+                None,
+                None,
+            )
+            .await;
+        }
+
+        // ── Empty-output guard (idle-timeout exits are exempt). Source: ts:2285-2329. ──
+        if !iteration_idle_timed_out && full_output.trim().is_empty() {
+            let iteration_duration = iteration_start.elapsed();
+            let empty_error = "Loop iteration produced no assistant output. The provider stream closed without yielding content — likely a silent provider rejection or stream interruption.";
+            error!(
+                node_id = %node_id, iteration = i,
+                duration_ms = iteration_duration.as_millis(),
+                "loop_node.iteration_empty_output"
+            );
+            get_workflow_event_emitter()
+                .emit(
+                    "loop_iteration_failed",
+                    &run_id,
+                    Some(&node_id),
+                    None,
+                    None,
+                    Some(empty_error),
+                    None,
+                    None,
+                )
+                .await;
+            deps.emit_typed_event(
+                &run_id,
+                har_ledger::store::WorkflowEventType::LoopIterationFailed,
+                &node_id,
+                serde_json::json!({
+                    "iteration": i,
+                    "error": empty_error,
+                    "duration": iteration_duration.as_millis(),
+                    "nodeId": node_id,
+                }),
+            )
+            .await;
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: None,
+                cost_usd: loop_total_cost_usd,
+                error: Some(format!("Loop iteration {} failed: {}", i, empty_error)),
+                declared_fields: None,
+            };
+        }
+
+        // ── Batch mode: send accumulated output. Source: ts:2331-2334. ──
+        if matches!(streaming_mode, crate::executor_shared::StreamingMode::Batch)
+            && !clean_output.is_empty()
+        {
+            let _ = safe_send_message(
+                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                conversation_id,
+                &clean_output,
+                Some(&node_context),
+                None,
+                None,
+            )
+            .await;
+        }
+
+        let prev_iteration_output = last_iteration_output.clone();
+        // `cleanOutput || fullOutput`: cleaned if non-empty, else raw. Source: ts:2337.
+        last_iteration_output = if clean_output.is_empty() {
+            full_output.clone()
+        } else {
+            clean_output.clone()
+        };
+
+        // ── LLM completion signal. Source: ts:2342. ──
+        let signal_detected =
+            crate::executor_shared::detect_completion_signal(&full_output, &lc.until);
+
+        // ── Deterministic until_bash condition. Source: ts:2344-2405. ──
+        let mut bash_complete = false;
+        if let Some(until_bash) = &lc.until_bash {
+            match substitute_workflow_variables(
+                until_bash,
+                &run_id,
+                &workflow_run.user_message,
+                artifacts_dir,
+                base_branch,
+                docs_dir,
+                issue_context,
+                None,
+                None,
+                None,
+                true, // shell_safe
+            ) {
+                Ok(r) => {
+                    let substituted_bash = substitute_node_output_refs(
+                        &r.prompt,
+                        node_outputs,
+                        true, // escaped_for_bash
+                        Some(log_dir),
+                    );
+                    // Build env overlay: 8 loop keys, then config.envVars LAST (wins).
+                    // Source: ts:2370-2385.
+                    let mut env: HashMap<String, String> = HashMap::new();
+                    env.insert("USER_MESSAGE".into(), workflow_run.user_message.clone());
+                    env.insert("ARGUMENTS".into(), workflow_run.user_message.clone());
+                    env.insert(
+                        "LOOP_USER_INPUT".into(),
+                        if i == start_iteration {
+                            loop_user_input.clone()
+                        } else {
+                            String::new()
+                        },
+                    );
+                    env.insert("LOOP_PREV_OUTPUT".into(), prev_iteration_output.clone());
+                    env.insert("REJECTION_REASON".into(), String::new());
+                    env.insert("CONTEXT".into(), issue_context.unwrap_or("").to_string());
+                    env.insert(
+                        "EXTERNAL_CONTEXT".into(),
+                        issue_context.unwrap_or("").to_string(),
+                    );
+                    env.insert(
+                        "ISSUE_CONTEXT".into(),
+                        issue_context.unwrap_or("").to_string(),
+                    );
+                    if let Some(extra) = env_vars {
+                        for (k, v) in extra {
+                            env.insert(k.clone(), v.clone());
+                        }
+                    }
+                    match run_subprocess(
+                        "bash",
+                        &["-c", &substituted_bash],
+                        cwd,
+                        SUBPROCESS_DEFAULT_TIMEOUT,
+                        &env,
+                    )
+                    .await
+                    {
+                        SubprocessOutcome::Success { .. } => {
+                            bash_complete = true; // exit 0 = complete. Source: ts:2387.
+                        }
+                        SubprocessOutcome::SpawnFailed {
+                            kind: std::io::ErrorKind::NotFound,
+                        } => {
+                            // ENOENT. Source: ts:2391-2395.
+                            warn!(node_id = %node_id, iteration = i, "loop_node.until_bash_exec_error");
+                        }
+                        SubprocessOutcome::SpawnFailed { .. } | SubprocessOutcome::Failed { .. } => {
+                            // Non-ENOENT system error / non-zero exit (err.code defined).
+                            // Source: ts:2396-2401.
+                            warn!(node_id = %node_id, iteration = i, "loop_node.until_bash_unexpected_error");
+                        }
+                        SubprocessOutcome::TimedOut => {
+                            // killed → err.code undefined → no warn. Source: ts:2388-2402.
+                        }
+                    }
+                    // Any non-success outcome leaves bash_complete = false. Source: ts:2403.
+                }
+                Err(_e) => {
+                    // substituteWorkflowVariables throw is a JS Error (no .code) → no warn,
+                    // bash_complete stays false. Source: ts:2388-2403 catch (code undefined).
+                }
+            }
+        }
+
+        let duration = iteration_start.elapsed();
+        let completion_detected = signal_detected || bash_complete;
+
+        // ── Emit loop_iteration_completed (emitter + store). Source: ts:2411-2428. ──
+        get_workflow_event_emitter()
+            .emit(
+                "loop_iteration_completed",
+                &run_id,
+                Some(&node_id),
+                None,
+                None,
+                None,
+                Some(duration.as_millis() as u64),
+                None,
+            )
+            .await;
+        deps.emit_typed_event(
+            &run_id,
+            har_ledger::store::WorkflowEventType::LoopIterationCompleted,
+            &node_id,
+            serde_json::json!({
+                "iteration": i,
+                "duration": duration.as_millis(),
+                "completionDetected": completion_detected,
+                "nodeId": node_id,
+            }),
+        )
+        .await;
+
+        // logNodeComplete. Source: ts:2430-2432.
+        let _ = log_node_complete(
+            log_dir,
+            &run_id,
+            &format!("{}-iteration-{}", node_id, i),
+            &node_id,
+            Some(duration.as_millis() as u64),
+        )
+        .await;
+
+        // ── Completion exit. Source: ts:2434-2487. ──
+        // Interactive loops gate the FIRST run (no user input yet): suppress early completion
+        // until a resume iteration. Non-interactive loops honor the signal at any point.
+        let interactive_first_run = lc.interactive.unwrap_or(false) && !is_loop_resume;
+        if completion_detected && !interactive_first_run {
+            let plural = if i > 1 { "s" } else { "" };
+            let _ = safe_send_message(
+                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                conversation_id,
+                &format!(
+                    "Loop node '{}' completed after {} iteration{}",
+                    node_id, i, plural
+                ),
+                Some(&node_context),
+                None,
+                None,
+            )
+            .await;
+
+            // node_completed store event (resume logic reads this). Source: ts:2449-2467.
+            let completed_ms = iteration_start.elapsed().as_millis();
+            let mut data = serde_json::Map::new();
+            data.insert("duration_ms".into(), serde_json::json!(completed_ms));
+            data.insert(
+                "node_output".into(),
+                serde_json::json!(last_iteration_output),
+            );
+            if let Some(c) = loop_total_cost_usd {
+                data.insert("cost_usd".into(), serde_json::json!(c));
+            }
+            if let Some(sr) = &loop_final_stop_reason {
+                if !sr.is_empty() {
+                    data.insert("stop_reason".into(), serde_json::json!(sr));
+                }
+            }
+            if let Some(nt) = loop_total_num_turns {
+                data.insert("num_turns".into(), serde_json::json!(nt));
+            }
+            deps.emit_workflow_event(
+                &run_id,
+                "node_completed",
+                &node_id,
+                serde_json::Value::Object(data),
+            )
+            .await;
+            // node_completed emitter (cost/stop/turns are WF-15 emitter gaps). Source: ts:2468-2477.
+            get_workflow_event_emitter()
+                .emit(
+                    "node_completed",
+                    &run_id,
+                    Some(&node_id),
+                    Some(&node_id),
+                    None,
+                    None,
+                    Some(completed_ms as u64),
+                    None,
+                )
+                .await;
+            return NodeExecutionResult {
+                state: NodeState::Completed,
+                output: last_iteration_output,
+                structured_output: last_iteration_structured_output,
+                session_id: current_session_id,
+                cost_usd: loop_total_cost_usd,
+                error: None,
+                declared_fields: None,
+            };
+        }
+
+        // ── Interactive gate: pause after a non-completing iteration. Source: ts:2489-2542. ──
+        if lc.interactive.unwrap_or(false) {
+            if let Some(gate_message) = &lc.gate_message {
+                let gate_msg = format!(
+                    "\u{23f8} **Input required** (loop `{}`, iteration {}): {}\n\nRun ID: `{}`\nRespond: `/workflow approve {} <your feedback>` | Cancel: `/workflow reject {}`",
+                    node_id, i, gate_message, run_id, run_id, run_id
+                );
+                let gate_sent = safe_send_message(
+                    platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &gate_msg,
+                    Some(&SendMessageContext {
+                        workflow_id: Some(run_id.clone()),
+                        node_name: Some(node_id.clone()),
+                    }),
+                    None,
+                    None,
+                )
+                .await
+                .unwrap_or(false);
+                if !gate_sent {
+                    // Gate delivery failed — fail the node rather than orphan a paused run.
+                    // Source: ts:2501-2513.
+                    error!(node_id = %node_id, workflow_run_id = %run_id, iteration = i, "loop_node.gate_message_send_failed");
+                    return NodeExecutionResult {
+                        state: NodeState::Failed,
+                        output: last_iteration_output,
+                        structured_output: None,
+                        session_id: None,
+                        cost_usd: None,
+                        error: Some(format!(
+                            "Loop gate message failed to deliver for node '{}' — cannot pause safely",
+                            node_id
+                        )),
+                        declared_fields: None,
+                    };
+                }
+                // approval_requested store event. Source: ts:2514-2523.
+                deps.emit_typed_event(
+                    &run_id,
+                    har_ledger::store::WorkflowEventType::ApprovalRequested,
+                    &node_id,
+                    serde_json::json!({ "message": gate_message, "iteration": i }),
+                )
+                .await;
+                // pauseWorkflowRun with the interactive-loop approval context. Source: ts:2524-2530.
+                let approval_ctx = har_workflow_schema::ApprovalContext {
+                    node_id: node_id.clone(),
+                    message: gate_message.clone(),
+                    approval_type: Some(har_workflow_schema::ApprovalContextType::InteractiveLoop),
+                    iteration: Some(i as f64),
+                    session_id: current_session_id.clone(),
+                    capture_response: None,
+                    on_reject_prompt: None,
+                    on_reject_max_attempts: None,
+                };
+                if let Err(e) = deps.store.pause_workflow_run(&run_id, approval_ctx).await {
+                    // TS pauseWorkflowRun throw propagates to the dispatch-level catch (ts:3387)
+                    // → Failed. Mirror that (raw store-error text not parity-checkable).
+                    error!(node_id = %node_id, err = %e, iteration = i, "loop_node.pause_failed");
+                    return NodeExecutionResult {
+                        state: NodeState::Failed,
+                        output: String::new(),
+                        structured_output: None,
+                        session_id: None,
+                        cost_usd: None,
+                        error: Some(e.to_string()),
+                        declared_fields: None,
+                    };
+                }
+                // approval_pending emitter (message is a WF-15 emitter gap; it is observable
+                // via the gate message + approval_requested event). Source: ts:2531-2536.
+                get_workflow_event_emitter()
+                    .emit(
+                        "approval_pending",
+                        &run_id,
+                        Some(&node_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await;
+                // Return completed — the between-layer status check sees 'paused' and halts.
+                // Source: ts:2537-2541.
+                return NodeExecutionResult {
+                    state: NodeState::Completed,
+                    output: last_iteration_output,
+                    structured_output: None,
+                    session_id: None,
+                    cost_usd: loop_total_cost_usd,
+                    error: None,
+                    declared_fields: None,
+                };
+            }
+        }
+    }
+
+    // ── Max iterations exceeded. Source: ts:2545-2557. ──
+    let error_msg = format!(
+        "Loop node '{}' exceeded max iterations ({}) without completion signal '{}'",
+        node_id, lc.max_iterations, lc.until
+    );
+    warn!(
+        node_id = %node_id, max_iterations = lc.max_iterations, signal = %lc.until,
+        "loop_node.max_iterations_reached"
+    );
+    let _ = safe_send_message(
+        platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+        conversation_id,
+        &error_msg,
+        Some(&node_context),
+        None,
+        None,
+    )
+    .await;
+    NodeExecutionResult {
+        state: NodeState::Failed,
+        output: last_iteration_output,
+        structured_output: None,
+        session_id: None,
+        cost_usd: loop_total_cost_usd,
+        error: Some(error_msg),
+        declared_fields: None,
+    }
+}
+
+/// Map a `WorkflowRunStatus` to the lowercase wire string used by
+/// `should_continue_streaming_for_status`. Source: dag-executor.ts status strings.
+fn workflow_run_status_str(s: &har_workflow_schema::WorkflowRunStatus) -> &'static str {
+    match s {
+        har_workflow_schema::WorkflowRunStatus::Running => "running",
+        har_workflow_schema::WorkflowRunStatus::Paused => "paused",
+        har_workflow_schema::WorkflowRunStatus::Completed => "completed",
+        har_workflow_schema::WorkflowRunStatus::Failed => "failed",
+        har_workflow_schema::WorkflowRunStatus::Cancelled => "cancelled",
+        har_workflow_schema::WorkflowRunStatus::Pending => "pending",
+    }
 }
 
 // ─── Tests for execute_node_internal (sub-cycle 3) ─────────────────────
