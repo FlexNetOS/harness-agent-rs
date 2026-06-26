@@ -1,0 +1,209 @@
+{
+  "success": {
+    "return_value": "final-summary",
+    "node_events": {
+      "gen": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "type": "bash"
+          }
+        },
+        {
+          "event_type": "node_completed",
+          "data": {
+            "duration_ms": "<n>",
+            "node_output": "GEN_PAYLOAD_7",
+            "type": "bash"
+          }
+        }
+      ],
+      "sidecar": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "type": "bash"
+          }
+        },
+        {
+          "event_type": "node_completed",
+          "data": {
+            "duration_ms": "<n>",
+            "node_output": "side:'GEN_PAYLOAD_7'",
+            "type": "bash"
+          }
+        }
+      ],
+      "analyze": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "command": null,
+            "provider": "claude"
+          }
+        },
+        {
+          "event_type": "tool_called",
+          "data": {
+            "tool_input": {
+              "file": "x.txt"
+            },
+            "tool_name": "Read"
+          }
+        },
+        {
+          "event_type": "tool_completed",
+          "data": {
+            "duration_ms": "<n>",
+            "tool_name": "Read"
+          }
+        },
+        {
+          "event_type": "node_completed",
+          "data": {
+            "cost_usd": 0.01,
+            "duration_ms": "<n>",
+            "node_output": "ANALYSIS_RESULT_42",
+            "num_turns": 1,
+            "stop_reason": "stop"
+          }
+        }
+      ],
+      "summary": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "command": null,
+            "provider": "claude"
+          }
+        },
+        {
+          "event_type": "node_completed",
+          "data": {
+            "cost_usd": 0.01,
+            "duration_ms": "<n>",
+            "node_output": "final-summary",
+            "num_turns": 1,
+            "stop_reason": "stop"
+          }
+        }
+      ],
+      "gated": [
+        {
+          "event_type": "node_skipped",
+          "data": {
+            "expr": "$sidecar.output == 'nope'",
+            "reason": "when_condition"
+          }
+        }
+      ]
+    },
+    "workflow_events": [
+      {
+        "event_type": "workflow_completed",
+        "data": {
+          "duration_ms": "<n>"
+        }
+      }
+    ],
+    "messages_sorted": [
+      "ANALYSIS_RESULT_42",
+      "final-summary",
+      "🔧 READ\n{\"file\":\"x.txt\"}"
+    ],
+    "structured_events": [
+      {
+        "type": "tool_result",
+        "toolName": "Read"
+      },
+      {
+        "type": "tool",
+        "toolName": "Read"
+      }
+    ],
+    "pauses": [],
+    "cancels": [],
+    "received_prompts": {
+      "analyze": "ANALYZE the following payload: GEN_PAYLOAD_7",
+      "summary": "SUMMARY based on ANALYSIS_RESULT_42"
+    }
+  },
+  "fail": {
+    "return_value": null,
+    "node_events": {
+      "ok": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "type": "bash"
+          }
+        },
+        {
+          "event_type": "node_completed",
+          "data": {
+            "duration_ms": "<n>",
+            "node_output": "OK_42",
+            "type": "bash"
+          }
+        }
+      ],
+      "boom": [
+        {
+          "event_type": "node_started",
+          "data": {
+            "command": null,
+            "provider": "claude"
+          }
+        },
+        {
+          "event_type": "node_failed",
+          "data": {
+            "error": "Node 'boom' failed: SDK returned api_error — unauthorized: bad key"
+          }
+        }
+      ],
+      "dependent": [
+        {
+          "event_type": "node_skipped",
+          "data": {
+            "reason": "trigger_rule"
+          }
+        }
+      ]
+    },
+    "workflow_events": [],
+    "messages_sorted": [
+      "❌ DAG workflow 'wf-fail' completed with failures: 'boom': Node 'boom' failed: SDK returned api_error — unauthorized: bad key"
+    ],
+    "structured_events": [],
+    "pauses": [],
+    "cancels": [],
+    "received_prompts": {
+      "boom": "BOOM this fails"
+    }
+  },
+  "cancel": {
+    "return_value": null,
+    "node_events": {
+      "c": [
+        {
+          "event_type": "workflow_cancelled",
+          "data": {
+            "reason": "stop now"
+          }
+        }
+      ]
+    },
+    "workflow_events": [],
+    "messages_sorted": [
+      "⚠️ **Workflow stopped** (cancelled): DAG execution stopped after layer 1/1",
+      "❌ **Workflow cancelled** (node `c`): stop now"
+    ],
+    "structured_events": [],
+    "pauses": [],
+    "cancels": [
+      "run-cancel"
+    ],
+    "received_prompts": {}
+  }
+}
