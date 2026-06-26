@@ -3307,7 +3307,7 @@ pub async fn execute_script_node(
 ///
 /// Source: dag-executor.ts:2753–3710.
 // last_sequential_session_id is pre-wired for sub-cycle 4 session threading (TS:2858).
-#[allow(unused_assignments, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_dag_workflow(
     deps: WorkflowDeps,
     workflow_name: &str,
@@ -3315,23 +3315,24 @@ pub async fn execute_dag_workflow(
     workflow_run: &har_workflow_schema::WorkflowRun,
     platform: Arc<dyn WorkflowPlatform>,
     workflow_provider: &str,
-    _workflow_model: Option<&str>,
+    workflow_model: Option<&str>,
     config_env_vars: &std::collections::HashMap<String, String>,
-    _config_assistants: &std::collections::HashMap<String, serde_json::Value>,
-    _node_system_prompt: Option<&str>,
-    _node_max_budget_usd: Option<f64>,
-    _node_fallback_model: Option<&str>,
-    _node_output_format: Option<&serde_json::Value>,
-    _ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
-    _workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
+    config_assistants: &std::collections::HashMap<String, serde_json::Value>,
+    node_system_prompt: Option<&str>,
+    node_max_budget_usd: Option<f64>,
+    node_fallback_model: Option<&str>,
+    node_output_format: Option<&serde_json::Value>,
+    ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
+    workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
     workflow_nodes: Vec<har_workflow_schema::DagNode>,
     cwd: &str,
     artifacts_dir: &str,
     log_dir: &str,
-    _persist_sessions: bool,
+    persist_sessions: bool,
     base_branch: &str,
     docs_dir: &str,
     prior_completed_nodes: &HashMap<String, String>,
+    configured_command_folder: Option<&str>,
     issue_context: Option<&str>,
 ) -> Option<String> {
     let dag_start_time = Utc::now().timestamp_millis();
@@ -3417,7 +3418,7 @@ pub async fn execute_dag_workflow(
     }
 
     // persist_scope_key: used in sub-cycle 4 (session persistence). Pre-computed here per TS source line 2847.
-    let _persist_scope_key: Option<String> = if !workflow_run.conversation_id.is_empty() {
+    let persist_scope_key: Option<String> = if !workflow_run.conversation_id.is_empty() {
         Some(workflow_run.conversation_id.clone())
     } else {
         None
@@ -3431,10 +3432,9 @@ pub async fn execute_dag_workflow(
     );
 
     // last_sequential_session_id: threaded into execute_node_internal in sub-cycle 4 (sequential session chaining).
-    // Pre-wired here per TS source dag-executor.ts:2858. Suppress unused warnings until sub-cycle 4.
-    #[allow(unused_variables, unused_assignments)]
+    // Pre-wired here per TS source dag-executor.ts:2858.
     let mut last_sequential_session_id: Option<String> = None;
-    let total_cost_usd: f64 = 0.0;
+    let mut total_cost_usd: f64 = 0.0;
 
     // ─── Layer loop ────────────────────────────────────────────────────
 
@@ -3451,6 +3451,10 @@ pub async fn execute_dag_workflow(
         // can do node-output-ref substitution referencing upstream results.
         // Source: TS executors receive `nodeOutputs` which is the accumulated map.
         let node_outputs_snapshot: HashMap<String, NodeOutput> = node_outputs.clone();
+
+        // D2 pre-loop captures for AI dispatch (4d): session threading state per layer.
+        let resume_session_for_layer = last_sequential_session_id.clone();
+        let workflow_name_for_layer = workflow_name.to_string();
 
         for node in layer {
             let deps_clone = deps.clone();
@@ -3476,6 +3480,23 @@ pub async fn execute_dag_workflow(
             let conversation_id_owned = conversation_id.to_string();
             let workflow_run_owned: har_workflow_schema::WorkflowRun = workflow_run.clone();
             let node_outputs_task = node_outputs_snapshot.clone();
+
+            // D2 new captures for AI dispatch (4d)
+            let workflow_provider_owned = workflow_provider.to_string();
+            let workflow_model_owned = workflow_model.map(str::to_string);
+            let config_assistants_owned = config_assistants.clone();
+            let node_system_prompt_owned = node_system_prompt.map(str::to_string);
+            let node_max_budget_usd_copy = node_max_budget_usd;    // Option<f64>: Copy
+            let node_fallback_model_owned = node_fallback_model.map(str::to_string);
+            let node_output_format_owned = node_output_format.cloned();
+            let ai_profile_owned = ai_profile.cloned();
+            let workflow_preset_owned = workflow_preset.cloned();
+            let configured_command_folder_owned = configured_command_folder.map(str::to_string);
+            let persist_sessions_for_task = persist_sessions;      // bool: Copy
+            let persist_scope_key_for_task = persist_scope_key.clone();
+            let is_parallel_for_task = is_parallel_layer;          // bool: Copy
+            let resume_session_for_task = resume_session_for_layer.clone();
+            let workflow_name_for_session = workflow_name_for_layer.clone();
 
             let handle = tokio::spawn(async move {
                 use har_workflow_schema::NodeOutput;
@@ -3531,6 +3552,7 @@ pub async fn execute_dag_workflow(
                                     output: String::new(),
                                 }
                             }),
+                            None,
                         );
                     }
                 }
@@ -3580,6 +3602,7 @@ pub async fn execute_dag_workflow(
                         NodeOutput::Skipped {
                             output: String::new(),
                         },
+                        None,
                     );
                 }
 
@@ -3613,6 +3636,7 @@ pub async fn execute_dag_workflow(
                                 NodeOutput::Skipped {
                                     output: String::new(),
                                 },
+                                None,
                             );
                         }
                     };
@@ -3638,6 +3662,7 @@ pub async fn execute_dag_workflow(
                             NodeOutput::Skipped {
                                 output: String::new(),
                             },
+                            None,
                         );
                     }
                     if !result.result {
@@ -3674,6 +3699,7 @@ pub async fn execute_dag_workflow(
                             NodeOutput::Skipped {
                                 output: String::new(),
                             },
+                            None,
                         );
                     }
                 }
@@ -3709,7 +3735,7 @@ pub async fn execute_dag_workflow(
                             },
                         )
                         .await;
-                        (nid.clone(), output)
+                        (nid.clone(), output, None)
                     }
 
                     // B7 — Cancel node: substitute reason, send message, emit events, cancel run.
@@ -3771,6 +3797,7 @@ pub async fn execute_dag_workflow(
                                 structured_output: None,
                                 declared_fields: None,
                             },
+                            None,
                         )
                     }
 
@@ -3796,29 +3823,304 @@ pub async fn execute_dag_workflow(
                             },
                         )
                         .await;
-                        (nid.clone(), output)
+                        (nid.clone(), output, None)
                     }
 
-                    // All other node types (Prompt/Command/Loop/Approval) are NOT ported
-                    // in sub-cycle 4b. They land in 4c-4f. This Skipped arm is an HONEST
-                    // placeholder — not a silent downgrade. The ledger row for each stays `- [~]`
-                    // until its sub-cycle is complete and parity-verified.
+                    // 4d — AI node dispatch: Command + Prompt.
+                    // Source: dag-executor.ts:3045-3068 (the AI branch that calls executeNodeInternal).
+                    har_workflow_schema::DagNode::Command(_) | har_workflow_schema::DagNode::Prompt(_) => {
+                        use har_ledger::store::{WorkflowNodeSessionKey, UpsertNodeSessionParams, DeleteSessionsFilter};
+
+                        // D-3: TS emits nodeName = node.command ?? node.id in pre-execution errors.
+                        let node_cmd_or_id = match &node_owned {
+                            har_workflow_schema::DagNode::Command(c) => c.command.clone(),
+                            _ => nid.clone(),
+                        };
+
+                        // Step 1: resolve provider/model
+                        let resolve_result = resolve_node_provider_and_model(
+                            &node_owned,
+                            &workflow_provider_owned,
+                            workflow_model_owned.as_deref(),
+                            if config_env_vars_owned.is_empty() { None } else { Some(&config_env_vars_owned) },
+                            &config_assistants_owned,
+                            node_system_prompt_owned.as_deref(),
+                            node_max_budget_usd_copy,
+                            node_fallback_model_owned.as_deref(),
+                            node_output_format_owned.as_ref(),
+                            ai_profile_owned.as_ref(),
+                            workflow_preset_owned.as_ref(),
+                        ).await;
+
+                        let resolved = match resolve_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                warn!(node_id = nid, error = %err, "dag_node_provider_resolve_failed");
+                                deps_clone.emit_workflow_event(&workflow_run_id, "node_failed", &nid,
+                                    serde_json::json!({"error": err})).await;
+                                // D-3: emit nodeName = node.command ?? node.id (TS dag-executor.ts:3404).
+                                get_workflow_event_emitter().emit("node_failed", &workflow_run_id, Some(&nid),
+                                    Some(node_cmd_or_id.as_str()), None, Some(err.as_str()), None, None).await;
+                                let _ = safe_send_message(
+                                    platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                    &conversation_id_owned,
+                                    &format!("Node '{}' failed before execution: {}", nid, err),
+                                    Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                    None, None,
+                                ).await;
+                                return (nid.clone(), har_workflow_schema::NodeOutput::Failed {
+                                    output: String::new(),
+                                    session_id: None,
+                                    error: err,
+                                    structured_output: None,
+                                    declared_fields: None,
+                                }, None);
+                            }
+                        };
+                        let resolved_provider = resolved.provider.clone();
+                        let node_options = Some(resolved.base_options.clone());
+
+                        // Step 2: session threading
+                        let is_fresh_sequential = is_parallel_for_task
+                            || matches!(node_owned.base().context, Some(har_workflow_schema::ContextMode::Fresh));
+                        let bypasses_persistence = matches!(node_owned.base().context, Some(har_workflow_schema::ContextMode::Fresh));
+                        let mut resume_session_id: Option<String> = if is_fresh_sequential {
+                            None
+                        } else {
+                            resume_session_for_task.clone()
+                        };
+
+                        let node_persist_flag = node_owned.base().persist_session;
+                        let effective_persist: bool = node_persist_flag.unwrap_or(persist_sessions_for_task);
+
+                        if effective_persist && !bypasses_persistence {
+                            // Capability guard
+                            let sess_resume_supported = {
+                                let prov_ref = (deps_clone.get_agent_provider)(&resolved_provider);
+                                prov_ref.get_capabilities().session_resume
+                            };
+                            if !sess_resume_supported {
+                                let err = format!(
+                                    "Node '{}' has persist_session: true but resolved provider '{}' does not support sessionResume. Remove persist_session, or use a provider with sessionResume capability.",
+                                    nid, resolved_provider
+                                );
+                                warn!(node_id = nid, %err, "dag_node_persist_session_unsupported");
+                                deps_clone.emit_workflow_event(&workflow_run_id, "node_failed", &nid,
+                                    serde_json::json!({"error": err})).await;
+                                // D-3: emit nodeName = node.command ?? node.id (TS dag-executor.ts:3404).
+                                get_workflow_event_emitter().emit("node_failed", &workflow_run_id, Some(&nid),
+                                    Some(node_cmd_or_id.as_str()), None, Some(err.as_str()), None, None).await;
+                                let _ = safe_send_message(
+                                    platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                    &conversation_id_owned,
+                                    &format!("Node '{}' failed before execution: {}", nid, err),
+                                    Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                    None, None,
+                                ).await;
+                                return (nid.clone(), har_workflow_schema::NodeOutput::Failed {
+                                    output: String::new(),
+                                    session_id: None,
+                                    error: err,
+                                    structured_output: None,
+                                    declared_fields: None,
+                                }, None);
+                            }
+
+                            // Session lookup
+                            if let Some(ref scope_key) = persist_scope_key_for_task {
+                                let key = WorkflowNodeSessionKey {
+                                    workflow_name: workflow_name_for_session.clone(),
+                                    node_id: nid.clone(),
+                                    scope_key: scope_key.clone(),
+                                    provider: resolved_provider.clone(),
+                                };
+                                match deps_clone.store.get_workflow_node_session(&key).await {
+                                    Ok(Some(persisted)) => {
+                                        let sid_preview = format!("{}…", &persisted.provider_session_id[..persisted.provider_session_id.len().min(8)]);
+                                        resume_session_id = Some(persisted.provider_session_id.clone());
+                                        deps_clone.emit_workflow_event(&workflow_run_id, "node_session_resumed", &nid,
+                                            serde_json::json!({
+                                                "provider": resolved_provider,
+                                                "scope_key": scope_key,
+                                                "provider_session_id_preview": sid_preview,
+                                            })).await;
+                                    }
+                                    Ok(None) => {}
+                                    Err(err) => {
+                                        warn!(node_id = nid, err = %err, workflow = workflow_name_for_session,
+                                            scope_key = scope_key, provider = resolved_provider,
+                                            "persist_session_lookup_failed");
+                                        let _ = safe_send_message(
+                                            platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                            &conversation_id_owned,
+                                            &format!("⚠️ Could not load the persisted session for node `{}` — it will run without prior context. Session continuity may be broken; if this recurs, check server logs or run `/workflow reset-sessions {}`.",
+                                                nid, workflow_name_for_session),
+                                            Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                            None, None,
+                                        ).await;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Step 3: retry wrapper
+                        let retry_config = get_effective_node_retry_config(&node_owned);
+                        let mut exec_result = NodeExecutionResult {
+                            state: NodeState::Failed,
+                            output: String::new(),
+                            error: Some("Node did not execute".to_string()),
+                            session_id: None,
+                            structured_output: None,
+                            cost_usd: None,
+                            declared_fields: None,
+                        };
+
+                        for attempt in 0u32..=retry_config.max_retries {
+                            exec_result = execute_node_internal(
+                                &deps_clone,
+                                platform_clone.clone(),
+                                &conversation_id_owned,
+                                &cwd_owned,
+                                &workflow_run_owned,
+                                &node_owned,
+                                &resolved_provider,
+                                node_options.clone(),
+                                &artifacts_dir_owned,
+                                &log_dir_owned,
+                                &base_branch_owned,
+                                &docs_dir_owned,
+                                &all_outputs,
+                                resume_session_id.as_deref(),
+                                configured_command_folder_owned.as_deref(),
+                                issue_context_owned.as_deref(),
+                            ).await;
+
+                            if exec_result.state != NodeState::Failed {
+                                break;
+                            }
+
+                            let is_fatal = exec_result.error.as_deref()
+                                .map(|e| classify_error(e) == ErrorType::Fatal)
+                                .unwrap_or(false);
+                            let is_transient = exec_result.error.as_deref()
+                                .map(is_transient_node_error)
+                                .unwrap_or(false);
+                            let should_retry = !is_fatal
+                                && (retry_config.on_error == har_workflow_schema::OnError::All
+                                    || (retry_config.on_error == har_workflow_schema::OnError::Transient && is_transient));
+
+                            if !should_retry || attempt >= retry_config.max_retries {
+                                break;
+                            }
+
+                            let delay_ms = retry_config.delay_ms.saturating_mul(2u64.pow(attempt));
+                            warn!(
+                                node_id = nid,
+                                attempt = attempt + 1,
+                                max_retries = retry_config.max_retries,
+                                delay_ms,
+                                error = exec_result.error.as_deref().unwrap_or(""),
+                                "dag_node_transient_retry"
+                            );
+                            let error_kind = if is_transient { "transient error" } else { "error" };
+                            let _ = safe_send_message(
+                                platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                &conversation_id_owned,
+                                &format!(
+                                    "⚠️ Node `{}` failed with {} (attempt {}/{}). Retrying in {}s...",
+                                    nid, error_kind,
+                                    attempt + 1, retry_config.max_retries + 1,
+                                    (delay_ms as f64 / 1000.0).round() as u64,
+                                ),
+                                Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                None, None,
+                            ).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                        }
+
+                        // Step 4: persist-session upsert/delete
+                        if effective_persist && !bypasses_persistence {
+                            if let Some(ref scope_key) = persist_scope_key_for_task {
+                                if exec_result.state == NodeState::Completed {
+                                    if let Some(ref sid) = exec_result.session_id {
+                                        if let Err(err) = deps_clone.store.upsert_workflow_node_session(
+                                            UpsertNodeSessionParams {
+                                                workflow_name: workflow_name_for_session.clone(),
+                                                node_id: nid.clone(),
+                                                scope_key: scope_key.clone(),
+                                                provider: resolved_provider.clone(),
+                                                provider_session_id: sid.clone(),
+                                                last_run_id: Some(workflow_run_id.clone()),
+                                            }
+                                        ).await {
+                                            warn!(node_id = nid, err = %err, workflow = workflow_name_for_session,
+                                                scope_key, provider = resolved_provider, "persist_session_upsert_failed");
+                                            let _ = safe_send_message(
+                                                platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                                &conversation_id_owned,
+                                                &format!("⚠️ Could not persist the session for node `{}` ({}). The next run will start this node fresh.",
+                                                    nid, resolved_provider),
+                                                Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                                None, None,
+                                            ).await;
+                                        }
+                                    } else {
+                                        // D-1: TS wraps upsert AND delete in one try/catch (dag-executor.ts:3341-3383).
+                                        // Both paths log persist_session_upsert_failed and warn the user on error.
+                                        if let Err(err) = deps_clone.store.delete_workflow_node_sessions(
+                                            DeleteSessionsFilter {
+                                                workflow_name: workflow_name_for_session.clone(),
+                                                scope_key: Some(scope_key.clone()),
+                                                node_id: Some(nid.clone()),
+                                                provider: Some(resolved_provider.clone()),
+                                            }
+                                        ).await {
+                                            warn!(node_id = nid, err = %err, workflow = workflow_name_for_session,
+                                                scope_key, provider = resolved_provider, "persist_session_upsert_failed");
+                                            let _ = safe_send_message(
+                                                platform_clone.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                                &conversation_id_owned,
+                                                &format!("⚠️ Could not persist the session for node `{}` ({}). The next run will start this node fresh.",
+                                                    nid, resolved_provider),
+                                                Some(&SendMessageContext { workflow_id: Some(workflow_run_id.clone()), node_name: Some(nid.clone()) }),
+                                                None, None,
+                                            ).await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // D-2: capture cost before converting NodeExecutionResult → NodeOutput
+                        // (TS accumulates output.costUsd per node at dag-executor.ts:3427).
+                        let exec_cost = exec_result.cost_usd;
+                        let output = match exec_result.state {
+                            NodeState::Completed => har_workflow_schema::NodeOutput::Completed {
+                                output: exec_result.output,
+                                session_id: exec_result.session_id,
+                                structured_output: exec_result.structured_output,
+                                declared_fields: exec_result.declared_fields,
+                            },
+                            NodeState::Failed => har_workflow_schema::NodeOutput::Failed {
+                                output: exec_result.output,
+                                session_id: exec_result.session_id,
+                                error: exec_result.error.unwrap_or_default(),
+                                structured_output: exec_result.structured_output,
+                                declared_fields: exec_result.declared_fields,
+                            },
+                        };
+
+                        (nid.clone(), output, exec_cost)
+                    }
+
+                    // Loop/Approval nodes: honest Skipped placeholder until sub-cycles 4e-4f.
                     _ => {
-                        let _ = wf_name_owned; // suppress unused warning until 4c-4f
-                        let _ = base_branch_owned;
-                        let _ = docs_dir_owned;
-                        let _ = issue_context_owned;
-                        let _ = config_env_vars_owned;
-                        let _ = platform_clone;
-                        let _ = conversation_id_owned;
-                        let _ = workflow_run_owned;
-                        let _ = cwd_owned;
-                        let _ = artifacts_dir_owned;
                         (
                             nid.clone(),
                             NodeOutput::Skipped {
                                 output: String::new(),
                             },
+                            None,
                         )
                     }
                 }
@@ -3834,8 +4136,13 @@ pub async fn execute_dag_workflow(
 
         for result in layer_results {
             match result {
-                Ok((output_nid, output)) => {
+                Ok((output_nid, output, node_cost)) => {
                     node_outputs.insert(output_nid.clone(), output);
+                    // D-2: accumulate per-node cost into workflow total
+                    // (TS dag-executor.ts:3427: if (output.costUsd !== undefined) totalCostUsd += output.costUsd).
+                    if let Some(c) = node_cost {
+                        total_cost_usd += c;
+                    }
 
                     // Write node artifact for completed nodes with declared output_type.
                     if let Some(output_type) = workflow_nodes
