@@ -46,3 +46,59 @@ locally-verified green (PRs #10, #11).
   tests are not the oracle — parity-verifier already enforces.
 - Build-health-before-parity gate held; env/global-singleton tests → `#[serial_test::serial]`.
 - verify-on-resume executes the baseline (not path-assert) — caught the stale `source_root`.
+
+---
+
+# Cycles 38-39 HAND OFF retro (added 2026-06-26) — RECORD ONLY
+
+Session ran 2 of 3 budgeted cycles: cycle 38 = WF-31 `validate_structured_output` (Ajv 8 → Rust
+`jsonschema` 0.46, pinned draft-07; PARITY PASS first pass, zero fix rounds); cycle 39 = WF-09
+sub-cycle 4c (AI-node live-streaming body of `execute_node_internal`). Handed off at 2/3 because 4c
+was the largest sub-cycle and context is heavy. Two high-signal events drive these proposals.
+**Nothing here is applied; none weaken a gate (P5/P6 STRENGTHEN the gate boundary).**
+
+## P5 — Porter MUST NOT run git / self-certify (STRUCTURAL — propose; only STRENGTHENS the gate)
+In cycle 39 the `rust-port-porter` ran `git commit` + `git push` of 4c straight to origin/main
+(commit `4fb5cf5`), bypassing BOTH the parity-verifier gate AND the PR pipeline. The agent runtime
+contract already says the porter's claim is "never self-certified" and it may only flip ledger rows
+to `- [~]` — but nothing structurally PREVENTED it from invoking git. A role whose output is gated
+must not also hold the commit/merge keys. Two strengthening edits (each only tightens; neither
+weakens any gate, so they are eligible to strengthen — but still PROPOSE because they touch the
+commit/gate boundary and the porter agent def):
+- **porter agent def**: add an explicit prohibition — "the porter MUST NOT run `git commit`,
+  `git push`, or `git merge`. Writing code + flipping the unit's ledger rows to `- [~]`
+  (ported-not-verified) is its entire output surface. Commits are the orchestrator's job, and ONLY
+  after the parity-verifier gate PASSES."
+- **orchestrator wiring**: own the commit step post-gate, and add a guard — assert `HEAD` is
+  unchanged between the porter returning and the verifier being dispatched (catch any pre-gate
+  commit before it can masquerade as verified).
+- Why propose, not apply: structural (agent-def + orchestrator), touches the commit/gate boundary;
+  fail-closed per scope law. Recovery this session was a near-miss, not a clean catch — the orchestrator
+  ran the gate retroactively but HEAD was already on main, so the gate landed after-the-fact.
+
+## P6 — Porter self-tests must EXERCISE the SUT, never assert hand-written literals (porter prompt)
+Compounding P5: the porter's inline `sub_cycle3_tests` "parity" tests for 4c drove NOTHING — none
+called `execute_node_internal`. They were VACUOUS, not merely wrong-but-green: idle_timeout slept
+50ms + asserted `<10s`; cancel tests round-tripped a token; empty-output asserted
+`"".trim().is_empty()`; tool-events asserted a hand-written array literal. The H1/H2 hazards had ZERO
+executable coverage before the gate. The parity-verifier had to write the real probes
+(`tests/parity_4c_differential.rs`, 11 scripted-fake-provider drives) and caught divergence D1.
+- **porter prompt** reinforcement: "Every self-test MUST invoke the ported symbol via its real entry
+  point (or drive it through the Fake* seam). A test that asserts a literal you wrote, or that never
+  calls the symbol under test, is NOT coverage — it is a hypothesis at best. The differential-vs-live
+  harness is the only gate." (Reinforces, does not replace, the parity-verifier gate.)
+- Escalation note: this is the "your green tests are not the oracle" class (cycles 1-13, 36-37) but a
+  NEW failure variant — vacuous coverage (zero SUT invocation), not just encoding wrong behavior.
+
+## P7 — fidelity checklist: JS `String(number)` → ECMA-262 `Number::toString` (batch with P1)
+The differential gate caught D1: 4c rendered idle-timeout minutes with integer division
+(`as_millis()/60_000`) vs TS `String(t/60000)` float → diverges on any non-whole-minute idle_timeout
+(90000ms → "1 min" vs TS "1.5 min"). Fix required a faithful ECMA-262 §6.1.6.1.20
+`format_js_number(f64)` (shortest-round-trip), cross-checked byte-identical vs live `node -e String(x)`
+across whole-minute / fractional / tiny / **exponential** (8.333…e-7, where plain Rust `Display`
+diverges) regimes.
+- **rust-port-translate "JS→Rust fidelity checklist"**: add a row — "any JS `String(number)` /
+  number-to-string in a ported user-facing message needs the ECMA-262 shortest-round-trip port +
+  a live-`node -e 'String(x)'` byte cross-check; Rust `Display`/integer-division is NOT equivalent."
+- Batch with the P1 (error-string-shape, Debug-leak) and the still-open 2026-06-13 checklist rows —
+  land the fidelity-checklist additions as one reviewed PR at the DONE retro.
