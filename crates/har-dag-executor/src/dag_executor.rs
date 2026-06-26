@@ -1719,6 +1719,27 @@ impl WorkflowDeps {
             .await;
     }
 
+    /// Emit a WORKFLOW-LEVEL event (no `step_name`), mirroring TS `createWorkflowEvent`
+    /// calls at the DAG level that omit `step_name` (e.g. the terminal `workflow_completed`
+    /// at dag-executor.ts:3686-3697). Distinct from [`emit_workflow_event`], which always
+    /// stamps a `step_name` for per-node events.
+    pub async fn emit_workflow_level_event(
+        &self,
+        workflow_run_id: &str,
+        event_type: WorkflowEventType,
+        data: serde_json::Value,
+    ) {
+        self.store
+            .create_workflow_event(har_ledger::store::CreateWorkflowEventData {
+                workflow_run_id: workflow_run_id.to_string(),
+                event_type,
+                step_index: None,
+                step_name: None,
+                data: data.as_object().cloned(),
+            })
+            .await;
+    }
+
     /// Emit a plain message event using WorkflowArtifact as the carrier.
     pub async fn emit_message_event(&self, workflow_run_id: &str, step_name: &str, msg: String) {
         let data =
@@ -3340,27 +3361,10 @@ pub async fn execute_dag_workflow(
     let mut node_outputs: std::collections::HashMap<String, har_workflow_schema::NodeOutput> =
         HashMap::new();
 
-    // Emit workflow_started event.
-    deps.emit_workflow_event(
-        &workflow_run.id,
-        "workflow_started",
-        workflow_name,
-        serde_json::json!({}),
-    )
-    .await;
-
-    get_workflow_event_emitter()
-        .emit(
-            "workflow_started",
-            &workflow_run.id,
-            None,
-            Some(workflow_name),
-            None,
-            None,
-            None,
-            Some(workflow_name),
-        )
-        .await;
+    // NOTE: TS `executeDagWorkflow` emits NO `workflow_started` event — neither a store
+    // `createWorkflowEvent` nor an emitter event. A prior port added both; they are removed
+    // here for faithful parity (whole-DAG differential, sub-cycle 5). The workflow-started
+    // signal, if any, belongs to the outer caller (executor.ts), not this function.
 
     // ─── Resume path: pre-populate nodeOutputs ──────────────────────────
 
@@ -3557,22 +3561,33 @@ pub async fn execute_dag_workflow(
                     }
                 }
 
-                // Build a minimal node_outputs for trigger/condition evaluation.
-                let mut eval_outputs = HashMap::new();
+                // Build the full node-outputs view that trigger evaluation, `when:`
+                // conditions, AND output-ref substitution all share — mirrors TS, where
+                // every node sees the single accumulated `nodeOutputs` map containing all
+                // prior-layer results. `node_outputs_task` is the snapshot of every earlier
+                // layer's outputs; we additionally fold in this node's own prior-completed
+                // entry for the `always_run` fall-through case (own id absent from the
+                // snapshot when it was excluded from resume prepopulation).
+                //
+                // BUGFIX (sub-cycle 5 whole-DAG differential): the gating checks previously
+                // ran against a minimal map holding ONLY the node's own prior entry, so any
+                // node with an upstream dependency saw its dependency as missing →
+                // synthesized-failed → skipped. Every downstream node in a multi-layer DAG
+                // was incorrectly skipped. Trigger + when must see the prior-layer snapshot.
+                let mut all_outputs = node_outputs_task.clone();
                 if let Some(po) = prior_clone.get(&nid) {
-                    eval_outputs.insert(
-                        nid.clone(),
-                        NodeOutput::Completed {
+                    all_outputs
+                        .entry(nid.clone())
+                        .or_insert_with(|| NodeOutput::Completed {
                             output: po.clone(),
                             session_id: None,
                             structured_output: None,
                             declared_fields: None,
-                        },
-                    );
+                        });
                 }
 
                 // 1. Evaluate trigger rule.
-                let trigger_result = crate::check_trigger_rule(&node_owned, &eval_outputs);
+                let trigger_result = crate::check_trigger_rule(&node_owned, &all_outputs);
                 if trigger_result == TriggerResult::Skip {
                     info!(node_id = nid, reason = "trigger_rule", "dag_node_skipped");
                     let _ =
@@ -3610,7 +3625,7 @@ pub async fn execute_dag_workflow(
                 if let Some(ref when_expr) = node_owned.base().when {
                     let result = match condition_evaluator::evaluate_condition(
                         when_expr,
-                        &eval_outputs,
+                        &all_outputs,
                     ) {
                         Ok(r) => r,
                         Err(err) => {
@@ -3704,14 +3719,9 @@ pub async fn execute_dag_workflow(
                     }
                 }
 
-                // 3. Node dispatch by type (sub-cycle 4a: Bash + Cancel live; others honest Skipped).
-                // Merge prior_clone + layer snapshot into a single node_outputs view for this node.
-                // This mirrors TS: executors receive `nodeOutputs` which is all prior results.
-                let mut all_outputs = node_outputs_task.clone();
-                for (k, v) in &eval_outputs {
-                    all_outputs.entry(k.clone()).or_insert_with(|| v.clone());
-                }
-
+                // 3. Node dispatch by type. `all_outputs` (built above) is the shared
+                // node-outputs view passed to every executor for output-ref substitution —
+                // mirrors TS, where executors receive `nodeOutputs` (all prior results).
                 match &node_owned {
                     // B1 — Bash node: full subprocess execution. Source: dag-executor.ts:3069-3091.
                     har_workflow_schema::DagNode::Bash(bash_node) => {
@@ -4318,14 +4328,27 @@ pub async fn execute_dag_workflow(
                     "dag.stop_detected_between_layers"
                 );
                 if status != har_workflow_schema::WorkflowRunStatus::Paused {
+                    // Workflow-level message → platform (NOT the store workflow_artifact
+                    // carrier) and lowercase status string. Source: ts:3493-3500
+                    // (`safeSendMessage(platform, …, `(${effectiveStatus})`)`).
                     let msg = format!(
-                        "⚠️ **Workflow stopped** ({:?}): DAG execution stopped after layer {}/{}",
-                        status,
+                        "⚠️ **Workflow stopped** ({}): DAG execution stopped after layer {}/{}",
+                        status_str,
                         layer_idx + 1,
                         layers.len()
                     );
-                    deps.emit_message_event(&workflow_run.id, "layer_stop", msg)
-                        .await;
+                    let _ = safe_send_message(
+                        platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                        conversation_id,
+                        &msg,
+                        Some(&SendMessageContext {
+                            workflow_id: Some(workflow_run.id.clone()),
+                            node_name: None,
+                        }),
+                        None,
+                        None,
+                    )
+                    .await;
                     get_workflow_event_emitter()
                         .unregister_run(&workflow_run.id)
                         .await;
@@ -4344,8 +4367,18 @@ pub async fn execute_dag_workflow(
                     layer_idx + 1,
                     layers.len()
                 );
-                deps.emit_message_event(&workflow_run.id, "layer_stop", msg)
-                    .await;
+                let _ = safe_send_message(
+                    platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &msg,
+                    Some(&SendMessageContext {
+                        workflow_id: Some(workflow_run.id.clone()),
+                        node_name: None,
+                    }),
+                    None,
+                    None,
+                )
+                .await;
                 get_workflow_event_emitter()
                     .unregister_run(&workflow_run.id)
                     .await;
@@ -4458,8 +4491,19 @@ pub async fn execute_dag_workflow(
         get_workflow_event_emitter()
             .unregister_run(&workflow_run.id)
             .await;
-        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg))
-            .await;
+        // Workflow-level failure message → platform. Source: ts:3592 (`safeSendMessage`).
+        let _ = safe_send_message(
+            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+            conversation_id,
+            &format!("❌ {}", fail_msg),
+            Some(&SendMessageContext {
+                workflow_id: Some(workflow_run.id.clone()),
+                node_name: None,
+            }),
+            None,
+            None,
+        )
+        .await;
 
         return None;
     }
@@ -4518,8 +4562,19 @@ pub async fn execute_dag_workflow(
         get_workflow_event_emitter()
             .unregister_run(&workflow_run.id)
             .await;
-        deps.emit_message_event(&workflow_run.id, "fail", format!("❌ {}", fail_msg))
-            .await;
+        // Workflow-level failure message → platform. Source: ts:3636 (`safeSendMessage`).
+        let _ = safe_send_message(
+            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+            conversation_id,
+            &format!("❌ {}", fail_msg),
+            Some(&SendMessageContext {
+                workflow_id: Some(workflow_run.id.clone()),
+                node_name: None,
+            }),
+            None,
+            None,
+        )
+        .await;
 
         return None;
     }
@@ -4576,10 +4631,10 @@ pub async fn execute_dag_workflow(
         node_counts.skipped,
         node_counts.total,
     );
-    deps.emit_workflow_event(
+    // Workflow-level event — NO step_name (TS createWorkflowEvent omits it). Source: ts:3686.
+    deps.emit_workflow_level_event(
         &workflow_run.id,
-        "workflow_completed",
-        workflow_name,
+        WorkflowEventType::WorkflowCompleted,
         serde_json::json!({"duration_ms": duration}),
     )
     .await;
@@ -4774,49 +4829,60 @@ fn format_tool_call(tool_name: &str, tool_input: Option<&serde_json::Value>) -> 
 
 /// Extract brief info from tool input for display. Source: tool-formatter.ts:37-83.
 fn extract_tool_brief(tool_name: &str, tool_input: &serde_json::Value) -> Option<String> {
-    match tool_name {
-        "Bash" => {
-            let cmd = tool_input.get("command")?.as_str()?;
-            Some(if cmd.len() > 100 {
+    // GUARDED branches mirror TS `if (toolName === 'X' && toolInput.field) { return … }`.
+    // When a guard does NOT hold (wrong tool, or the expected field absent), control
+    // falls THROUGH to the generic JSON-stringify default at the bottom — exactly like
+    // tool-formatter.ts:37-83. A previous `match`-based port returned `None` on a missing
+    // field instead of falling through, dropping the brief entirely (whole-DAG
+    // differential, sub-cycle 5).
+    if tool_name == "Bash" {
+        if let Some(cmd) = tool_input.get("command").and_then(|v| v.as_str()) {
+            return Some(if cmd.len() > 100 {
                 format!("{}...", &cmd[..100])
             } else {
                 cmd.to_string()
-            })
-        }
-        "Read" => Some(format!(
-            "Reading: {}",
-            tool_input.get("file_path")?.as_str()?
-        )),
-        "Write" => Some(format!(
-            "Writing: {}",
-            tool_input.get("file_path")?.as_str()?
-        )),
-        "Edit" => Some(format!(
-            "Editing: {}",
-            tool_input.get("file_path")?.as_str()?
-        )),
-        "Glob" => Some(format!("Pattern: {}", tool_input.get("pattern")?.as_str()?)),
-        "Grep" => Some(format!(
-            "Searching: {}",
-            tool_input.get("pattern")?.as_str()?
-        )),
-        _ if tool_name.starts_with("mcp__") => {
-            let parts: Vec<&str> = tool_name.splitn(3, "__").collect();
-            if parts.len() >= 2 {
-                Some(format!("MCP: {}", parts[1..].join(" ")))
-            } else {
-                None
-            }
-        }
-        _ => {
-            let s = serde_json::to_string(tool_input).ok()?;
-            Some(if s.len() > 80 {
-                format!("{}...", &s[..80])
-            } else {
-                s
-            })
+            });
         }
     }
+    if tool_name == "Read" {
+        if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
+            return Some(format!("Reading: {fp}"));
+        }
+    }
+    if tool_name == "Write" {
+        if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
+            return Some(format!("Writing: {fp}"));
+        }
+    }
+    if tool_name == "Edit" {
+        if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
+            return Some(format!("Editing: {fp}"));
+        }
+    }
+    if tool_name == "Glob" {
+        if let Some(p) = tool_input.get("pattern").and_then(|v| v.as_str()) {
+            return Some(format!("Pattern: {p}"));
+        }
+    }
+    if tool_name == "Grep" {
+        if let Some(p) = tool_input.get("pattern").and_then(|v| v.as_str()) {
+            return Some(format!("Searching: {p}"));
+        }
+    }
+    if tool_name.starts_with("mcp__") {
+        // TS `toolName.split('__')` splits on EVERY `__`; `parts.slice(1).join(' ')`.
+        let parts: Vec<&str> = tool_name.split("__").collect();
+        if parts.len() >= 2 {
+            return Some(format!("MCP: {}", parts[1..].join(" ")));
+        }
+    }
+    // Generic fallback: JSON-stringify (truncated at 80). Source: tool-formatter.ts:79-83.
+    let s = serde_json::to_string(tool_input).ok()?;
+    Some(if s.len() > 80 {
+        format!("{}...", &s[..80])
+    } else {
+        s
+    })
 }
 
 // ─── log_assistant / log_tool — JSONL workflow logging ───────────────────────
@@ -4975,11 +5041,17 @@ pub async fn execute_node_internal(
     let _ = log_node_start(log_dir, &workflow_run.id, &node_id, &node_cmd_str).await;
 
     // Emit node_started event (fire-and-forget on the store side). Source: dag-executor.ts:698-718.
+    // Event data uses `node.command ?? null` (NOT the `<inline>` log fallback): a Command
+    // node carries its command string, every other AI node (Prompt) carries JSON `null`.
+    let command_or_null = match node {
+        har_workflow_schema::DagNode::Command(c) => serde_json::Value::String(c.command.clone()),
+        _ => serde_json::Value::Null,
+    };
     deps.emit_workflow_event(
         &workflow_run.id,
         "node_started",
         &node_id,
-        serde_json::json!({"command": &node_cmd_str, "provider": provider}),
+        serde_json::json!({"command": command_or_null, "provider": provider}),
     )
     .await;
 
@@ -5156,8 +5228,15 @@ pub async fn execute_node_internal(
     let mut structured_output: Option<serde_json::Value> = None;
     let mut new_session_id: Option<String> = None;
     let mut batch_messages: Vec<String> = Vec::new();
-    let mut accumulated_cost_usd: f64 = 0.0;
+    // `Option` (not `f64 = 0.0`) so a node that never reports cost stays `None` and the
+    // node_completed event OMITS `cost_usd` (TS `nodeCostUsd !== undefined ? … : {}`),
+    // rather than emitting `cost_usd: 0` (whole-DAG differential, sub-cycle 5).
+    let mut accumulated_cost_usd: Option<f64> = None;
     let mut node_cost_usd_pass: Option<f64> = None;
+    // Captured from the Result chunk for the node_completed event. Source: ts:1016-1018.
+    let mut node_stop_reason: Option<String> = None;
+    let mut node_num_turns: Option<u32> = None;
+    let mut node_model_usage: Option<HashMap<String, serde_json::Value>> = None;
 
     // ─── Validate-and-reask loop ──────────────────────────────────────────────
     // Source: dag-executor.ts:1147-1255. Iterates once for non-best-effort; up to
@@ -5479,9 +5558,9 @@ pub async fn execute_node_internal(
                     error_subtype,
                     errors,
                     cost,
-                    stop_reason: _,
-                    num_turns: _,
-                    model_usage: _,
+                    stop_reason: chunk_stop_reason,
+                    num_turns: chunk_num_turns,
+                    model_usage: chunk_model_usage,
                 } => {
                     // Emit tool_completed for the LAST tool. Source: dag-executor.ts:986-1012.
                     if let Some(prev) = last_tool_started.take() {
@@ -5516,6 +5595,19 @@ pub async fn execute_node_internal(
                     }
                     if let Some(c) = cost {
                         pass_cost_usd = Some(c);
+                    }
+                    // Capture stop_reason / num_turns / model_usage for the node_completed
+                    // event. Source: dag-executor.ts:1016-1018. A prior port bound these to
+                    // `_` and the node_completed event omitted them (whole-DAG differential,
+                    // sub-cycle 5 — the D-2 cross-cutting field-omission class).
+                    if let Some(sr) = chunk_stop_reason {
+                        node_stop_reason = Some(sr);
+                    }
+                    if let Some(nt) = chunk_num_turns {
+                        node_num_turns = Some(nt);
+                    }
+                    if let Some(mu) = chunk_model_usage {
+                        node_model_usage = Some(mu);
                     }
                     if let Some(so_val) = so {
                         structured_output = Some(so_val);
@@ -5699,10 +5791,12 @@ pub async fn execute_node_internal(
         }
 
         // ── Accumulate cost across all passes. Source: dag-executor.ts:1164-1170. ──
+        // `accumulatedCostUsd` stays `undefined` until a cost chunk arrives, then becomes
+        // a running total; `nodeCostUsd = accumulatedCostUsd` carries it (None == undefined).
         if let Some(c) = pass_cost_usd {
-            accumulated_cost_usd += c;
+            accumulated_cost_usd = Some(accumulated_cost_usd.unwrap_or(0.0) + c);
         }
-        node_cost_usd_pass = Some(accumulated_cost_usd);
+        node_cost_usd_pass = accumulated_cost_usd;
 
         // ── Validate-and-reask logic. Source: dag-executor.ts:1172-1254. ──────────
 
@@ -6064,15 +6158,32 @@ pub async fn execute_node_internal(
     )
     .await;
 
+    // node_completed event data. Conditional fields mirror TS's `...(x ? {k} : {})`
+    // spreads (dag-executor.ts:1399-1408): include cost_usd / stop_reason / num_turns /
+    // model_usage ONLY when present, otherwise omit the key entirely.
+    let mut completed_data = serde_json::Map::new();
+    completed_data.insert(
+        "duration_ms".into(),
+        serde_json::json!(duration.as_millis()),
+    );
+    completed_data.insert("node_output".into(), serde_json::json!(&node_output_text));
+    if let Some(c) = node_cost_usd_pass {
+        completed_data.insert("cost_usd".into(), serde_json::json!(c));
+    }
+    if let Some(ref sr) = node_stop_reason {
+        completed_data.insert("stop_reason".into(), serde_json::json!(sr));
+    }
+    if let Some(nt) = node_num_turns {
+        completed_data.insert("num_turns".into(), serde_json::json!(nt));
+    }
+    if let Some(ref mu) = node_model_usage {
+        completed_data.insert("model_usage".into(), serde_json::json!(mu));
+    }
     deps.emit_workflow_event(
         &workflow_run.id,
         "node_completed",
         &node_id,
-        serde_json::json!({
-            "duration_ms": duration.as_millis(),
-            "node_output": &node_output_text,
-            "cost_usd": node_cost_usd_pass.unwrap_or(0.0),
-        }),
+        serde_json::Value::Object(completed_data),
     )
     .await;
 
