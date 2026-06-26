@@ -1,6 +1,6 @@
 # HANDOFF — rust-port loop (Archon → harness-agent-rs)
 
-**Closed:** 2026-06-26 UTC
+**Closed:** 2026-06-26 UTC (RESUME#4, budget 3/3)
 **Resume command:** `/session-relay-resume from .handoff/loop/HANDOFF.md`
 (Alias: `/harness:rust-port resume`)
 
@@ -12,28 +12,29 @@
 
 - **Path:** `/home/drdave/Desktop/meta/harness-agent-rs`
 - **Branch:** `main`
-- **Worktree state at handoff:** clean AFTER the orchestrator commits this HANDOFF.md together with the steward outputs (`.handoff/loop/proposed-upgrades.md`, `LESSONS.md`, and the new `.handoff/loop/evaluation.md`). If a successor finds those still dirty, commit them (`chore(rust-port): handoff at WF-09 sub-cycle 4 complete`) before starting sub-cycle 5. All cycle code (4d/4e/4f) is already merged to `main`.
-- **Source root:** `/home/drdave/Desktop/meta/meta-yard/Archon` (Tier-Y yard, ported-from source, out of root build — NOT `meta/Archon`)
+- **Worktree state at handoff:** clean AFTER the orchestrator commits this HANDOFF.md (with the steward outputs: `.handoff/loop/proposed-upgrades.md`, `evaluation.md`, `LESSONS.md`). The handoff commit will be HEAD. All cycle code (43/44/45) is already merged to `main`. If a successor finds steward files dirty, commit them (`chore(rust-port): handoff at WF-09 DONE-READY`) before starting the next unit.
+- **Remote:** has ONLY `main` — all session branches merged + deleted; the stale `feat/wf-09-sub-cycle-4a` was reaped this session.
+- **Source root:** `/home/drdave/Desktop/meta/meta-yard/Archon` (Tier-Y yard, ported-from source, out of root build — **NOT** `meta/Archon`)
 - **Source toolchain:** bun 1.3.14 (differential parity oracle; runs the live TS source) + uv 0.11.18 (script-node parity) + `node` (live `String(x)` cross-checks)
-- **Dest repo:** none — port target IS this repo (plain port, no merge step)
+- **Dest repo:** none — port target IS this repo (plain port-in-place, no merge step)
 
 ---
 
 ## 2. Backlog Status
 
-Ledger: `.handoff/loop/parity-ledger.md` (79 units total). Statuses live there — `- [ ]` not-started, `- [x]` parity-verified, `- [~]` ported-unproven, `- [≈]` faithful-carry, `- [≠]` owner-approved downgrade.
+Ledger: `.handoff/loop/parity-ledger.md`. Statuses live there — `- [ ]` not-started, `- [x]` parity-verified, `- [~]` ported-unproven, `- [≈]` faithful-carry, `- [≠]` owner-approved downgrade, `- [!]` blocked.
 
 | State | Detail |
 |-------|--------|
-| `- [x]` parity-verified full units | **44 of 79** |
 | Provider ports PR-01..12 | `- [x]` — CLI + all 3 Node SDKs fully bound + loadMcpConfig |
-| **WF-09 sub-cycles** | 1,2,3,4a,4b,4c,**4d,4e,4f** DONE `- [x]`; **sub-cycle 4 COMPLETE** → `execute_dag_workflow` symbol rolls up to `- [x]` (dispatch match now EXHAUSTIVE over all 7 DagNode variants, catch-all DELETED). **Sub-cycle 5 `- [ ]`** (next). |
+| DB backend (CO-01..08) + WorkflowStore impl | `- [x]` — complete (SqlWorkflowStore, all 20 methods real) |
+| **WF-09 (the keystone DAG executor)** | **DONE-READY** — ALL WF-09 symbols `[x]`/`[≈]`; **zero `[ ]`/`[~]`/`[!]`**; `execute_dag_workflow` rollup restored (calls a verified resolve helper). Dispatch placeholder fully removed in sub-cycle 4; sub-cycle 5 added the end-to-end integration differential + closed the sweep's G1–G7. |
 | `- [~]` ported, parity-unproven | WF-06, WF-07 (since cycle 3) |
-| `- [ ]` not started | remainder (incl. WF-10/15/16.., server/axum, cli) |
+| `- [ ]` not started | WF-10 / WF-15 / WF-16 … → server (axum) → cli |
 
 **Cycle counters (update `loop_state.md` on resume):**
-- `cycles_total: 42`
-- `cycles_this_session: 3` (cycles 40 + 41 + 42) — **RESET to 0 on resume**
+- `cycles_total: 45`
+- `cycles_this_session: 3` (cycles 43 + 44 + 45) — **RESET to 0 on resume**
 - `cycle_budget: 3` per session — **budget reached → this handoff**
 
 **Mode:** ITERATE — between cycles, stopped at per-session budget.
@@ -42,46 +43,52 @@ Ledger: `.handoff/loop/parity-ledger.md` (79 units total). Statuses live there �
 
 ## 3. In-Flight Cycle at Budget
 
-None mid-work. All three session cycles closed cleanly, parity-verified, merged to `main`.
+None mid-work. All three session cycles closed cleanly, parity-verified, merged to `main`. (Plus one owner-interrupt deliverable, PR#22, also merged.)
 
-- **Cycle 40 — WF-09 sub-cycle 4d** (AI dispatch wiring + retry + session persist): gate FAILed first on 3 divergences (D-1 delete-session error swallowed, D-2 AI-node cost dropped from `total_cost_usd`, D-3 pre-exec error events omit `nodeName`) → fixed (D-2 via spawn-tuple widening, no schema change) → RE-VERIFY PASS. PR #16 (`2011095`, MERGED).
-- **Cycle 41 — WF-09 sub-cycle 4e** (loop node `execute_loop_node`): PARITY PASS FIRST PASS (14/14 differential vs live bun, 4 `[≈]` faithful). PR #17 (`483d652`, MERGED).
-- **Cycle 42 — WF-09 sub-cycle 4f** (approval node `execute_approval_node` + `on_reject` AI re-run reuse + Approval dispatch arm): PARITY PASS FIRST PASS (8/8 probes incl. synthetic-id non-collision, 2 `[≈]` faithful). **MILESTONE: dispatch placeholder fully removed; `execute_dag_workflow` → `- [x]`.** PR #18 (`f02a08d`, MERGED).
+- **Cycle 43 — WF-09 sub-cycle 5A** (whole-DAG END-TO-END differential harness — the FIRST integration parity proof): differential started RED (19→16 divergences = composition bugs single-node probes can't see); verifier fixed 7 real divergence classes in `dag_executor.rs`, incl. **CRITICAL** trigger/`when` evaluated vs a minimal map instead of the prior-LAYER snapshot (whole DAG collapsed), an invented `workflow_started` event, bogus `step_name`, D1 workflow-msg mis-route + status casing, `node_started` command `"<inline>"` vs null, `node_completed` dropping `stop_reason`/`num_turns`/`model_usage`, and `cost_usd` 0-vs-omit + `format_tool_call` None-vs-default. PASS (crate 446/446, workspace 2182/0). **PR#20** (MERGED).
+- **Cycle 44 — WF-09 sub-cycle 5B** (pre-DONE left-behind sweep): cartographer (opus) — git-kb index was STALE → re-indexed; found gaps **G1–G7** → verdict **NOT-READY**. **PR#21** (MERGED).
+- **Owner interrupt — max-effort `/code-review` of 5A**: built the code-intel index FIRST (repo had 0 symbols → 4591; Archon re-indexed from stale 2026-06-05); 10 findings. **PR#22** (MERGED).
+- **Cycle 45 — WF-09 sub-cycle 5B-resolve**: porter (opus) restored G1–G7 + applied review#2 + found & fixed a LATENT DROP (`nodeConfig`/`assistantConfig` computed-then-discarded, never reached provider → now embedded into `base_options` per TS). Verifier (opus) **PASS** — own bun oracle, byte-checked warnings / real provider-caps / preset cascade; **FIXED a real divergence the porter only flagged** (FATAL warning-delivery swallowed by `unwrap_or(false)` → now propagates `Err` matching TS `safeSendMessage` rethrow); adjudicated WLO-None faithful `[≈]` (deferred to SV-01); added code-review #5 cost-omit coverage (proven discriminating). **PR#23** (MERGED). **→ WF-09 DONE-READY.**
 
-**Last agent:** `rust-port-parity-verifier` (4f PASS + `executeDagWorkflow` rollup)
-**Gate status:** PASS
-**Last PR:** https://github.com/FlexNetOS/harness-agent-rs/pull/18 (MERGED — `f02a08d`)
+**Last agent:** `rust-port-parity-verifier` (5B-resolve PASS + WF-09 rollup)
+**Gate status:** PASS — clippy `--workspace --all-targets -- -D warnings` clean; `cargo test --workspace` 2193 passed / 0 failed; `cargo test -p har-dag-executor` 457 passed.
 **Orchestrator phase:** HAND OFF (budget 3/3)
 
 ---
 
 ## 4. Next Item to Resume At
 
-**WF-09 sub-cycle 5 — whole-DAG differential harness (end-to-end) + WF-32 web `send_structured_event` override + pre-DONE WF-09 left-behind sweep**
+**WF-09 is DONE-READY — do NOT re-open its sub-cycles.** The OVERALL port is NOT done. Resume at the next unported `- [ ]` in dependency order:
 
-This is the FIRST end-to-end differential for WF-09 (4a–4f each carried a focused per-function probe; sub-cycle 5 runs a whole workflow through both runtimes). Three pieces:
+**WF-10 / WF-15 / WF-16 …** (per the ledger "Next units" + the symbol-map) → then **server (axum)** → then **cli**.
 
-1. **Whole-DAG differential harness** — run a workflow YAML through BOTH the live bun Archon AND the Rust binary; diff outputs + event streams + side-effects end-to-end (not just per-function probes).
-2. **WF-32 web `send_structured_event` adapter override** — the trait method landed as a default no-op in sub-cycle 4a; the real web/SSE override is OWED here. The default no-op was faithful ONLY if the web adapter overrides it (flagged `≠2` in the architecture doc §). Implement + verify the override.
-3. **Pre-DONE WF-09 full re-harvest / left-behind sweep** — the symbol-map had harvest gaps corrected per-cycle for WF-09/WF-18; a FULL `git kb code symbols` re-harvest of WF-09 is owed before WF-09 can be declared DONE. Use code intelligence (`git kb` / `kb_symbols`), not grep; do not skip.
+Pick the next `- [ ]` unit, port one unit/cycle (full port → build/clippy → differential parity-verify → commit), per the rust-port skill.
 
-Decomposition + sub-cycle-5 scope reference: `.handoff/loop/findings/WF-09-s4-architecture.md` (see §5 for sub-cycle-5 scope; the `≠2` web-override flag is in the architecture doc).
+### FOLLOW-UP backlog (owed work — NOT WF-09 gaps; track and schedule, do not silently drop)
 
-After sub-cycle 5 closes WF-09: WF-10/15/16.. → server (axum) → cli.
+These are owed by not-yet-ported sibling units or are standalone review follow-ups. The pointers below are authoritative.
+
+- **Standalone code-review follow-up** (`.handoff/loop/findings/code-review-WF-09-s5a.md`):
+  - **#1** — UTF-8 byte-slice panic in `extract_tool_brief` (`dag_executor.rs:4841` / `:4882`) — violates the loop's UTF-16-truncation lesson; fix to char/grapheme-safe slicing.
+  - **#3 / #4** — the field-omission fix is **half-applied**: the store `node_completed` got `cost`/`stop_reason`/`num_turns`, but the **EMITTER/SSE event** + the **JSONL log** still drop them (incl. `tokens`). Finish the propagation on both surfaces.
+  - **#6** — plural grammar "nodes were" / "node was".
+  - **#7** — `stop_reason` / `model_usage` `Some("")` truthy-omit handling.
+  - **#8** — empty-field tool-brief fall-through.
+- **SV-01 (server/executor outer caller):** plumb the `WorkflowLevelOptions` fields (effort / thinking / betas / sandbox) into `execute_dag_workflow`'s signature (this is the `[≈]` deferral verified this session — a faithful carry, NOT a downgrade); and **#10 `register_run`** — the outer caller MUST register the run with the emitter + emit `workflow_started`, else SSE is silent system-wide.
+- **WF-32 / SV-03:** the web `send_structured_event` SSE override (the `≠2` no-op is faithful until those units land).
 
 ---
 
 ## 5. Landed-This-Session Commits (all merged to `main`)
 
-| SHA | Cycle | Subject |
-|-----|-------|---------|
-| `2011095` | 40 | port(har-dag-executor): WF-09 sub-cycle 4d — AI-node dispatch wiring + retry + session persist — parity verified (PR #16) |
-| `483d652` | 41 | port(har-dag-executor): WF-09 sub-cycle 4e — loop node (`execute_loop_node`) — parity verified (PR #17) |
-| `f02a08d` | 42 | port(har-dag-executor): WF-09 sub-cycle 4f — approval node — parity verified; **sub-cycle 4 COMPLETE** (PR #18) |
+Merge path: direct `gh pr merge <n> --squash --delete-branch` on locally-verified green (repo auto-merge disabled — see §7).
 
-Cross-repo (not this repo): **harness_hub PR #53** — P5 porter git-prohibition + porter agent-def default model `sonnet`→`opus` (owner-approved).
-
-Merge path: direct `gh pr merge <n> --squash --delete-branch` on locally-verified green (auto-merge no-ops — see §7).
+| PR | Cycle | Subject |
+|----|-------|---------|
+| #20 | 43 | port(har-dag-executor): WF-09 sub-cycle 5A — whole-DAG END-TO-END differential harness (19→16→0 divergences; 7 classes fixed incl. CRITICAL trigger/when prior-LAYER-snapshot collapse) — parity verified |
+| #21 | 44 | port(har-dag-executor): WF-09 sub-cycle 5B — pre-DONE left-behind sweep (re-indexed stale git-kb; found G1–G7) — NOT-READY |
+| #22 | — | review(har-dag-executor): max-effort /code-review of 5A (built code-intel index first; 10 findings) |
+| #23 | 45 | port(har-dag-executor): WF-09 sub-cycle 5B-resolve — restored G1–G7 + review#2 + latent nodeConfig-drop fix; verifier fixed a FATAL-swallow divergence — **WF-09 DONE-READY** |
 
 ---
 
@@ -89,61 +96,58 @@ Merge path: direct `gh pr merge <n> --squash --delete-branch` on locally-verifie
 
 | File | Contents |
 |------|----------|
-| `.handoff/loop/findings/parity-WF-09-s4d.md` | Cycle 40 4d FAIL→PASS report (D-1/D-2/D-3 divergences + fixes) |
-| `.handoff/loop/findings/parity-WF-09-s4e.md` | Cycle 41 4e differential report (loop node, 14/14 PASS) |
-| `.handoff/loop/findings/parity-WF-09-s4f.md` | Cycle 42 4f differential report (approval node, 8/8 PASS) |
-| `.handoff/loop/findings/WF-09-s4-architecture.md` | The 4a–4f decomposition — **sub-cycle 5 scope at §5**; the `≠2` web `send_structured_event` override flag |
+| `.handoff/loop/findings/parity-WF-09-s5-wholedag.md` | Cycle 43 5A whole-DAG integration differential (19→16→0; the 7 divergence classes + fixes) |
+| `.handoff/loop/findings/WF-09-s5b-sweep.md` | Cycle 44 5B left-behind sweep (stale-index re-harvest; gaps G1–G7 → NOT-READY) |
+| `.handoff/loop/findings/parity-WF-09-s5b-resolve.md` | Cycle 45 5B-resolve report (G1–G7 restore + latent drop + FATAL-rethrow fix + WLO-None adjudication + #5 coverage) |
+| `.handoff/loop/findings/code-review-WF-09-s5a.md` | The 10 code-review findings; **#1/#3/#4/#6/#7/#8 + #10 are the §4 FOLLOW-UP backlog** |
+| `.handoff/loop/parity-ledger.md` | All units: status, source line refs, Rust targets; WF-09 sub-cycle rows 5A/5B/5B-resolve; "Next units" |
 | `.handoff/loop/evaluation.md` | This session's retro (evolution-steward) |
-| `.handoff/loop/proposed-upgrades.md` | Proposals: **P8** (opus-first) + checklist addendum + **P4** recurrence (repo auto-merge settings); P5 (now APPLIED) |
-| `crates/har-dag-executor/tests/cycle9_4f_approval.rs`, `cycle9_4f_approval_verify.rs` | **Durable** 4f gate (approval node) |
-| `crates/har-dag-executor/tests/cycle9_4e_loop.rs`, `cycle9_4e_loop_verify.rs` | **Durable** 4e gate (loop node) |
-| `crates/har-dag-executor/tests/cycle9_4d_ai_dispatch.rs`, `cycle9_4d_parity_gate.rs` | **Durable** 4d gate (AI dispatch — D-1/D-2/D-2b/D-3 observable tests) |
-| `.handoff/loop/findings/WF-09-s4d-port.md`, `WF-09-s4e-port.md`, `WF-09-s4f-port.md` | Porter notes per sub-cycle |
-| `.handoff/loop/loop_state.md` | Full cycle history (1→42), open follow-ups, prior ledger corrections |
-| `.handoff/loop/parity-ledger.md` | All 79 units: status, source line refs, Rust targets |
+| `.handoff/loop/proposed-upgrades.md` | Proposals **P9–P13** + carry-forward (P9 gate-defense-in-depth, P10 index-freshness, prior P4/P5/P8) |
+| `.handoff/loop/loop_state.md` | Full cycle history (1→45), open follow-ups, prior ledger corrections, the NEXT pointer |
 | `LESSONS.md` | Cumulative lessons (new ones added this session) |
+| `crates/har-dag-executor/tests/cycle9_5_wholedag.rs`, `cycle9_5b_resolve_gaps.rs` | **Durable** WF-09 integration + resolve-gap gates |
+| `crates/har-dag-executor/tests/cycle9_4f_approval.rs` | **Durable** sub-cycle-4 approval gate |
 
 ---
 
 ## 7. Decisions and Dead-Ends (do not re-litigate / re-try)
 
-**OPUS-ONLY (owner directive 2026-06-26, VALIDATED — keep doing this):**
-ALL sub-agents (porter / cartographer / researcher / continuity-steward + gates) run at **opus** per-call this loop. Evidence: sonnet on 4d bounced (3 divergences); opus on 4e + 4f each passed FIRST PASS (0 divergence). `loop_state.md` has `model_override: opus`; the porter agent-def default is now opus (harness_hub PR #53). Keep spawning opus.
+**OPUS-ONLY (owner directive 2026-06-26, re-validated this session — keep doing this):**
+ALL workers (porter / cartographer / researcher / continuity-steward) + gates run at **opus** per-call this loop. `loop_state.md` has `model_override: opus`; the porter agent-def default is opus (harness_hub PR #53). Keep spawning opus.
 
-**P5 APPLIED (owner-approved 2026-06-26) — porter is git-prohibited:**
-The `rust-port-porter` is structurally prohibited from running `git`. The **ORCHESTRATOR owns ALL commits**, only AFTER the `rust-port-parity-verifier` returns PASS, and asserts HEAD is unchanged between porter return and verifier dispatch. The porter only flips ledger rows to `- [~]`. Do NOT let a porter commit/push. (Originated from a cycle-39 porter gate-bypass; now structural via harness_hub PR #53.)
+**P5 APPLIED — porter is git-prohibited:**
+The `rust-port-porter` is structurally prohibited from running `git`. The **ORCHESTRATOR owns ALL commits**, only AFTER `rust-port-parity-verifier` returns PASS, and asserts HEAD is unchanged between porter return and verifier dispatch. Observed holding in 5A and 5B-resolve. The porter only flips ledger rows. Do NOT let a porter commit/push.
 
-**WF-09 sub-cycle 4 is COMPLETE — do not assume the dispatch is incomplete:**
-The spawned-task dispatch match in `execute_dag_workflow` is EXHAUSTIVE over all 7 `DagNode` variants (Bash / Cancel / Script / Command / Prompt / Loop / Approval); the catch-all is DELETED — no node type runs on a placeholder. `execute_dag_workflow` / `executeDagWorkflow` is `- [x]`.
+**WF-09 is DONE-READY — do NOT re-open sub-cycles:**
+All WF-09 symbols are `[x]`/`[≈]`, zero `[ ]`/`[~]`/`[!]`. The dispatch match in `execute_dag_workflow` is exhaustive over all 7 `DagNode` variants (catch-all DELETED). `execute_dag_workflow` calls a verified resolve helper (rollup restored). Sub-cycle 5 added the end-to-end integration differential + closed sweep gaps G1–G7. The remaining `§4` follow-ups are OWED work tracked elsewhere, NOT WF-09 parity gaps.
 
-**Standing `[≈]1` — event persistence `.await`'ed vs TS fire-and-forget:**
-Established WF-09 convention; benign. ACCEPT — do not re-flag in sub-cycle 5.
-
-**Sub-cycle 5 is the FIRST whole-DAG end-to-end differential** (4a–4f were focused per-function probes). It ALSO performs the pre-DONE WF-09 left-behind sweep. The WF-32 web `send_structured_event` override is OWED there (the default no-op was faithful only if the web adapter overrides it — flagged `≠2` in `findings/WF-09-s4-architecture.md`).
+**The resolve-helper WLO-None is a faithful `[≈]`, NOT a downgrade:**
+`WorkflowLevelOptions` defaulting to None inside the resolve helper is a faithful carry deferred to **SV-01** (the outer server caller plumbs the real fields). Adjudicated by the verifier this session. Do not re-flag as a divergence.
 
 **Merge pipeline (do not re-try auto-merge):**
-Repo has `allow_auto_merge=false` + `main` is UNPROTECTED → `gh pr merge --auto` errors ("Auto merge is not allowed"). Fallback: verify green locally, then `gh pr merge <n> --squash --delete-branch`. (P4 in `proposed-upgrades.md` tracks the repo-settings fix for owner action.)
+Repo auto-merge is disabled (P4) → `gh pr merge --auto` errors. Use: verify green locally, then `gh pr merge <n> --squash --delete-branch`.
 
-**WorkflowStore impl = SQL-backed faithful port, NOT mapped to `hf` (owner-confirmed 2026-06-21):**
-`hf` does not provide a workflow-exec store; mapping would be a silent downgrade. Final — do not re-open (`loop_state.md` status_cycle26).
+**Standing `[≈]1` — event persistence `.await`'ed vs TS fire-and-forget:** benign WF-09 convention. ACCEPT — do not re-flag.
 
-**Source root relocated (do not re-litigate):**
-Archon is at `/home/drdave/Desktop/meta/meta-yard/Archon` (Tier-Y yard, NOT `meta/Archon`). Tools: bun 1.3.14, uv 0.11.18.
+**`≠2` web `send_structured_event` no-op is CURRENTLY faithful:** there is no web adapter yet; the seam is wired and the real override is owed by **WF-32 / SV-03** (both `[ ]`). The no-op is faithful until then — do NOT port a web adapter that doesn't exist.
 
-**Symbol-map harvest gap (owed at the sub-cycle-5 sweep):**
-The original cartographer under-harvested WF-09/WF-18; corrected per-cycle for 4a–4f. A FULL WF-09 re-harvest via `git kb` code symbols is owed at the sub-cycle-5 left-behind sweep — do not skip.
+**WorkflowStore impl = SQL-backed faithful port, NOT mapped to `hf` (owner-confirmed):** `hf` does not provide a workflow-exec store; mapping would be a silent downgrade. Final — do not re-open.
+
+**Source root relocated (do not re-litigate):** Archon is at `/home/drdave/Desktop/meta/meta-yard/Archon` (Tier-Y yard, NOT `meta/Archon`). Tools: bun 1.3.14, uv 0.11.18, node.
+
+**Gate defense-in-depth + index-freshness (P9/P10 lessons):** the verifier must run its OWN bun oracle and byte-check, not trust the porter's flags (caught a FATAL-swallow this session the porter only flagged). Before any code-intel sweep, re-index — the git-kb index went stale this session (repo 0 symbols; Archon stale from 2026-06-05) and a sweep on a stale index under-harvests.
 
 **ICM topics written this session (recall on resume):**
-`context-harness-agent-rs` (3-cycle session + next = sub-cycle 5), `preferences` (opus-only validated), `decisions-harness-agent-rs` (P5 applied).
-Recall: `icm recall "WF-09 sub-cycle 5" -t context-harness-agent-rs`
+`context-harness-agent-rs` (3-cycle session + WF-09 DONE-READY + next = WF-10/15/16..), `decisions-harness-agent-rs` (WLO-None `[≈]` adjudication, opus-only, P5).
+Recall: `icm recall "WF-09 DONE-READY next unit" -t context-harness-agent-rs`
 
 ---
 
 ## 8. Verify-on-Resume
 
-Run these FIRST, in order, fail-closed. A failing step blocks sub-cycle 5.
+Run these FIRST, in order, fail-closed. A failing step blocks the next unit.
 
-> NOTE: `.handoff/loop/baseline.md` does not exist — this block is RECONSTRUCTED from the repo's real cycle-42 gate commands. The successor should treat a green run here as the re-established baseline.
+> NOTE: `.handoff/loop/baseline.md` does not exist — this block is RECONSTRUCTED from the repo's real cycle-45 gate commands. Treat a green run here as the re-established baseline.
 
 ```bash
 # Step 0 — source toolchain + source repo reachable (no differential parity without bun)
@@ -156,14 +160,14 @@ cd /home/drdave/Desktop/meta/harness-agent-rs
 # Step 1 — workspace clippy (expect: clean)
 cargo clippy --workspace --all-targets -- -D warnings
 
-# Step 2 — full workspace tests (expect: ~2180 passed / 15 ignored / 0 failed)
+# Step 2 — full workspace tests (expect: ~2193 passed / 15 ignored / 0 failed)
 cargo test --workspace
 
-# Step 3 — the durable sub-cycle-4 differential gates (expect: all passed)
+# Step 3 — the durable WF-09 integration + resolve-gap + a sub-cycle-4 gate (expect: all passed)
 cargo test -p har-dag-executor \
-  --test cycle9_4f_approval --test cycle9_4e_loop --test cycle9_4d_parity_gate
+  --test cycle9_5_wholedag --test cycle9_5b_resolve_gaps --test cycle9_4f_approval
 ```
 
 - Step 0 fails on `bun`/`node` → no differential parity possible → **NEEDS-HUMAN** before porting more.
-- Step 1/2/3 not green → do NOT start sub-cycle 5 until the workspace is green (fix or escalate; fail-closed).
-- All green → reset `cycles_this_session` to 0, broadcast `relay:resumed`, hand back to the loop at **WF-09 sub-cycle 5** (Section 4).
+- Step 1/2/3 not green → do NOT start the next unit until the workspace is green (fix or escalate; fail-closed).
+- All green → **reap any stale worktrees/branches (mandatory)**, reset `cycles_this_session` to 0, broadcast `relay:resumed`, and hand back to the loop at the next `- [ ]` unit (Section 4: WF-10 / WF-15 / WF-16 …).
