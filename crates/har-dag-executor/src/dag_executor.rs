@@ -1745,13 +1745,18 @@ struct FsCommandPromptDeps {
 
 #[async_trait::async_trait]
 impl crate::executor_shared::CommandPromptDeps for FsCommandPromptDeps {
-    async fn read_file(&self, path: &std::path::Path) -> Result<Option<String>, crate::executor_shared::CommandLoadIoError> {
+    async fn read_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Option<String>, crate::executor_shared::CommandLoadIoError> {
         match tokio::fs::read_to_string(path).await {
             Ok(content) => Ok(Some(content)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                Err(crate::executor_shared::CommandLoadIoError::PermissionDenied { path: path.to_path_buf() })
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(
+                crate::executor_shared::CommandLoadIoError::PermissionDenied {
+                    path: path.to_path_buf(),
+                },
+            ),
             Err(e) => Err(crate::executor_shared::CommandLoadIoError::Io {
                 path: path.to_path_buf(),
                 message: e.to_string(),
@@ -1759,12 +1764,23 @@ impl crate::executor_shared::CommandPromptDeps for FsCommandPromptDeps {
         }
     }
 
-    async fn find_markdown_files(&self, dir: &std::path::Path) -> Result<Vec<crate::executor_shared::MarkdownEntry>, crate::executor_shared::CommandLoadIoError> {
+    async fn find_markdown_files(
+        &self,
+        dir: &std::path::Path,
+    ) -> Result<
+        Vec<crate::executor_shared::MarkdownEntry>,
+        crate::executor_shared::CommandLoadIoError,
+    > {
         let mut entries = Vec::new();
         let mut read_dir = match tokio::fs::read_dir(dir).await {
             Ok(rd) => rd,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-            Err(e) => return Err(crate::executor_shared::CommandLoadIoError::Io { path: dir.to_path_buf(), message: e.to_string() }),
+            Err(e) => {
+                return Err(crate::executor_shared::CommandLoadIoError::Io {
+                    path: dir.to_path_buf(),
+                    message: e.to_string(),
+                })
+            }
         };
         while let Ok(Some(ent)) = read_dir.next_entry().await {
             let path = ent.path();
@@ -1772,14 +1788,22 @@ impl crate::executor_shared::CommandPromptDeps for FsCommandPromptDeps {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     entries.push(crate::executor_shared::MarkdownEntry {
                         command_name: stem.to_string(),
-                        relative_path: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                        relative_path: path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string(),
                     });
                 }
             } else if let Ok(meta) = ent.metadata().await {
                 if meta.is_dir() {
                     // Walk one subfolder deep. executor-shared.ts:270: maxDepth:1.
                     let sub_dir = path.clone();
-                    let sub_name = sub_dir.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                    let sub_name = sub_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
                     if let Ok(mut sub_rd) = tokio::fs::read_dir(&sub_dir).await {
                         while let Ok(Some(sub_ent)) = sub_rd.next_entry().await {
                             let sub_path = sub_ent.path();
@@ -1810,7 +1834,9 @@ impl crate::executor_shared::CommandPromptDeps for FsCommandPromptDeps {
 
     async fn load_config(&self, _cwd: &std::path::Path) -> crate::executor_shared::LoadedConfig {
         // Fail-soft: return defaults (loadDefaultCommands: true). Mirrors TS catch at line 256.
-        crate::executor_shared::LoadedConfig { load_default_commands: Some(true) }
+        crate::executor_shared::LoadedConfig {
+            load_default_commands: Some(true),
+        }
     }
 
     fn is_binary_build(&self) -> bool {
@@ -1827,7 +1853,10 @@ impl WorkflowDeps {
     ///
     /// Tests that need to inject a fake FS set `command_prompt_deps` directly after construction
     /// (the field is `pub`), or use `with_command_prompt_deps`.
-    pub fn new(store: Arc<dyn WorkflowStore>, get_agent_provider: fn(&str) -> &dyn AgentProvider) -> Self {
+    pub fn new(
+        store: Arc<dyn WorkflowStore>,
+        get_agent_provider: fn(&str) -> &dyn AgentProvider,
+    ) -> Self {
         Self {
             store,
             get_agent_provider,
@@ -1841,7 +1870,11 @@ impl WorkflowDeps {
         get_agent_provider: fn(&str) -> &dyn AgentProvider,
         command_prompt_deps: Arc<dyn crate::executor_shared::CommandPromptDeps>,
     ) -> Self {
-        Self { store, get_agent_provider, command_prompt_deps }
+        Self {
+            store,
+            get_agent_provider,
+            command_prompt_deps,
+        }
     }
 }
 
@@ -4179,7 +4212,9 @@ fn get_node_name(node: &har_workflow_schema::DagNode) -> Option<String> {
 // Port of `packages/workflows/src/dag-executor.ts` — sub-cycle 3: AI node internal state machine.
 // Source lines: dag-executor.ts:672–1490.
 
-use har_provider::shared::structured_output::{StructuredValidationResult, validate_structured_output};
+use har_provider::shared::structured_output::{
+    validate_structured_output, StructuredValidationResult,
+};
 use tokio_util::sync::CancellationToken;
 
 // ─── Module-level throttle maps ───────────────────────────────────────────────
@@ -4201,8 +4236,12 @@ fn last_activity_update() -> &'static Mutex<StdHashMap<String, Instant>> {
 /// Remove throttle entries for `node_key` on all terminal exit paths.
 /// Source: dag-executor.ts:1302-1303, 1346-1347, 1383-1384, 1428-1430, 1448-1450.
 fn cleanup_throttle_maps(node_key: &str) {
-    if let Ok(mut m) = last_cancel_check().lock() { m.remove(node_key); }
-    if let Ok(mut m) = last_activity_update().lock() { m.remove(node_key); }
+    if let Ok(mut m) = last_cancel_check().lock() {
+        m.remove(node_key);
+    }
+    if let Ok(mut m) = last_activity_update().lock() {
+        m.remove(node_key);
+    }
 }
 
 // ─── DagNodeCancelToken ────────────────────────────────────────────────────────
@@ -4210,7 +4249,9 @@ fn cleanup_throttle_maps(node_key: &str) {
 // We own `DagNodeCancelToken` (local type), so no orphan-rule issue. Source: §2.2.
 struct DagNodeCancelToken(CancellationToken);
 impl har_contract::CancelToken for DagNodeCancelToken {
-    fn is_cancelled(&self) -> bool { self.0.is_cancelled() }
+    fn is_cancelled(&self) -> bool {
+        self.0.is_cancelled()
+    }
 }
 
 /// Execution result for a single AI node. Matches the TS `NodeExecutionResult` return type.
@@ -4290,7 +4331,15 @@ async fn emit_reask(
             "⚠️ Node `{}`: structured output didn't match the schema — asking the model to correct it (up to {} attempt(s)).",
             node_id, max_reasks
         );
-        let _ = safe_send_message(platform, conversation_id, &msg, Some(node_context), None, None).await;
+        let _ = safe_send_message(
+            platform,
+            conversation_id,
+            &msg,
+            Some(node_context),
+            None,
+            None,
+        )
+        .await;
     }
 }
 
@@ -4313,13 +4362,29 @@ fn extract_tool_brief(tool_name: &str, tool_input: &serde_json::Value) -> Option
     match tool_name {
         "Bash" => {
             let cmd = tool_input.get("command")?.as_str()?;
-            Some(if cmd.len() > 100 { format!("{}...", &cmd[..100]) } else { cmd.to_string() })
+            Some(if cmd.len() > 100 {
+                format!("{}...", &cmd[..100])
+            } else {
+                cmd.to_string()
+            })
         }
-        "Read" => Some(format!("Reading: {}", tool_input.get("file_path")?.as_str()?)),
-        "Write" => Some(format!("Writing: {}", tool_input.get("file_path")?.as_str()?)),
-        "Edit" => Some(format!("Editing: {}", tool_input.get("file_path")?.as_str()?)),
+        "Read" => Some(format!(
+            "Reading: {}",
+            tool_input.get("file_path")?.as_str()?
+        )),
+        "Write" => Some(format!(
+            "Writing: {}",
+            tool_input.get("file_path")?.as_str()?
+        )),
+        "Edit" => Some(format!(
+            "Editing: {}",
+            tool_input.get("file_path")?.as_str()?
+        )),
         "Glob" => Some(format!("Pattern: {}", tool_input.get("pattern")?.as_str()?)),
-        "Grep" => Some(format!("Searching: {}", tool_input.get("pattern")?.as_str()?)),
+        "Grep" => Some(format!(
+            "Searching: {}",
+            tool_input.get("pattern")?.as_str()?
+        )),
         _ if tool_name.starts_with("mcp__") => {
             let parts: Vec<&str> = tool_name.splitn(3, "__").collect();
             if parts.len() >= 2 {
@@ -4330,7 +4395,11 @@ fn extract_tool_brief(tool_name: &str, tool_input: &serde_json::Value) -> Option
         }
         _ => {
             let s = serde_json::to_string(tool_input).ok()?;
-            Some(if s.len() > 80 { format!("{}...", &s[..80]) } else { s })
+            Some(if s.len() > 80 {
+                format!("{}...", &s[..80])
+            } else {
+                s
+            })
         }
     }
 }
@@ -4352,7 +4421,12 @@ async fn log_assistant(log_dir: &str, run_id: &str, content: &str) {
 }
 
 /// Append a tool-call entry to the workflow JSONL log. Source: logger.ts:122-133.
-async fn log_tool(log_dir: &str, run_id: &str, tool_name: &str, tool_input: Option<&serde_json::Value>) {
+async fn log_tool(
+    log_dir: &str,
+    run_id: &str,
+    tool_name: &str,
+    tool_input: Option<&serde_json::Value>,
+) {
     let ts = chrono::Utc::now().to_rfc3339();
     let input_val = tool_input.cloned().unwrap_or(serde_json::json!({}));
     let entry = serde_json::json!({
@@ -4365,6 +4439,79 @@ async fn log_tool(log_dir: &str, run_id: &str, tool_name: &str, tool_input: Opti
     if let Ok(line) = serde_json::to_string(&entry) {
         let _ = write_log_file(log_dir, &format!("{}.jsonl", run_id), &line).await;
     }
+}
+
+// ─── format_js_number — faithful JS `String(number)` rendering ──────────────
+
+/// Render an `f64` exactly as ECMAScript's `String(number)` / `Number.prototype.toString()`
+/// would (ECMA-262 §6.1.6.1.20, Number::toString radix 10).
+///
+/// Source: the TS sites use `String(effectiveIdleTimeout / 60000)` (dag-executor.ts:1248,
+/// 1266, 1356) to render the timeout in minutes. Rust's `f64` `Display` matches JS in the
+/// plain-decimal regime but diverges in the exponential regime (`|x| < 1e-6` or `|x| >= 1e21`),
+/// where JS switches to `dEsXX` notation (e.g. `8.333333333333333e-7`, `1e+21`) while Rust's
+/// `Display` stays fixed-point. This helper reproduces JS exactly for ALL finite inputs.
+///
+/// Mechanism: Rust's `{:e}` already yields the shortest round-trip mantissa+exponent (same
+/// digit string JS uses); we re-layout those digits per the ECMA fixed-vs-exponential rules.
+pub(crate) fn format_js_number(x: f64) -> String {
+    if x.is_nan() {
+        return "NaN".to_string();
+    }
+    if x == 0.0 {
+        return "0".to_string(); // covers +0.0 and -0.0 (JS String(-0) === "0")
+    }
+    if x.is_infinite() {
+        return if x < 0.0 { "-Infinity" } else { "Infinity" }.to_string();
+    }
+    let neg = x < 0.0;
+    let ax = x.abs();
+
+    // Shortest mantissa + exponent, e.g. "8.333333333333333e-7", "1e21", "1.5e0".
+    let sci = format!("{:e}", ax);
+    let (mantissa, exp_str) = sci.split_once('e').expect("Rust {:e} always contains 'e'");
+    let exp: i32 = exp_str.parse().expect("Rust {:e} exponent is a valid i32");
+
+    // Digit string `s` (k digits); mantissa is `d[.ddd]` (exactly one digit before the point),
+    // so the ECMA exponent n (where x = s × 10^(n-k)) is `exp + 1`.
+    let s: String = mantissa.chars().filter(|c| *c != '.').collect();
+    let k = s.len() as i32;
+    let n = exp + 1;
+
+    let body = if k <= n && n <= 21 {
+        // Integer with trailing zeros: s followed by (n-k) zeros.
+        let mut out = s;
+        out.push_str(&"0".repeat((n - k) as usize));
+        out
+    } else if 0 < n && n <= 21 {
+        // Decimal point inside the digits: first n digits, '.', remaining (k-n).
+        format!("{}.{}", &s[..n as usize], &s[n as usize..])
+    } else if -6 < n && n <= 0 {
+        // Leading "0." then (-n) zeros then all k digits.
+        format!("0.{}{}", "0".repeat((-n) as usize), s)
+    } else {
+        // Exponential: first digit, optional '.rest', 'e', sign, |n-1|.
+        let e = n - 1;
+        let e_sign = if e >= 0 { "+" } else { "-" };
+        let e_abs = e.unsigned_abs();
+        if k == 1 {
+            format!("{}e{}{}", s, e_sign, e_abs)
+        } else {
+            format!("{}.{}e{}{}", &s[..1], &s[1..], e_sign, e_abs)
+        }
+    };
+
+    if neg {
+        format!("-{}", body)
+    } else {
+        body
+    }
+}
+
+/// Render `idle_timeout` (a `Duration` built from integer-ms) in minutes exactly as the TS
+/// `String(effectiveIdleTimeout / 60000)` does. Source: dag-executor.ts:1248, 1266, 1356.
+fn idle_timeout_minutes(idle: std::time::Duration) -> String {
+    format_js_number(idle.as_millis() as f64 / 60000.0)
 }
 
 // ─── executeNodeInternal — AI node full lifecycle (4c complete port) ─────────
@@ -4573,7 +4720,10 @@ pub async fn execute_node_internal(
 
     // Idle timeout: per-node override or default 30 min. Source: dag-executor.ts:807, idle-timeout.ts:22.
     let effective_idle_timeout = std::time::Duration::from_millis(
-        node.base().idle_timeout.map(|ms| ms as u64).unwrap_or(STEP_IDLE_TIMEOUT_MS),
+        node.base()
+            .idle_timeout
+            .map(|ms| ms as u64)
+            .unwrap_or(STEP_IDLE_TIMEOUT_MS),
     );
 
     // Best-effort providers get a bounded validate-and-reask loop. Source: dag-executor.ts:813-817.
@@ -4644,11 +4794,8 @@ pub async fn execute_node_internal(
         // `tokio::time::timeout` re-arms on every successful `.next()` call —
         // the timer resets each chunk, matching withIdleTimeout's behavior.
         'stream: loop {
-            let chunk_result = tokio::time::timeout(
-                effective_idle_timeout,
-                stream.as_mut().next(),
-            )
-            .await;
+            let chunk_result =
+                tokio::time::timeout(effective_idle_timeout, stream.as_mut().next()).await;
 
             let msg = match chunk_result {
                 Err(_elapsed) => {
@@ -4685,11 +4832,7 @@ pub async fn execute_node_internal(
             }; // lock dropped here
 
             if should_cancel_check {
-                match deps
-                    .store
-                    .get_workflow_run_status(&workflow_run.id)
-                    .await
-                {
+                match deps.store.get_workflow_run_status(&workflow_run.id).await {
                     Ok(status_opt) => {
                         let status_str = status_opt.as_ref().map(|s| match s {
                             har_workflow_schema::WorkflowRunStatus::Running => "running",
@@ -4737,11 +4880,7 @@ pub async fn execute_node_internal(
             };
 
             if should_heartbeat {
-                if let Err(e) = deps
-                    .store
-                    .update_workflow_activity(&workflow_run.id)
-                    .await
-                {
+                if let Err(e) = deps.store.update_workflow_activity(&workflow_run.id).await {
                     warn!(
                         err = %e,
                         workflow_run_id = %workflow_run.id,
@@ -4756,7 +4895,10 @@ pub async fn execute_node_internal(
                 // Source: dag-executor.ts:890-909.
                 MessageChunk::Assistant { content, flush } => {
                     node_output_text.push_str(&content);
-                    let is_stream = matches!(streaming_mode, crate::executor_shared::StreamingMode::Stream);
+                    let is_stream = matches!(
+                        streaming_mode,
+                        crate::executor_shared::StreamingMode::Stream
+                    );
                     if is_stream || flush == Some(true) {
                         // Flush mode: drain any queued batch content first to preserve order.
                         // Source: dag-executor.ts:896-903.
@@ -4790,7 +4932,11 @@ pub async fn execute_node_internal(
 
                 // ── tool chunk ───────────────────────────────────────────────────
                 // Source: dag-executor.ts:910-979.
-                MessageChunk::Tool { tool_name, tool_input, tool_call_id } => {
+                MessageChunk::Tool {
+                    tool_name,
+                    tool_input,
+                    tool_call_id,
+                } => {
                     let now = Instant::now();
 
                     // Emit tool_completed for the PREVIOUS tool. Source: dag-executor.ts:913-939.
@@ -4841,7 +4987,10 @@ pub async fn execute_node_internal(
 
                     // Streaming mode: send formatted tool call + structured SSE event.
                     // Source: dag-executor.ts:950-959.
-                    if matches!(streaming_mode, crate::executor_shared::StreamingMode::Stream) {
+                    if matches!(
+                        streaming_mode,
+                        crate::executor_shared::StreamingMode::Stream
+                    ) {
                         let tool_msg = format_tool_call(&tool_name, tool_input.as_ref());
                         let meta = serde_json::json!({"category": "tool_call_formatted"});
                         let _ = safe_send_message(
@@ -4883,8 +5032,15 @@ pub async fn execute_node_internal(
 
                 // ── tool_result chunk ────────────────────────────────────────────
                 // Source: dag-executor.ts:980-983.
-                MessageChunk::ToolResult { tool_name, tool_output, tool_call_id } => {
-                    if matches!(streaming_mode, crate::executor_shared::StreamingMode::Stream) {
+                MessageChunk::ToolResult {
+                    tool_name,
+                    tool_output,
+                    tool_call_id,
+                } => {
+                    if matches!(
+                        streaming_mode,
+                        crate::executor_shared::StreamingMode::Stream
+                    ) {
                         platform
                             .send_structured_event(
                                 conversation_id,
@@ -4914,7 +5070,8 @@ pub async fn execute_node_internal(
                 } => {
                     // Emit tool_completed for the LAST tool. Source: dag-executor.ts:986-1012.
                     if let Some(prev) = last_tool_started.take() {
-                        let dur_ms = Instant::now().duration_since(prev.started_at).as_millis() as u64;
+                        let dur_ms =
+                            Instant::now().duration_since(prev.started_at).as_millis() as u64;
                         get_workflow_event_emitter()
                             .emit(
                                 "tool_completed",
@@ -4939,12 +5096,20 @@ pub async fn execute_node_internal(
                         .await;
                     }
 
-                    if let Some(sid) = session_id { new_session_id = Some(sid); }
-                    if let Some(c) = cost { pass_cost_usd = Some(c); }
-                    if let Some(so_val) = so { structured_output = Some(so_val); }
+                    if let Some(sid) = session_id {
+                        new_session_id = Some(sid);
+                    }
+                    if let Some(c) = cost {
+                        pass_cost_usd = Some(c);
+                    }
+                    if let Some(so_val) = so {
+                        structured_output = Some(so_val);
+                    }
 
                     // Budget cap error: throw-equivalent. Source: dag-executor.ts:1021-1030.
-                    if is_error == Some(true) && error_subtype.as_deref() == Some("error_max_budget_usd") {
+                    if is_error == Some(true)
+                        && error_subtype.as_deref() == Some("error_max_budget_usd")
+                    {
                         let cap = effective_node_options.max_budget_usd;
                         warn!(
                             node_id = %node_id,
@@ -4997,9 +5162,11 @@ pub async fn execute_node_internal(
                             .collect();
 
                         if !workflow_failures.is_empty() {
-                            let segs: Vec<_> = workflow_failures.iter().map(|e| e.segment.as_str()).collect();
-                            let filtered_msg =
-                                format!("{}{}", MCP_FAILURE_PREFIX, segs.join(", "));
+                            let segs: Vec<_> = workflow_failures
+                                .iter()
+                                .map(|e| e.segment.as_str())
+                                .collect();
+                            let filtered_msg = format!("{}{}", MCP_FAILURE_PREFIX, segs.join(", "));
                             warn!(
                                 node_id = %node_id,
                                 system_content = %filtered_msg,
@@ -5145,7 +5312,9 @@ pub async fn execute_node_internal(
             let validation = validate_structured_output(
                 so,
                 &schema_val,
-                Some(&mut |msg: String| { schema_compile_error = Some(msg); }),
+                Some(&mut |msg: String| {
+                    schema_compile_error = Some(msg);
+                }),
             );
 
             // Surface uncompilable schema. Source: dag-executor.ts:1194-1205.
@@ -5276,7 +5445,7 @@ pub async fn execute_node_internal(
                 error: Some(format!(
                     "Node '{}': timed out (no output for {} min) before producing the required structured output.",
                     node_id,
-                    effective_idle_timeout.as_millis() / 60_000
+                    idle_timeout_minutes(effective_idle_timeout)
                 )),
                 declared_fields: None,
             };
@@ -5301,7 +5470,7 @@ pub async fn execute_node_internal(
 
     // "Completed via idle timeout" notice. Source: dag-executor.ts:1258-1269.
     if node_idle_timed_out && (!node_output_text.trim().is_empty() || structured_output.is_some()) {
-        let mins = effective_idle_timeout.as_millis() / 60_000;
+        let mins = idle_timeout_minutes(effective_idle_timeout);
         warn!(
             node_id = %node_id,
             timeout_ms = effective_idle_timeout.as_millis(),
@@ -5361,11 +5530,12 @@ pub async fn execute_node_internal(
 
     // Batch mode flush. Source: dag-executor.ts:1308-1314.
     if !batch_messages.is_empty() {
-        let batch_content = if structured_output.is_some() && effective_node_options.output_format.is_some() {
-            node_output_text.clone()
-        } else {
-            batch_messages.join("\n\n")
-        };
+        let batch_content =
+            if structured_output.is_some() && effective_node_options.output_format.is_some() {
+                node_output_text.clone()
+            } else {
+                batch_messages.join("\n\n")
+            };
         let _ = safe_send_message(
             platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
             conversation_id,
@@ -5421,7 +5591,7 @@ pub async fn execute_node_internal(
         let empty_err = if node_idle_timed_out {
             format!(
                 "Node '{}' timed out with no output (idle for {} min). The provider did not emit any content before the watchdog fired — likely time-to-first-token exceeded the timeout. Consider increasing idle_timeout or reducing prompt size.",
-                node_id, effective_idle_timeout.as_millis() / 60_000
+                node_id, idle_timeout_minutes(effective_idle_timeout)
             )
         } else {
             format!(
@@ -6125,13 +6295,19 @@ mod sub_cycle4c_tests {
     #[test]
     fn reask_prompt_contains_original_and_errors() {
         let original = "Write me a poem.";
-        let errors = vec!["missing field 'title'".to_string(), "extra field 'foo'".to_string()];
+        let errors = vec![
+            "missing field 'title'".to_string(),
+            "extra field 'foo'".to_string(),
+        ];
         let result = build_reask_prompt(original, &errors);
         assert!(result.contains(original), "must contain original prompt");
         assert!(result.contains("missing field 'title'"));
         assert!(result.contains("extra field 'foo'"));
         // The correction block delimiter must be present (parity with TS separator).
-        assert!(result.contains("CORRECTION"), "must include CORRECTION block");
+        assert!(
+            result.contains("CORRECTION"),
+            "must include CORRECTION block"
+        );
     }
 
     #[test]
@@ -6180,8 +6356,10 @@ mod sub_cycle4c_tests {
     fn format_tool_call_mcp_tool() {
         let input = serde_json::json!({"key": "val"});
         let out = format_tool_call("mcp__context7__query_docs", Some(&input));
-        assert!(out.to_uppercase().contains("MCP__CONTEXT7__QUERY_DOCS") || out.contains("MCP:"),
-            "mcp tool must be handled: {out}");
+        assert!(
+            out.to_uppercase().contains("MCP__CONTEXT7__QUERY_DOCS") || out.contains("MCP:"),
+            "mcp tool must be handled: {out}"
+        );
     }
 
     // ── should_fork_session ─────────────────────────────────────────────────
@@ -6225,7 +6403,10 @@ mod sub_cycle4c_tests {
         }
         {
             let m = last_activity_update().lock().unwrap();
-            assert!(!m.contains_key(key), "activity_update entry must be removed");
+            assert!(
+                !m.contains_key(key),
+                "activity_update entry must be removed"
+            );
         }
     }
 
@@ -6240,6 +6421,56 @@ mod sub_cycle4c_tests {
     /// Parity: idle-timeout.ts:22. MUST be 30 minutes (1_800_000 ms), NOT 10 minutes.
     #[test]
     fn step_idle_timeout_is_30_minutes() {
-        assert_eq!(STEP_IDLE_TIMEOUT_MS, 30 * 60 * 1_000, "must be 30 min, not 10 min");
+        assert_eq!(
+            STEP_IDLE_TIMEOUT_MS,
+            30 * 60 * 1_000,
+            "must be 30 min, not 10 min"
+        );
+    }
+
+    // ── format_js_number — byte-identical to JS String(number) ──────────────
+    //
+    // Oracle: every expected string below was captured from live `node -e
+    // 'console.log(String(x))'`. These pin the D1 fix (TS String(t/60000) float
+    // rendering vs the old integer `as_millis()/60_000`).
+
+    #[test]
+    fn js_number_idle_minute_cases() {
+        // The two coordinator/verifier divergence probes (idle_timeout in ms / 60000):
+        // 200ms  → 0.0033333333333333335 min  (was Rust "0")
+        assert_eq!(format_js_number(200.0 / 60000.0), "0.0033333333333333335");
+        // 90000ms → 1.5 min  (was Rust "1")
+        assert_eq!(format_js_number(90000.0 / 60000.0), "1.5");
+    }
+
+    #[test]
+    fn js_number_plain_decimal_regime() {
+        assert_eq!(format_js_number(1.0), "1");
+        assert_eq!(format_js_number(30.0), "30"); // 1_800_000 / 60000
+        assert_eq!(format_js_number(1_800_000.0 / 60000.0), "30");
+        assert_eq!(format_js_number(123456.0 / 60000.0), "2.0576");
+        assert_eq!(format_js_number(1.0 / 60000.0), "0.000016666666666666667");
+        assert_eq!(format_js_number(0.0001), "0.0001");
+        assert_eq!(format_js_number(0.000001), "0.000001"); // 1e-6 stays fixed-point
+        assert_eq!(format_js_number(100.0), "100");
+    }
+
+    #[test]
+    fn js_number_exponential_regime() {
+        // Below 1e-6 → JS switches to exponential (Rust Display would NOT).
+        assert_eq!(format_js_number(0.05 / 60000.0), "8.333333333333333e-7");
+        assert_eq!(format_js_number(1e-7), "1e-7");
+        // Large regime ≥ 1e21.
+        assert_eq!(format_js_number(1e21), "1e+21");
+    }
+
+    #[test]
+    fn js_number_special_and_sign() {
+        assert_eq!(format_js_number(0.0), "0");
+        assert_eq!(format_js_number(-0.0), "0"); // JS String(-0) === "0"
+        assert_eq!(format_js_number(-1.5), "-1.5");
+        assert_eq!(format_js_number(f64::NAN), "NaN");
+        assert_eq!(format_js_number(f64::INFINITY), "Infinity");
+        assert_eq!(format_js_number(f64::NEG_INFINITY), "-Infinity");
     }
 } // end of sub_cycle4c_tests
