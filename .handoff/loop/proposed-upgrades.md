@@ -108,3 +108,51 @@ diverges) regimes.
   a live-`node -e 'String(x)'` byte cross-check; Rust `Display`/integer-division is NOT equivalent."
 - Batch with the P1 (error-string-shape, Debug-leak) and the still-open 2026-06-13 checklist rows —
   land the fidelity-checklist additions as one reviewed PR at the DONE retro.
+
+---
+
+# Cycles 40-42 HAND OFF retro (added 2026-06-26, RESUME#3) — RECORD ONLY
+
+Session ran 3/3 budgeted cycles, all parity-verified + merged: cycle 40 = WF-09 4d (AI dispatch
+wiring + retry + session persist, PR#16 — gate FAILed on 3 divergences then re-verify PASS); cycle 41
+= WF-09 4e loop node (PR#17, PASS first-pass); cycle 42 = WF-09 4f approval node (PR#18, PASS
+first-pass). **MILESTONE: WF-09 sub-cycle 4 COMPLETE** — AI-dispatch placeholder fully removed, all 7
+DagNode variants execute, `executeDagWorkflow` rolled up to `- [x]`. **Nothing here is applied; none
+weaken a gate** (P8 only adds tiering guidance).
+
+## P5 + opus directive — ✅ ALREADY APPLIED this session (see P5 block above; do NOT re-propose)
+Recorded for continuity: P5 (porter git-prohibition + orchestrator HEAD-unchanged assertion) landed
+owner-approved in harness_hub PR#53, and the owner's opus-only directive flipped the porter default
+sonnet→opus (loop_state `model_override: opus`). The cycle-39 gate-bypass class is now structurally
+closed. No further action.
+
+## P8 — rust-port skill: tiering guidance for behavior-dense units (LOW-RISK wording → propose)
+A clean natural experiment landed this session: within one sub-cycle family (4d/4e/4f, same unit
+class + same gate), the SONNET porter (4d) bounced (fake-green self-tests + 3 gate divergences →
+FAIL→fix→re-verify) while the OPUS porter passed BOTH 4e and 4f FIRST PASS, 0 divergence. The skill's
+current tiering line ("tier the porter down, the gate catches it") is not wrong — the gate caught it —
+but it omits the cost of the catch.
+- **rust-port skill (tiering philosophy)**: add a qualifier — "the gate catches a tiered-down
+  porter's misses, but catching-then-bouncing costs an extra verifier + fix round. For a
+  BEHAVIOR-DENSE unit (intricate control flow, many branches, accumulator/event-shape hazards),
+  opus-first may be net-cheaper end-to-end than sonnet-then-bounce; reserve the tier-down for
+  mechanical/structural units."
+- Why propose, not apply: it refines model/cost POLICY guidance in the skill body — owner already set
+  an opus-only directive this loop, so this codifies the rationale rather than changing behavior, but
+  tiering philosophy is owner-facing enough to review. Evidence: cycle 40 (sonnet, bounce) vs
+  cycles 41-42 (opus, first-pass). Routes the new `propose` ledger row.
+
+## Checklist batch addendum (fold into P1/P7 at the DONE retro)
+4d added two more recurring divergence sub-classes the porter pre-flight checklist should name:
+- **accumulator omission** — a value computed but not folded into a running total (4d D-2: AI-node
+  cost dropped from `total_cost_usd`). When porting a loop/dispatch that accumulates, verify every
+  contributor is summed into the source's running total.
+- **event-field omission** — an emitted event/error drops a field the source includes (4d D-3:
+  `nodeName` omitted from pre-exec error events; RECURRENCE of the 4a nodeName-omitted class). Diff
+  emitted event SHAPES field-by-field against the source, not just the happy-path payload.
+
+## P4 (auto-merge no-op) — STILL OPEN, owner decision; recurred again
+PRs #16/#17/#18 merged this session (parity-verified green). The `allow_auto_merge=false` + unprotected
+`main` condition persists, so the standing push→PR→auto-merge pipeline still no-ops and direct merge
+was used again. Unchanged from the cycles 36-37 P4 entry — still needs the owner's pick (enable
+auto-merge + branch protection, OR document direct-merge-on-green as accepted here). Did not block.
