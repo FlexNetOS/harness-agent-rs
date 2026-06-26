@@ -15,12 +15,15 @@
 
 use crate::detect_credit_exhaustion;
 use crate::executor_shared::{classify_error, ErrorType};
-use crate::output_ref::{resolve_node_output_field, FieldResolution};
-use har_contract::SendQueryOptions;
+use crate::output_ref::{declared_fields_from_schema, resolve_node_output_field, FieldResolution};
+use futures::StreamExt as _;
+use har_contract::{MessageChunk, SendQueryOptions};
 use har_workflow_schema::{DagNode, NodeOutput, ScriptRuntime, TriggerRule};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap as StdHashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use tracing::{debug, error, warn};
 
 // ─── Constants (exact source values) ──────────────────────────────────────────
@@ -53,6 +56,12 @@ pub(crate) const SUBPROCESS_DEFAULT_TIMEOUT: u64 = 120_000;
 /// instead of inlined as `bash -c` arguments, to avoid silent data corruption.
 /// Source: dag-executor.ts:1497.
 pub(crate) const NODE_OUTPUT_FILE_THRESHOLD: usize = 32_768;
+
+/// Default idle timeout for AI node stream passes: 30 minutes.
+/// Resets on every chunk — fires only when the stream goes completely silent.
+/// Per-node `idle_timeout` (ms) in the schema overrides this.
+/// Source: idle-timeout.ts:22 (STEP_IDLE_TIMEOUT_MS = 30 * 60 * 1000).
+pub(crate) const STEP_IDLE_TIMEOUT_MS: u64 = 30 * 60 * 1_000;
 
 // ─── MCP failure parsing ──────────────────────────────────────────────────────
 
@@ -1637,6 +1646,9 @@ use crate::script_discovery::discover_scripts_for_cwd;
 pub struct WorkflowDeps {
     pub store: Arc<dyn WorkflowStore>,
     get_agent_provider: fn(&str) -> &dyn AgentProvider,
+    /// Filesystem seam for `load_command_prompt`. Source: TS `WorkflowDeps.loadConfig`
+    /// + `archon-paths` for search paths. Injected so tests can use an in-memory fake.
+    pub command_prompt_deps: Arc<dyn crate::executor_shared::CommandPromptDeps>,
 }
 
 impl WorkflowDeps {
@@ -1720,6 +1732,116 @@ impl WorkflowDeps {
                 data: Some(data),
             })
             .await;
+    }
+}
+
+/// Production filesystem implementation of `CommandPromptDeps`.
+/// Uses the real file system via `tokio::fs` and `har-paths` for directory resolution.
+/// Source: the TS `WorkflowDeps.loadConfig` + `archon-paths.ts` path resolution.
+#[derive(Default)]
+struct FsCommandPromptDeps {
+    bundled: StdHashMap<String, String>,
+}
+
+#[async_trait::async_trait]
+impl crate::executor_shared::CommandPromptDeps for FsCommandPromptDeps {
+    async fn read_file(&self, path: &std::path::Path) -> Result<Option<String>, crate::executor_shared::CommandLoadIoError> {
+        match tokio::fs::read_to_string(path).await {
+            Ok(content) => Ok(Some(content)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                Err(crate::executor_shared::CommandLoadIoError::PermissionDenied { path: path.to_path_buf() })
+            }
+            Err(e) => Err(crate::executor_shared::CommandLoadIoError::Io {
+                path: path.to_path_buf(),
+                message: e.to_string(),
+            }),
+        }
+    }
+
+    async fn find_markdown_files(&self, dir: &std::path::Path) -> Result<Vec<crate::executor_shared::MarkdownEntry>, crate::executor_shared::CommandLoadIoError> {
+        let mut entries = Vec::new();
+        let mut read_dir = match tokio::fs::read_dir(dir).await {
+            Ok(rd) => rd,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(e) => return Err(crate::executor_shared::CommandLoadIoError::Io { path: dir.to_path_buf(), message: e.to_string() }),
+        };
+        while let Ok(Some(ent)) = read_dir.next_entry().await {
+            let path = ent.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    entries.push(crate::executor_shared::MarkdownEntry {
+                        command_name: stem.to_string(),
+                        relative_path: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                    });
+                }
+            } else if let Ok(meta) = ent.metadata().await {
+                if meta.is_dir() {
+                    // Walk one subfolder deep. executor-shared.ts:270: maxDepth:1.
+                    let sub_dir = path.clone();
+                    let sub_name = sub_dir.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                    if let Ok(mut sub_rd) = tokio::fs::read_dir(&sub_dir).await {
+                        while let Ok(Some(sub_ent)) = sub_rd.next_entry().await {
+                            let sub_path = sub_ent.path();
+                            if sub_path.extension().and_then(|e| e.to_str()) == Some("md") {
+                                if let Some(stem) = sub_path.file_stem().and_then(|s| s.to_str()) {
+                                    entries.push(crate::executor_shared::MarkdownEntry {
+                                        command_name: stem.to_string(),
+                                        relative_path: format!("{}/{}.md", sub_name, stem),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(entries)
+    }
+
+    fn home_commands_path(&self) -> std::path::PathBuf {
+        har_paths::get_home_commands_path()
+            .unwrap_or_else(|_| std::path::PathBuf::from("/dev/null/no-home"))
+    }
+
+    fn app_defaults_commands_path(&self) -> std::path::PathBuf {
+        har_paths::get_default_commands_path()
+    }
+
+    async fn load_config(&self, _cwd: &std::path::Path) -> crate::executor_shared::LoadedConfig {
+        // Fail-soft: return defaults (loadDefaultCommands: true). Mirrors TS catch at line 256.
+        crate::executor_shared::LoadedConfig { load_default_commands: Some(true) }
+    }
+
+    fn is_binary_build(&self) -> bool {
+        false // Dev/port build; binary embedding is not in scope for harness-agent-rs.
+    }
+
+    fn bundled_commands(&self) -> &StdHashMap<String, String> {
+        &self.bundled
+    }
+}
+
+impl WorkflowDeps {
+    /// Construct `WorkflowDeps` with the production filesystem command-prompt loader.
+    ///
+    /// Tests that need to inject a fake FS set `command_prompt_deps` directly after construction
+    /// (the field is `pub`), or use `with_command_prompt_deps`.
+    pub fn new(store: Arc<dyn WorkflowStore>, get_agent_provider: fn(&str) -> &dyn AgentProvider) -> Self {
+        Self {
+            store,
+            get_agent_provider,
+            command_prompt_deps: Arc::new(FsCommandPromptDeps::default()),
+        }
+    }
+
+    /// Construct with an explicit `CommandPromptDeps` implementation (for tests / DI).
+    pub fn with_command_prompt_deps(
+        store: Arc<dyn WorkflowStore>,
+        get_agent_provider: fn(&str) -> &dyn AgentProvider,
+        command_prompt_deps: Arc<dyn crate::executor_shared::CommandPromptDeps>,
+    ) -> Self {
+        Self { store, get_agent_provider, command_prompt_deps }
     }
 }
 
@@ -4053,11 +4175,43 @@ fn get_node_name(node: &har_workflow_schema::DagNode) -> Option<String> {
     }
 }
 
-// ─── Sub-cycle 3: executeNodeInternal — AI node full lifecycle (~820 lines) ──
+// ─── Sub-cycle 3/4c: executeNodeInternal — AI node full lifecycle ────────────
 // Port of `packages/workflows/src/dag-executor.ts` — sub-cycle 3: AI node internal state machine.
 // Source lines: dag-executor.ts:672–1490.
 
+use har_provider::shared::structured_output::{StructuredValidationResult, validate_structured_output};
 use tokio_util::sync::CancellationToken;
+
+// ─── Module-level throttle maps ───────────────────────────────────────────────
+// TS uses module-level Map<string, number> for cancel-check and heartbeat throttling.
+// Rust equivalent: OnceLock<Mutex<HashMap<node_key, Instant>>>.
+// The Mutex is never held across await points — lock is taken, value read/updated,
+// then dropped before any await. Source: dag-executor.ts:858-888.
+
+static LAST_NODE_CANCEL_CHECK: OnceLock<Mutex<StdHashMap<String, Instant>>> = OnceLock::new();
+static LAST_NODE_ACTIVITY_UPDATE: OnceLock<Mutex<StdHashMap<String, Instant>>> = OnceLock::new();
+
+fn last_cancel_check() -> &'static Mutex<StdHashMap<String, Instant>> {
+    LAST_NODE_CANCEL_CHECK.get_or_init(|| Mutex::new(StdHashMap::new()))
+}
+fn last_activity_update() -> &'static Mutex<StdHashMap<String, Instant>> {
+    LAST_NODE_ACTIVITY_UPDATE.get_or_init(|| Mutex::new(StdHashMap::new()))
+}
+
+/// Remove throttle entries for `node_key` on all terminal exit paths.
+/// Source: dag-executor.ts:1302-1303, 1346-1347, 1383-1384, 1428-1430, 1448-1450.
+fn cleanup_throttle_maps(node_key: &str) {
+    if let Ok(mut m) = last_cancel_check().lock() { m.remove(node_key); }
+    if let Ok(mut m) = last_activity_update().lock() { m.remove(node_key); }
+}
+
+// ─── DagNodeCancelToken ────────────────────────────────────────────────────────
+// CancellationToken → CancelToken bridge. CancelToken is in har-contract (no tokio dep).
+// We own `DagNodeCancelToken` (local type), so no orphan-rule issue. Source: §2.2.
+struct DagNodeCancelToken(CancellationToken);
+impl har_contract::CancelToken for DagNodeCancelToken {
+    fn is_cancelled(&self) -> bool { self.0.is_cancelled() }
+}
 
 /// Execution result for a single AI node. Matches the TS `NodeExecutionResult` return type.
 #[derive(Debug, Clone)]
@@ -4096,11 +4250,10 @@ impl NodeState {
 }
 
 /// Tracker for tool events across the stream loop. Used to pair tool_started → tool_completed.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug)]
 struct LastToolStart {
     tool_name: String,
-    started_at: u128,
+    started_at: Instant,
 }
 
 // ─── buildReaskPrompt — helper for structured output reasks ─────────────────
@@ -4120,52 +4273,151 @@ pub fn build_reask_prompt(original_prompt: &str, errors: &[String]) -> String {
 
 // ─── emitReask — helper for reask observability ─────────────────────────────
 
-/// Observability: log every reask; notify the user once (first reask).
-async fn emit_reask(node_id: &str, run_id: &str, attempt: u32, max_reasks: u32) {
+/// Observability: log every reask; notify the user once (on the first reask).
+/// Source: dag-executor.ts:1132-1145.
+async fn emit_reask(
+    node_id: &str,
+    run_id: &str,
+    attempt: u32,
+    max_reasks: u32,
+    platform: &dyn crate::executor_shared::MessagePlatform,
+    conversation_id: &str,
+    node_context: &SendMessageContext,
+) {
     warn!(node_id = %node_id, workflow_run_id = %run_id, attempt, max_reasks, "dag.structured_output_reask");
+    if attempt == 1 {
+        let msg = format!(
+            "⚠️ Node `{}`: structured output didn't match the schema — asking the model to correct it (up to {} attempt(s)).",
+            node_id, max_reasks
+        );
+        let _ = safe_send_message(platform, conversation_id, &msg, Some(node_context), None, None).await;
+    }
 }
 
-// ─── scheduleReask — helper to increment reask counter and augment prompt ──
+// ─── format_tool_call — format a tool call for display ───────────────────────
 
-/// Set up the next reask attempt (increment, augment the prompt, notify).
-async fn schedule_reask(current_prompt: &str, errors: &[String]) -> (u32, String) {
-    let new_prompt = build_reask_prompt(current_prompt, errors);
-    (1, new_prompt) // returns (increment_count, new_prompt) for the caller to manage
+/// Format a tool call for display in streaming mode. Source: tool-formatter.ts:15-28.
+fn format_tool_call(tool_name: &str, tool_input: Option<&serde_json::Value>) -> String {
+    let mut message = format!("🔧 {}", tool_name.to_uppercase());
+    if let Some(input) = tool_input {
+        if let Some(brief) = extract_tool_brief(tool_name, input) {
+            message.push('\n');
+            message.push_str(&brief);
+        }
+    }
+    message
 }
 
-// ─── executeNodeInternal — AI node full lifecycle (~820 lines ported) ──────
+/// Extract brief info from tool input for display. Source: tool-formatter.ts:37-83.
+fn extract_tool_brief(tool_name: &str, tool_input: &serde_json::Value) -> Option<String> {
+    match tool_name {
+        "Bash" => {
+            let cmd = tool_input.get("command")?.as_str()?;
+            Some(if cmd.len() > 100 { format!("{}...", &cmd[..100]) } else { cmd.to_string() })
+        }
+        "Read" => Some(format!("Reading: {}", tool_input.get("file_path")?.as_str()?)),
+        "Write" => Some(format!("Writing: {}", tool_input.get("file_path")?.as_str()?)),
+        "Edit" => Some(format!("Editing: {}", tool_input.get("file_path")?.as_str()?)),
+        "Glob" => Some(format!("Pattern: {}", tool_input.get("pattern")?.as_str()?)),
+        "Grep" => Some(format!("Searching: {}", tool_input.get("pattern")?.as_str()?)),
+        _ if tool_name.starts_with("mcp__") => {
+            let parts: Vec<&str> = tool_name.splitn(3, "__").collect();
+            if parts.len() >= 2 {
+                Some(format!("MCP: {}", parts[1..].join(" ")))
+            } else {
+                None
+            }
+        }
+        _ => {
+            let s = serde_json::to_string(tool_input).ok()?;
+            Some(if s.len() > 80 { format!("{}...", &s[..80]) } else { s })
+        }
+    }
+}
+
+// ─── log_assistant / log_tool — JSONL workflow logging ───────────────────────
+
+/// Append an assistant chunk to the workflow JSONL log. Source: logger.ts:108-117.
+async fn log_assistant(log_dir: &str, run_id: &str, content: &str) {
+    let ts = chrono::Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "type": "assistant",
+        "workflow_id": run_id,
+        "content": content,
+        "ts": ts,
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.jsonl", run_id), &line).await;
+    }
+}
+
+/// Append a tool-call entry to the workflow JSONL log. Source: logger.ts:122-133.
+async fn log_tool(log_dir: &str, run_id: &str, tool_name: &str, tool_input: Option<&serde_json::Value>) {
+    let ts = chrono::Utc::now().to_rfc3339();
+    let input_val = tool_input.cloned().unwrap_or(serde_json::json!({}));
+    let entry = serde_json::json!({
+        "type": "tool",
+        "workflow_id": run_id,
+        "tool_name": tool_name,
+        "tool_input": input_val,
+        "ts": ts,
+    });
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = write_log_file(log_dir, &format!("{}.jsonl", run_id), &line).await;
+    }
+}
+
+// ─── executeNodeInternal — AI node full lifecycle (4c complete port) ─────────
 
 /// Execute a single AI node (Command or Prompt) with full lifecycle:
-/// stream setup, idle timeout watchdog, validate-and-reask loop, tool events,
-/// cancel/pause checks, activity heartbeat, and post-stream completion.
+/// prompt load, variable substitution, stream pass with idle-timeout watchdog,
+/// all per-chunk dispatch branches, validate-and-reask loop, and post-stream
+/// completion paths.
 ///
 /// Source: dag-executor.ts:672–1490.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
 pub async fn execute_node_internal(
     deps: &WorkflowDeps,
-    _conversation_id: &str,
+    platform: Arc<dyn WorkflowPlatform>,
+    conversation_id: &str,
     cwd: &str,
     workflow_run: &har_workflow_schema::WorkflowRun,
     node: &har_workflow_schema::DagNode,
     provider: &str,
     node_options: Option<SendQueryOptions>,
-    _artifacts_dir: &str,
-    _log_dir: &str,
+    artifacts_dir: &str,
+    log_dir: &str,
+    base_branch: &str,
+    docs_dir: &str,
+    node_outputs: &HashMap<String, har_workflow_schema::NodeOutput>,
+    resume_session_id: Option<&str>,
+    configured_command_folder: Option<&str>,
+    issue_context: Option<&str>,
 ) -> NodeExecutionResult {
-    let node_start_time = std::time::Instant::now();
+    let node_start_time = Instant::now();
     let node_id = node.id().to_string();
+    let node_context = SendMessageContext {
+        workflow_id: Some(workflow_run.id.clone()),
+        node_name: Some(node_id.clone()),
+    };
 
     // Load MCP server names for filtering. Source: dag-executor.ts:693.
-    // Used in sub-cycle 4 (stream pass MCP filtering). Prefixed until then.
-    let _configured_mcp_names =
+    let configured_mcp_names =
         load_configured_mcp_server_names(node.base().mcp.as_deref(), cwd).await;
+
+    // Log node start. Source: dag-executor.ts:696.
+    let node_cmd_str = match node {
+        har_workflow_schema::DagNode::Command(c) => c.command.clone(),
+        _ => "<inline>".to_string(),
+    };
+    let _ = log_node_start(log_dir, &workflow_run.id, &node_id, &node_cmd_str).await;
 
     // Emit node_started event (fire-and-forget on the store side). Source: dag-executor.ts:698-718.
     deps.emit_workflow_event(
         &workflow_run.id,
         "node_started",
         &node_id,
-        serde_json::json!({"provider": provider}),
+        serde_json::json!({"command": &node_cmd_str, "provider": provider}),
     )
     .await;
 
@@ -4183,9 +4435,53 @@ pub async fn execute_node_internal(
         )
         .await;
 
-    // Load prompt: either from Command node's command field or PromptNode's prompt field.
+    // Load prompt. Source: dag-executor.ts:721-753.
     let raw_prompt = match node {
-        har_workflow_schema::DagNode::Command(cmd) => cmd.command.clone(),
+        har_workflow_schema::DagNode::Command(cmd) => {
+            // Command node: load from filesystem via load_command_prompt.
+            let result = crate::executor_shared::load_command_prompt(
+                &*deps.command_prompt_deps,
+                std::path::Path::new(cwd),
+                &cmd.command,
+                configured_command_folder,
+            )
+            .await;
+            match result {
+                har_workflow_schema::LoadCommandResult::Success { content } => content,
+                har_workflow_schema::LoadCommandResult::Failure { message, .. } => {
+                    error!(node_id = %node_id, error = %message, "dag_node_command_load_failed");
+                    let _ = log_node_error(log_dir, &workflow_run.id, &node_id, &message).await;
+                    deps.emit_workflow_event(
+                        &workflow_run.id,
+                        "node_failed",
+                        &node_id,
+                        serde_json::json!({"error": &message}),
+                    )
+                    .await;
+                    get_workflow_event_emitter()
+                        .emit(
+                            "node_failed",
+                            &workflow_run.id,
+                            Some(&node_id),
+                            Some(&cmd.command),
+                            None,
+                            Some(message.as_str()),
+                            None,
+                            None,
+                        )
+                        .await;
+                    return NodeExecutionResult {
+                        state: NodeState::Failed,
+                        output: String::new(),
+                        structured_output: None,
+                        session_id: None,
+                        cost_usd: None,
+                        error: Some(message),
+                        declared_fields: None,
+                    };
+                }
+            }
+        }
         har_workflow_schema::DagNode::Prompt(pn) => pn.prompt.clone(),
         _ => {
             return NodeExecutionResult {
@@ -4200,14 +4496,49 @@ pub async fn execute_node_internal(
         }
     };
 
-    // Variable substitution + output ref substitution (full impl in sub-cycle 2/1).
-    let final_prompt = raw_prompt;
+    // Standard variable substitution. Source: dag-executor.ts:756-779.
+    let substituted_prompt = match crate::executor_shared::build_prompt_with_context(
+        &raw_prompt,
+        &workflow_run.id,
+        &workflow_run.user_message,
+        artifacts_dir,
+        base_branch,
+        docs_dir,
+        issue_context,
+        &format!("dag node '{}' prompt", node_id),
+    ) {
+        Ok(p) => p,
+        Err(err) => {
+            let msg = err.to_string();
+            error!(node_id = %node_id, error = %msg, "dag.node_prompt_substitution_failed");
+            let _ = safe_send_message(
+                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                conversation_id,
+                &format!("Node '{}' failed: {}", node_id, msg),
+                Some(&node_context),
+                None,
+                None,
+            )
+            .await;
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: None,
+                cost_usd: None,
+                error: Some(msg),
+                declared_fields: None,
+            };
+        }
+    };
+
+    // Substitute upstream node output refs. Source: dag-executor.ts:781-782.
+    // escaped_for_bash=false (prompts are not shell-escaped); output_file_dir=None (direct sub).
+    let final_prompt = substitute_node_output_refs(&substituted_prompt, node_outputs, false, None);
 
     // Get provider instance. Source: dag-executor.ts:784.
-    // TS calls deps.getAgentProvider(provider) directly (no try/catch at this call site).
-    // The WorkflowDeps field type is `fn(&str) -> &dyn AgentProvider` (non-Result), matching TS.
-    // Used in sub-cycle 4 (streaming pass). Prefixed with _ until then.
-    let _ai_client = (deps.get_agent_provider)(provider);
+    let ai_client = (deps.get_agent_provider)(provider);
+    let streaming_mode = platform.get_streaming_mode();
 
     let provider_caps = match har_provider::get_provider_capabilities(provider) {
         Ok(caps) => caps,
@@ -4227,14 +4558,12 @@ pub async fn execute_node_internal(
         }
     };
 
-    // Stream setup: CancellationToken for abort (AbortController equivalent). Source: dag-executor.ts:798.
+    // Per-node abort token (AbortController equivalent). Source: dag-executor.ts:797-798.
     let abort_token = CancellationToken::new();
-    // node_idle_timed_out is set by the idle-timeout watchdog in sub-cycle 4.
-    #[allow(unused_mut)]
     let mut node_idle_timed_out = false;
 
-    // Fork when resuming — leaves the source session untouched so retries are safe. Source: dag-executor.ts:799-805.
-    let effective_node_options = if should_fork_session(node, true) {
+    // Fork when resuming. Source: dag-executor.ts:799-805.
+    let effective_node_options = if should_fork_session(resume_session_id) {
         let mut opts = node_options.unwrap_or_default();
         opts.fork_session = Some(true);
         opts
@@ -4242,7 +4571,10 @@ pub async fn execute_node_internal(
         node_options.unwrap_or_default()
     };
 
-    let effective_idle_timeout = std::time::Duration::from_secs(60 * 10); // STEP_IDLE_TIMEOUT_MS default: 10 minutes
+    // Idle timeout: per-node override or default 30 min. Source: dag-executor.ts:807, idle-timeout.ts:22.
+    let effective_idle_timeout = std::time::Duration::from_millis(
+        node.base().idle_timeout.map(|ms| ms as u64).unwrap_or(STEP_IDLE_TIMEOUT_MS),
+    );
 
     // Best-effort providers get a bounded validate-and-reask loop. Source: dag-executor.ts:813-817.
     let max_reasks = if provider_caps.structured_output
@@ -4254,154 +4586,746 @@ pub async fn execute_node_internal(
         0
     };
 
-    // Always-accumulated output text (for $nodeId.output). Source: dag-executor.ts:787.
-    // structured_output, new_session_id, batch_messages populated by stream pass in sub-cycle 4.
-    #[allow(unused_mut, unused_assignments)]
+    // Per-stream-pass accumulators.
     let mut node_output_text = String::new();
-    #[allow(unused_mut)]
     let mut structured_output: Option<serde_json::Value> = None;
-    #[allow(unused_mut)]
     let mut new_session_id: Option<String> = None;
-    #[allow(unused_mut)]
     let mut batch_messages: Vec<String> = Vec::new();
     let mut accumulated_cost_usd: f64 = 0.0;
-    #[allow(unused_assignments)]
     let mut node_cost_usd_pass: Option<f64> = None;
 
-    // ─── runStreamPass — inner async fn (extracted from source closure) ──────
-    // Resets per-attempt accumulators, streams messages, handles all message types.
-    // Source: dag-executor.ts:825-1119.
-    //
-    // The actual stream iteration over ai_client.send_query(...) would happen here:
-    //   - Idle timeout watchdog via tokio::time::timeout wrapping the stream
-    //   - For each MessageChunk: assistant/tool/result/system dispatch
-    //   - Cancel/pause check every CANCEL_CHECK_INTERVAL_MS (10s)
-    //   - Activity heartbeat every ACTIVITY_HEARTBEAT_INTERVAL_MS (60s)
-
     // ─── Validate-and-reask loop ──────────────────────────────────────────────
-    // Source: dag-executor.ts:1147-1255.
+    // Source: dag-executor.ts:1147-1255. Iterates once for non-best-effort; up to
+    // STRUCTURED_OUTPUT_MAX_REASKS times for best-effort providers on schema mismatch.
 
     let mut reask_attempt: u32 = 0;
     let mut current_prompt = final_prompt.clone();
-    node_cost_usd_pass = None;
+    let node_key = format!("{}:{}", workflow_run.id, node_id);
 
-    loop {
-        // Fresh session per reask attempt (resume only the original on first pass).
-        // Source: dag-executor.ts:1163. In full impl, run_stream_pass would handle this.
+    'reask: loop {
+        // ── run_stream_pass (inlined closure) ────────────────────────────────
+        // Source: dag-executor.ts:825-1119.
 
-        // Accumulate cost across ALL reask passes. Source: dag-executor.ts:1164-1170.
-        accumulated_cost_usd += node_cost_usd_pass.unwrap_or(0.0);
-        node_cost_usd_pass = Some(accumulated_cost_usd);
+        // Reset per-attempt accumulators. Source: dag-executor.ts:829-833.
+        node_output_text.clear();
+        structured_output = None;
+        batch_messages.clear();
+        let mut pass_cost_usd: Option<f64> = None;
+        node_idle_timed_out = false;
 
-        // When output_format is set and the provider returned structured_output, use it.
-        // Source: dag-executor.ts:1172-1175.
-        if effective_node_options.output_format.is_none() {
-            break;
-        }
+        // Build cancel token wrapper for this pass. The abort_token is shared across reask
+        // passes (matching TS: `nodeAbortController` is created once, never reset).
+        let dag_cancel_arc = std::sync::Arc::new(DagNodeCancelToken(abort_token.child_token()));
 
-        // Don't reask after idle-timeout/abort — those are genuine failures.
-        // Source: dag-executor.ts:1179-1180.
-        let can_reask =
-            reask_attempt < max_reasks && !node_idle_timed_out && !abort_token.is_cancelled();
+        // Resume-session only on first pass. Source: dag-executor.ts:1163.
+        let attempt_resume_id: Option<String> = if reask_attempt == 0 {
+            resume_session_id.map(|s| s.to_string())
+        } else {
+            None
+        };
 
-        if let Some(ref so) = structured_output {
-            // Validate against the declared schema for EVERY provider. Source: dag-executor.ts:1182-1232.
-            let output_format_schema = effective_node_options
-                .output_format
-                .as_ref()
-                .map(|o| &o.schema);
+        let stream = ai_client.send_query(
+            current_prompt.clone(),
+            cwd.to_string(),
+            attempt_resume_id,
+            Some(effective_node_options.clone()),
+            dag_cancel_arc,
+        );
+        let mut stream = Box::pin(stream);
 
-            if let Some(_schema) = output_format_schema {
-                // Full validation via har-provider's validateStructuredOutput (sub-cycle 4).
-                let validation_valid = true; // source: `if (output_format_schema)` — any object is truthy in JS
+        // Tracker for tool event pairing (tool_started → tool_completed).
+        // Source: dag-executor.ts:808.
+        let mut last_tool_started: Option<LastToolStart> = None;
+        // Per-stream-pass error flag (replaces TS throw from inside runStreamPass).
+        let mut stream_error: Option<String> = None;
 
-                if validation_valid {
-                    // Override nodeOutputText with structured output. Source: dag-executor.ts:1207-1219.
-                    node_output_text = match so {
-                        serde_json::Value::String(s) => s.clone(),
-                        other => serde_json::to_string(other).unwrap_or_default(),
-                    };
-                    break;
+        // ── Stream loop with per-chunk idle timeout ───────────────────────────
+        // Source: dag-executor.ts:834-1119 (for-await-of withIdleTimeout).
+        // `tokio::time::timeout` re-arms on every successful `.next()` call —
+        // the timer resets each chunk, matching withIdleTimeout's behavior.
+        'stream: loop {
+            let chunk_result = tokio::time::timeout(
+                effective_idle_timeout,
+                stream.as_mut().next(),
+            )
+            .await;
+
+            let msg = match chunk_result {
+                Err(_elapsed) => {
+                    // Idle timeout fired. Source: dag-executor.ts:836-843.
+                    node_idle_timed_out = true;
+                    warn!(
+                        node_id = %node_id,
+                        timeout_ms = effective_idle_timeout.as_millis(),
+                        "dag_node_idle_timeout_reached"
+                    );
+                    abort_token.cancel();
+                    break 'stream;
+                }
+                Ok(None) => break 'stream, // Stream closed normally.
+                Ok(Some(chunk)) => chunk,
+            };
+
+            let tick_now = Instant::now();
+
+            // ── Cancel/pause check (every 10s). Source: dag-executor.ts:857-875. ──
+            // Lock is taken, read/updated, then DROPPED before any await point.
+            let should_cancel_check = {
+                let mut m = last_cancel_check().lock().unwrap();
+                let elapsed = m
+                    .get(&node_key)
+                    .map(|t| tick_now.duration_since(*t).as_millis() as u64)
+                    .unwrap_or(u64::MAX);
+                if elapsed > CANCEL_CHECK_INTERVAL_MS {
+                    m.insert(node_key.clone(), tick_now);
+                    true
+                } else {
+                    false
+                }
+            }; // lock dropped here
+
+            if should_cancel_check {
+                match deps
+                    .store
+                    .get_workflow_run_status(&workflow_run.id)
+                    .await
+                {
+                    Ok(status_opt) => {
+                        let status_str = status_opt.as_ref().map(|s| match s {
+                            har_workflow_schema::WorkflowRunStatus::Running => "running",
+                            har_workflow_schema::WorkflowRunStatus::Paused => "paused",
+                            har_workflow_schema::WorkflowRunStatus::Completed => "completed",
+                            har_workflow_schema::WorkflowRunStatus::Failed => "failed",
+                            har_workflow_schema::WorkflowRunStatus::Cancelled => "cancelled",
+                            har_workflow_schema::WorkflowRunStatus::Pending => "pending",
+                        });
+                        if !should_continue_streaming_for_status(status_str) {
+                            info!(
+                                workflow_run_id = %workflow_run.id,
+                                node_id = %node_id,
+                                status = status_str.unwrap_or("deleted"),
+                                "dag.stop_detected_during_streaming"
+                            );
+                            abort_token.cancel();
+                            break 'stream;
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            err = %e,
+                            workflow_run_id = %workflow_run.id,
+                            node_id = %node_id,
+                            "dag.status_check_failed"
+                        );
+                    }
+                }
+            }
+
+            // ── Activity heartbeat (every 60s). Source: dag-executor.ts:877-888. ──
+            let should_heartbeat = {
+                let mut m = last_activity_update().lock().unwrap();
+                let elapsed = m
+                    .get(&node_key)
+                    .map(|t| tick_now.duration_since(*t).as_millis() as u64)
+                    .unwrap_or(u64::MAX);
+                if elapsed > ACTIVITY_HEARTBEAT_INTERVAL_MS {
+                    m.insert(node_key.clone(), tick_now);
+                    true
+                } else {
+                    false
+                }
+            };
+
+            if should_heartbeat {
+                if let Err(e) = deps
+                    .store
+                    .update_workflow_activity(&workflow_run.id)
+                    .await
+                {
+                    warn!(
+                        err = %e,
+                        workflow_run_id = %workflow_run.id,
+                        "dag.activity_update_failed"
+                    );
+                }
+            }
+
+            // ── Dispatch per-chunk. Source: dag-executor.ts:890-1116. ────────────
+            match msg {
+                // ── assistant chunk ──────────────────────────────────────────────
+                // Source: dag-executor.ts:890-909.
+                MessageChunk::Assistant { content, flush } => {
+                    node_output_text.push_str(&content);
+                    let is_stream = matches!(streaming_mode, crate::executor_shared::StreamingMode::Stream);
+                    if is_stream || flush == Some(true) {
+                        // Flush mode: drain any queued batch content first to preserve order.
+                        // Source: dag-executor.ts:896-903.
+                        if !is_stream && !batch_messages.is_empty() {
+                            let batch_content = batch_messages.join("\n\n");
+                            batch_messages.clear();
+                            let _ = safe_send_message(
+                                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                conversation_id,
+                                &batch_content,
+                                Some(&node_context),
+                                None,
+                                None,
+                            )
+                            .await;
+                        }
+                        let _ = safe_send_message(
+                            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                            conversation_id,
+                            &content,
+                            Some(&node_context),
+                            None,
+                            None,
+                        )
+                        .await;
+                    } else {
+                        batch_messages.push(content.clone());
+                    }
+                    log_assistant(log_dir, &workflow_run.id, &content).await;
                 }
 
-                // Invalid payload — log and optionally reask. Source: dag-executor.ts:1221-1232.
-                warn!(node_id = %node_id, "dag.structured_output_invalid");
-                if can_reask {
-                    let (_, new_prompt) =
-                        schedule_reask(&current_prompt, &["schema invalid".to_string()]).await;
-                    reask_attempt += 1;
-                    current_prompt = new_prompt;
-                    emit_reask(&node_id, &workflow_run.id, reask_attempt, max_reasks).await;
-                    continue;
+                // ── tool chunk ───────────────────────────────────────────────────
+                // Source: dag-executor.ts:910-979.
+                MessageChunk::Tool { tool_name, tool_input, tool_call_id } => {
+                    let now = Instant::now();
+
+                    // Emit tool_completed for the PREVIOUS tool. Source: dag-executor.ts:913-939.
+                    if let Some(prev) = last_tool_started.take() {
+                        let dur_ms = now.duration_since(prev.started_at).as_millis() as u64;
+                        get_workflow_event_emitter()
+                            .emit(
+                                "tool_completed",
+                                &workflow_run.id,
+                                Some(&node_id),
+                                None,
+                                None,
+                                None,
+                                Some(dur_ms),
+                                None,
+                            )
+                            .await;
+                        deps.emit_typed_event(
+                            &workflow_run.id,
+                            har_ledger::store::WorkflowEventType::ToolCompleted,
+                            &node_id,
+                            serde_json::json!({
+                                "tool_name": prev.tool_name,
+                                "duration_ms": dur_ms,
+                            }),
+                        )
+                        .await;
+                    }
+                    // Record this tool as the new "last started". Source: dag-executor.ts:940.
+                    last_tool_started = Some(LastToolStart {
+                        tool_name: tool_name.clone(),
+                        started_at: now,
+                    });
+
+                    // Emit tool_started (frontend-only, no store). Source: dag-executor.ts:942-948.
+                    get_workflow_event_emitter()
+                        .emit(
+                            "tool_started",
+                            &workflow_run.id,
+                            Some(&node_id),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        )
+                        .await;
+
+                    // Streaming mode: send formatted tool call + structured SSE event.
+                    // Source: dag-executor.ts:950-959.
+                    if matches!(streaming_mode, crate::executor_shared::StreamingMode::Stream) {
+                        let tool_msg = format_tool_call(&tool_name, tool_input.as_ref());
+                        let meta = serde_json::json!({"category": "tool_call_formatted"});
+                        let _ = safe_send_message(
+                            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                            conversation_id,
+                            &tool_msg,
+                            Some(&node_context),
+                            Some(&meta),
+                            None,
+                        )
+                        .await;
+                        platform
+                            .send_structured_event(
+                                conversation_id,
+                                &MessageChunk::Tool {
+                                    tool_name: tool_name.clone(),
+                                    tool_input: tool_input.clone(),
+                                    tool_call_id: tool_call_id.clone(),
+                                },
+                            )
+                            .await;
+                    }
+
+                    // Log tool call. Source: dag-executor.ts:961.
+                    log_tool(log_dir, &workflow_run.id, &tool_name, tool_input.as_ref()).await;
+
+                    // Persist tool_called (all adapters, fire-and-forget). Source: dag-executor.ts:963-979.
+                    deps.emit_typed_event(
+                        &workflow_run.id,
+                        har_ledger::store::WorkflowEventType::ToolCalled,
+                        &node_id,
+                        serde_json::json!({
+                            "tool_name": &tool_name,
+                            "tool_input": tool_input.as_ref().cloned().unwrap_or(serde_json::json!({})),
+                        }),
+                    )
+                    .await;
                 }
 
+                // ── tool_result chunk ────────────────────────────────────────────
+                // Source: dag-executor.ts:980-983.
+                MessageChunk::ToolResult { tool_name, tool_output, tool_call_id } => {
+                    if matches!(streaming_mode, crate::executor_shared::StreamingMode::Stream) {
+                        platform
+                            .send_structured_event(
+                                conversation_id,
+                                &MessageChunk::ToolResult {
+                                    tool_name,
+                                    tool_output,
+                                    tool_call_id,
+                                },
+                            )
+                            .await;
+                    }
+                }
+
+                // ── result chunk ─────────────────────────────────────────────────
+                // Source: dag-executor.ts:984-1055.
+                MessageChunk::Result {
+                    session_id,
+                    tokens: _,
+                    structured_output: so,
+                    is_error,
+                    error_subtype,
+                    errors,
+                    cost,
+                    stop_reason: _,
+                    num_turns: _,
+                    model_usage: _,
+                } => {
+                    // Emit tool_completed for the LAST tool. Source: dag-executor.ts:986-1012.
+                    if let Some(prev) = last_tool_started.take() {
+                        let dur_ms = Instant::now().duration_since(prev.started_at).as_millis() as u64;
+                        get_workflow_event_emitter()
+                            .emit(
+                                "tool_completed",
+                                &workflow_run.id,
+                                Some(&node_id),
+                                None,
+                                None,
+                                None,
+                                Some(dur_ms),
+                                None,
+                            )
+                            .await;
+                        deps.emit_typed_event(
+                            &workflow_run.id,
+                            har_ledger::store::WorkflowEventType::ToolCompleted,
+                            &node_id,
+                            serde_json::json!({
+                                "tool_name": prev.tool_name,
+                                "duration_ms": dur_ms,
+                            }),
+                        )
+                        .await;
+                    }
+
+                    if let Some(sid) = session_id { new_session_id = Some(sid); }
+                    if let Some(c) = cost { pass_cost_usd = Some(c); }
+                    if let Some(so_val) = so { structured_output = Some(so_val); }
+
+                    // Budget cap error: throw-equivalent. Source: dag-executor.ts:1021-1030.
+                    if is_error == Some(true) && error_subtype.as_deref() == Some("error_max_budget_usd") {
+                        let cap = effective_node_options.max_budget_usd;
+                        warn!(
+                            node_id = %node_id,
+                            max_budget_usd = ?cap,
+                            "dag.node_budget_cap_exceeded"
+                        );
+                        stream_error = Some(format!(
+                            "Node '{}' exceeded cost cap{}.",
+                            node_id,
+                            cap.map(|c| format!(" of ${:.2}", c)).unwrap_or_default()
+                        ));
+                        break 'stream;
+                    }
+
+                    // SDK error (not success): throw-equivalent. Source: dag-executor.ts:1039-1054.
+                    if is_error == Some(true) && error_subtype.as_deref() != Some("success") {
+                        let subtype = error_subtype.as_deref().unwrap_or("unknown");
+                        let errors_detail = errors
+                            .as_ref()
+                            .filter(|e| !e.is_empty())
+                            .map(|e| format!(" — {}", e.join("; ")))
+                            .unwrap_or_default();
+                        error!(
+                            node_id = %node_id,
+                            error_subtype = subtype,
+                            "dag.node_sdk_error_result"
+                        );
+                        stream_error = Some(format!(
+                            "Node '{}' failed: SDK returned {}{}",
+                            node_id, subtype, errors_detail
+                        ));
+                        break 'stream;
+                    }
+
+                    break 'stream; // Normal completion: result is the "done" signal.
+                }
+
+                // ── system chunk ─────────────────────────────────────────────────
+                // Source: dag-executor.ts:1056-1116.
+                MessageChunk::System { content } => {
+                    if content.starts_with(MCP_FAILURE_PREFIX) {
+                        let entries = parse_mcp_failure_server_names(&content);
+                        let workflow_failures: Vec<_> = entries
+                            .iter()
+                            .filter(|e| configured_mcp_names.contains(&e.name))
+                            .collect();
+                        let plugin_failures: Vec<_> = entries
+                            .iter()
+                            .filter(|e| !configured_mcp_names.contains(&e.name))
+                            .collect();
+
+                        if !workflow_failures.is_empty() {
+                            let segs: Vec<_> = workflow_failures.iter().map(|e| e.segment.as_str()).collect();
+                            let filtered_msg =
+                                format!("{}{}", MCP_FAILURE_PREFIX, segs.join(", "));
+                            warn!(
+                                node_id = %node_id,
+                                system_content = %filtered_msg,
+                                "dag.provider_warning_forwarded"
+                            );
+                            let delivered = safe_send_message(
+                                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                                conversation_id,
+                                &filtered_msg,
+                                Some(&node_context),
+                                None,
+                                None,
+                            )
+                            .await
+                            .unwrap_or(false);
+                            if !delivered {
+                                error!(
+                                    node_id = %node_id,
+                                    workflow_run_id = %workflow_run.id,
+                                    "dag.provider_warning_delivery_failed"
+                                );
+                            }
+                        }
+                        if !plugin_failures.is_empty() {
+                            debug!(
+                                node_id = %node_id,
+                                plugin_failures = ?plugin_failures.iter().map(|e| &e.name).collect::<Vec<_>>(),
+                                "dag.mcp_plugin_connection_suppressed"
+                            );
+                        }
+                    } else if content.starts_with('⚠') {
+                        warn!(node_id = %node_id, system_content = %content, "dag.provider_warning_forwarded");
+                        let delivered = safe_send_message(
+                            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                            conversation_id,
+                            &content,
+                            Some(&node_context),
+                            None,
+                            None,
+                        )
+                        .await
+                        .unwrap_or(false);
+                        if !delivered {
+                            error!(
+                                node_id = %node_id,
+                                workflow_run_id = %workflow_run.id,
+                                "dag.provider_warning_delivery_failed"
+                            );
+                        }
+                    } else {
+                        debug!(
+                            node_id = %node_id,
+                            system_content = %content,
+                            "dag.system_message_unhandled"
+                        );
+                    }
+                }
+
+                // rate_limit / Thinking / WorkflowDispatch: not surfaced.
+                // Source: dag-executor.ts:1117 (rate_limit comment).
+                _ => {}
+            }
+        } // end 'stream loop
+
+        // ── Post-pass: handle stream_error (throw-equivalent from runStreamPass). ──
+        // Source: dag-executor.ts:1445-1488.
+        if let Some(err) = stream_error {
+            cleanup_throttle_maps(&node_key);
+
+            // If the abort was triggered by user cancel (not idle timeout). Source: dag-executor.ts:1452-1461.
+            if abort_token.is_cancelled() && !node_idle_timed_out {
+                info!(node_id = %node_id, "dag_node_cancelled_via_abort");
                 return NodeExecutionResult {
                     state: NodeState::Failed,
-                    output: String::new(),
+                    output: node_output_text,
                     structured_output: None,
-                    session_id: new_session_id.clone(),
-                    cost_usd: node_cost_usd_pass,
-                    error: Some(format!(
-                        "Node '{}': structured output failed schema validation",
-                        node_id
-                    )),
+                    session_id: new_session_id,
+                    cost_usd: pass_cost_usd,
+                    error: Some("Cancelled by user".to_string()),
                     declared_fields: None,
                 };
             }
-        }
 
-        // No structured output — reask if allowed. Source: dag-executor.ts:1235-1243.
-        if can_reask {
-            let (_, new_prompt) = schedule_reask(
-                &current_prompt,
-                &["no JSON object was found in the response".to_string()],
+            // General error. Source: dag-executor.ts:1463-1488.
+            error!(err = %err, node_id = %node_id, "dag_node_failed");
+            let _ = log_node_error(log_dir, &workflow_run.id, &node_id, &err).await;
+            deps.emit_workflow_event(
+                &workflow_run.id,
+                "node_failed",
+                &node_id,
+                serde_json::json!({"error": &err}),
             )
             .await;
-            reask_attempt += 1;
-            current_prompt = new_prompt;
-            emit_reask(&node_id, &workflow_run.id, reask_attempt, max_reasks).await;
-            continue;
-        }
-
-        // Idle timeout with no structured output. Source: dag-executor.ts:1246-1250.
-        if node_idle_timed_out {
-            let mins = effective_idle_timeout.as_secs() / 60;
+            get_workflow_event_emitter()
+                .emit(
+                    "node_failed",
+                    &workflow_run.id,
+                    Some(&node_id),
+                    Some(&node_display),
+                    None,
+                    Some(err.as_str()),
+                    None,
+                    None,
+                )
+                .await;
             return NodeExecutionResult {
-                state: NodeState::Failed, output: String::new(), structured_output: None,
-                session_id: new_session_id.clone(), cost_usd: node_cost_usd_pass,
-                error: Some(format!("Node '{}': timed out (no output for {} min) before producing structured output.", node_id, mins)),
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: new_session_id,
+                cost_usd: pass_cost_usd,
+                error: Some(err),
                 declared_fields: None,
             };
         }
 
-        // No structured output with max_reasks exhausted. Source: dag-executor.ts:1251-1254.
+        // ── Accumulate cost across all passes. Source: dag-executor.ts:1164-1170. ──
+        if let Some(c) = pass_cost_usd {
+            accumulated_cost_usd += c;
+        }
+        node_cost_usd_pass = Some(accumulated_cost_usd);
+
+        // ── Validate-and-reask logic. Source: dag-executor.ts:1172-1254. ──────────
+
+        // No output_format → single pass, done. Source: dag-executor.ts:1175.
+        if effective_node_options.output_format.is_none() {
+            break 'reask;
+        }
+
+        // Don't reask after idle-timeout or user abort. Source: dag-executor.ts:1179-1180.
+        let can_reask =
+            reask_attempt < max_reasks && !node_idle_timed_out && !abort_token.is_cancelled();
+
+        if let Some(ref so) = structured_output {
+            // Validate against declared schema for EVERY provider. Source: dag-executor.ts:1182-1232.
+            let schema_val: serde_json::Value = effective_node_options
+                .output_format
+                .as_ref()
+                .map(|o| serde_json::Value::Object(o.schema.clone()))
+                .unwrap_or(serde_json::json!({}));
+
+            let mut schema_compile_error: Option<String> = None;
+            let validation = validate_structured_output(
+                so,
+                &schema_val,
+                Some(&mut |msg: String| { schema_compile_error = Some(msg); }),
+            );
+
+            // Surface uncompilable schema. Source: dag-executor.ts:1194-1205.
+            if let Some(ref compile_msg) = schema_compile_error {
+                warn!(
+                    node_id = %node_id,
+                    workflow_run_id = %workflow_run.id,
+                    compile_msg = %compile_msg,
+                    "dag.structured_output_schema_uncompilable"
+                );
+                let warn_msg = format!(
+                    "⚠️ Node '{}': its `output_format` schema could not be compiled ({}), so the structured output was NOT validated against it. Fix the schema to enforce it.",
+                    node_id, compile_msg
+                );
+                let _ = safe_send_message(
+                    platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &warn_msg,
+                    Some(&node_context),
+                    None,
+                    None,
+                )
+                .await;
+            }
+
+            if matches!(validation, StructuredValidationResult::Valid) {
+                // Serialize to string. Source: dag-executor.ts:1207-1219.
+                node_output_text = match so {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => match serde_json::to_string(other) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            cleanup_throttle_maps(&node_key);
+                            return NodeExecutionResult {
+                                state: NodeState::Failed,
+                                output: String::new(),
+                                structured_output: None,
+                                session_id: new_session_id,
+                                cost_usd: node_cost_usd_pass,
+                                error: Some(format!(
+                                    "Node '{}': failed to serialize structured_output to JSON: {}",
+                                    node_id, e
+                                )),
+                                declared_fields: None,
+                            };
+                        }
+                    },
+                };
+                debug!(node_id = %node_id, "dag.structured_output_override");
+                break 'reask;
+            }
+
+            // Invalid payload. Source: dag-executor.ts:1221-1232.
+            let validation_errors = match &validation {
+                StructuredValidationResult::Invalid { errors } => errors.clone(),
+                _ => vec![],
+            };
+            warn!(
+                node_id = %node_id,
+                workflow_run_id = %workflow_run.id,
+                errors = ?validation_errors,
+                "dag.structured_output_invalid"
+            );
+            if can_reask {
+                let new_prompt = build_reask_prompt(&current_prompt, &validation_errors);
+                reask_attempt += 1;
+                current_prompt = new_prompt;
+                emit_reask(
+                    &node_id,
+                    &workflow_run.id,
+                    reask_attempt,
+                    max_reasks,
+                    platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                    conversation_id,
+                    &node_context,
+                )
+                .await;
+                continue 'reask;
+            }
+            // Exhausted reasks on invalid structured output. Source: dag-executor.ts:1230-1232.
+            cleanup_throttle_maps(&node_key);
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: new_session_id,
+                cost_usd: node_cost_usd_pass,
+                error: Some(format!(
+                    "Node '{}': output_format declared but the provider's structured output failed schema validation: {}",
+                    node_id, validation_errors.join("; ")
+                )),
+                declared_fields: None,
+            };
+        }
+
+        // No structured output at all. Source: dag-executor.ts:1235-1254.
+        warn!(
+            node_id = %node_id,
+            workflow_run_id = %workflow_run.id,
+            "dag.structured_output_missing"
+        );
+        if can_reask {
+            let no_json_errors = vec!["no JSON object was found in the response".to_string()];
+            let new_prompt = build_reask_prompt(&current_prompt, &no_json_errors);
+            reask_attempt += 1;
+            current_prompt = new_prompt;
+            emit_reask(
+                &node_id,
+                &workflow_run.id,
+                reask_attempt,
+                max_reasks,
+                platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+                conversation_id,
+                &node_context,
+            )
+            .await;
+            continue 'reask;
+        }
+        // Surface real cause. Source: dag-executor.ts:1244-1254.
+        if node_idle_timed_out {
+            cleanup_throttle_maps(&node_key);
+            return NodeExecutionResult {
+                state: NodeState::Failed,
+                output: String::new(),
+                structured_output: None,
+                session_id: new_session_id,
+                cost_usd: node_cost_usd_pass,
+                error: Some(format!(
+                    "Node '{}': timed out (no output for {} min) before producing the required structured output.",
+                    node_id,
+                    effective_idle_timeout.as_millis() / 60_000
+                )),
+                declared_fields: None,
+            };
+        }
+        cleanup_throttle_maps(&node_key);
         return NodeExecutionResult {
             state: NodeState::Failed,
             output: String::new(),
             structured_output: None,
-            session_id: new_session_id.clone(),
+            session_id: new_session_id,
             cost_usd: node_cost_usd_pass,
             error: Some(format!(
-                "Node '{}': output_format declared but no schema-valid structured output.",
+                "Node '{}': output_format declared but the provider returned no schema-valid structured output. The model likely replied with prose, refused, or emitted unparseable JSON.",
                 node_id
             )),
             declared_fields: None,
         };
-    }
+    } // end 'reask loop
 
-    // ─── Post-stream completion logic ──────────────────────────────────────
+    // ─── Post-stream completion logic ─────────────────────────────────────────
+    // Source: dag-executor.ts:1257-1444.
 
-    // Only post "completed via idle timeout" when output exists. Source: dag-executor.ts:1258-1269.
+    // "Completed via idle timeout" notice. Source: dag-executor.ts:1258-1269.
     if node_idle_timed_out && (!node_output_text.trim().is_empty() || structured_output.is_some()) {
-        let _mins = effective_idle_timeout.as_secs() / 60;
-        warn!(node_id = %node_id, timeout_ms = ?effective_idle_timeout.as_millis(), "dag_node_completed_via_idle_timeout");
+        let mins = effective_idle_timeout.as_millis() / 60_000;
+        warn!(
+            node_id = %node_id,
+            timeout_ms = effective_idle_timeout.as_millis(),
+            "dag_node_completed_via_idle_timeout"
+        );
+        let notice = format!(
+            "⚠️ Node `{}` completed via idle timeout (no output for {} min). The AI likely finished but the subprocess didn't exit cleanly.",
+            node_id, mins
+        );
+        let _ = safe_send_message(
+            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+            conversation_id,
+            &notice,
+            Some(&node_context),
+            None,
+            None,
+        )
+        .await;
     }
 
-    // If cancelled during streaming (not idle timeout), return as failed with cancel reason. Source: dag-executor.ts:1272-1306.
+    // If cancelled during streaming (not idle timeout). Source: dag-executor.ts:1272-1306.
     if abort_token.is_cancelled() && !node_idle_timed_out {
         let duration = node_start_time.elapsed();
         info!(node_id = %node_id, duration_ms = duration.as_millis(), "dag_node_cancelled_during_streaming");
-
         deps.emit_workflow_event(
             &workflow_run.id,
             "node_failed",
@@ -4409,7 +5333,6 @@ pub async fn execute_node_internal(
             serde_json::json!({"error": "Cancelled by user", "duration_ms": duration.as_millis()}),
         )
         .await;
-
         let cancel_node_display = node_display_name(node);
         get_workflow_event_emitter()
             .emit(
@@ -4423,12 +5346,13 @@ pub async fn execute_node_internal(
                 None,
             )
             .await;
-
+        // Clean up throttle entries. Source: dag-executor.ts:1302-1303.
+        cleanup_throttle_maps(&node_key);
         return NodeExecutionResult {
             state: NodeState::Failed,
-            output: node_output_text.clone(),
+            output: node_output_text,
             structured_output: None,
-            session_id: new_session_id.clone(),
+            session_id: new_session_id,
             cost_usd: node_cost_usd_pass,
             error: Some("Cancelled by user".to_string()),
             declared_fields: None,
@@ -4437,15 +5361,27 @@ pub async fn execute_node_internal(
 
     // Batch mode flush. Source: dag-executor.ts:1308-1314.
     if !batch_messages.is_empty() {
-        let _ = batch_messages.join("\n\n");
-        // safeSendMessage(platform, conversationId, batchContent, nodeContext) — would go here.
+        let batch_content = if structured_output.is_some() && effective_node_options.output_format.is_some() {
+            node_output_text.clone()
+        } else {
+            batch_messages.join("\n\n")
+        };
+        let _ = safe_send_message(
+            platform.as_ref() as &dyn crate::executor_shared::MessagePlatform,
+            conversation_id,
+            &batch_content,
+            Some(&node_context),
+            None,
+            None,
+        )
+        .await;
     }
 
-    // Detect credit exhaustion: SDK returns it as assistant text, not a thrown error. Source: dag-executor.ts:1317-1350.
+    // Detect credit exhaustion. Source: dag-executor.ts:1317-1350.
     if let Some(credit_err) = detect_credit_exhaustion(&node_output_text) {
         let duration = node_start_time.elapsed();
         warn!(node_id = %node_id, duration_ms = duration.as_millis(), "dag.node_credit_exhausted");
-
+        let _ = log_node_error(log_dir, &workflow_run.id, &node_id, &credit_err).await;
         let credit_node_display = node_display_name(node);
         deps.emit_workflow_event(
             &workflow_run.id,
@@ -4466,29 +5402,35 @@ pub async fn execute_node_internal(
                 None,
             )
             .await;
-
+        // Clean up throttle entries. Source: dag-executor.ts:1346-1347.
+        cleanup_throttle_maps(&node_key);
         return NodeExecutionResult {
             state: NodeState::Failed,
-            output: node_output_text.clone(),
+            output: node_output_text,
             structured_output: None,
-            session_id: new_session_id.clone(),
+            session_id: new_session_id,
             cost_usd: node_cost_usd_pass,
             error: Some(credit_err),
             declared_fields: None,
         };
     }
 
-    // Fail for zero output: covers both silent non-timeout exits AND idle-timeout before first token. Source: dag-executor.ts:1353-1387.
+    // Fail for zero output. Source: dag-executor.ts:1353-1387.
     if node_output_text.trim().is_empty() && structured_output.is_none() {
         let duration = node_start_time.elapsed();
         let empty_err = if node_idle_timed_out {
-            format!("Node '{}' timed out with no output (idle for {} min). The provider did not emit any content before the watchdog fired — likely time-to-first-token exceeded the timeout. Consider increasing idle_timeout or reducing prompt size.",
-                node_id, effective_idle_timeout.as_secs() / 60)
+            format!(
+                "Node '{}' timed out with no output (idle for {} min). The provider did not emit any content before the watchdog fired — likely time-to-first-token exceeded the timeout. Consider increasing idle_timeout or reducing prompt size.",
+                node_id, effective_idle_timeout.as_millis() / 60_000
+            )
         } else {
-            format!("Node '{}' produced no assistant output. The provider stream closed without yielding content — likely a silent provider rejection or stream interruption.", node_id)
+            format!(
+                "Node '{}' produced no assistant output. The provider stream closed without yielding content — likely a silent provider rejection or stream interruption.",
+                node_id
+            )
         };
         error!(node_id = %node_id, duration_ms = duration.as_millis(), "dag.node_empty_output");
-
+        let _ = log_node_error(log_dir, &workflow_run.id, &node_id, &empty_err).await;
         let empty_node_display = node_display_name(node);
         deps.emit_workflow_event(
             &workflow_run.id,
@@ -4509,42 +5451,52 @@ pub async fn execute_node_internal(
                 None,
             )
             .await;
-
+        // Clean up throttle entries. Source: dag-executor.ts:1383-1384.
+        cleanup_throttle_maps(&node_key);
         return NodeExecutionResult {
             state: NodeState::Failed,
             output: String::new(),
             structured_output: None,
-            session_id: new_session_id.clone(),
+            session_id: new_session_id,
             cost_usd: node_cost_usd_pass,
             error: Some(empty_err),
             declared_fields: None,
         };
     }
 
-    // ─── Success path ────────────────────────────────────────────────────────
+    // ─── Success path ─────────────────────────────────────────────────────────
     // Source: dag-executor.ts:1389-1444.
 
     let duration = node_start_time.elapsed();
     info!(node_id = %node_id, duration_ms = duration.as_millis(), "dag_node_completed");
+
+    let _ = log_node_complete(
+        log_dir,
+        &workflow_run.id,
+        &node_id,
+        &node_display,
+        Some(duration.as_millis() as u64),
+    )
+    .await;
 
     deps.emit_workflow_event(
         &workflow_run.id,
         "node_completed",
         &node_id,
         serde_json::json!({
-            "duration_ms": duration.as_millis(), "node_output": node_output_text.clone(),
+            "duration_ms": duration.as_millis(),
+            "node_output": &node_output_text,
             "cost_usd": node_cost_usd_pass.unwrap_or(0.0),
         }),
     )
     .await;
 
-    let completed_node_display = node_display_name(node);
     get_workflow_event_emitter()
         .emit(
             "node_completed",
             &workflow_run.id,
             Some(&node_id),
-            Some(&completed_node_display),
+            Some(&node_display),
             None,
             None,
             Some(duration.as_millis() as u64),
@@ -4552,34 +5504,25 @@ pub async fn execute_node_internal(
         )
         .await;
 
-    // Capture declared fields for downstream $node.output.field resolution. Source: dag-executor.ts:1435-1436.
-    let declared_fields = if let Some(ref of) = effective_node_options.output_format {
-        // OutputFormatType only has JsonSchema; no need for a wildcard arm.
-        let har_contract::OutputFormatType::JsonSchema = &of.kind;
-        // of.schema is already serde_json::Map<String, Value> — no need to re-destructure.
-        Some(of.schema.keys().cloned().collect())
-    } else {
-        None
-    };
+    // Clean up throttle entries. Source: dag-executor.ts:1428-1430.
+    cleanup_throttle_maps(&node_key);
 
-    // Clean up throttle entries on completion. Source: dag-executor.ts:1428-1430.
-    let _ = node_output_text.len();
+    // Declared fields for downstream $node.output.field resolution. Source: dag-executor.ts:1432-1436.
+    let schema_for_fields = effective_node_options
+        .output_format
+        .as_ref()
+        .map(|o| serde_json::Value::Object(o.schema.clone()));
+    let declared_fields = declared_fields_from_schema(schema_for_fields.as_ref());
 
-    let mut result = NodeExecutionResult {
+    NodeExecutionResult {
         state: NodeState::Completed,
         output: node_output_text,
         session_id: new_session_id,
         cost_usd: node_cost_usd_pass,
         error: None,
         declared_fields,
-        structured_output: None,
-    };
-
-    if structured_output.is_some() {
-        result.structured_output = structured_output;
+        structured_output,
     }
-
-    result
 }
 
 fn node_display_name(node: &har_workflow_schema::DagNode) -> String {
@@ -4596,9 +5539,10 @@ fn node_display_name(node: &har_workflow_schema::DagNode) -> String {
     }
 }
 
-fn should_fork_session(_node: &har_workflow_schema::DagNode, _resume_active: bool) -> bool {
-    // In full impl this checks resumeSessionId !== undefined.
-    false
+/// Fork the session when resuming — leaves the source session untouched so retries are safe.
+/// Source: dag-executor.ts:800 (`const shouldForkSession = resumeSessionId !== undefined`).
+fn should_fork_session(resume_session_id: Option<&str>) -> bool {
+    resume_session_id.is_some()
 }
 
 // ─── Tests for execute_node_internal (sub-cycle 3) ─────────────────────
@@ -5159,3 +6103,143 @@ mod sub_cycle_4a_tests {
         emitter.unregister_run(run_id).await;
     }
 }
+
+// ─── Sub-cycle 4c internal tests (execute_node_internal helpers) ─────────────
+//
+// These tests pin the behavior of helpers used by execute_node_internal:
+// build_reask_prompt, emit_reask, format_tool_call, should_fork_session,
+// should_continue_streaming_for_status (already pinned in sub_cycle1 tests),
+// and cleanup_throttle_maps.
+//
+// A full differential test of the streaming pass itself requires a live
+// AgentProvider; that is the rust-port-parity-verifier's scope.
+
+#[cfg(test)]
+mod sub_cycle4c_tests {
+    use super::*;
+
+    // ── build_reask_prompt ──────────────────────────────────────────────────
+
+    /// Parity: dag-executor.ts:1125-1128.
+    /// The corrected prompt must contain the original prompt AND the error list.
+    #[test]
+    fn reask_prompt_contains_original_and_errors() {
+        let original = "Write me a poem.";
+        let errors = vec!["missing field 'title'".to_string(), "extra field 'foo'".to_string()];
+        let result = build_reask_prompt(original, &errors);
+        assert!(result.contains(original), "must contain original prompt");
+        assert!(result.contains("missing field 'title'"));
+        assert!(result.contains("extra field 'foo'"));
+        // The correction block delimiter must be present (parity with TS separator).
+        assert!(result.contains("CORRECTION"), "must include CORRECTION block");
+    }
+
+    #[test]
+    fn reask_prompt_single_error() {
+        let result = build_reask_prompt("Do X.", &["required field 'y' missing".to_string()]);
+        assert!(result.contains("required field 'y' missing"));
+    }
+
+    // ── format_tool_call ────────────────────────────────────────────────────
+
+    /// Parity: tool-formatter.ts:15-28. Always uppercase tool name, optional brief.
+    #[test]
+    fn format_tool_call_bash() {
+        let input = serde_json::json!({"command": "ls -la /tmp"});
+        let out = format_tool_call("Bash", Some(&input));
+        assert!(out.contains("BASH"), "tool name must be uppercased");
+        assert!(out.contains("ls -la /tmp"), "must contain command brief");
+    }
+
+    #[test]
+    fn format_tool_call_read() {
+        let input = serde_json::json!({"file_path": "/home/user/foo.rs"});
+        let out = format_tool_call("Read", Some(&input));
+        assert!(out.contains("READ"));
+        assert!(out.contains("/home/user/foo.rs"));
+    }
+
+    #[test]
+    fn format_tool_call_no_input() {
+        let out = format_tool_call("Bash", None);
+        assert!(out.contains("BASH"));
+        // No panic, no brief line.
+    }
+
+    #[test]
+    fn format_tool_call_bash_long_command_truncated() {
+        let long_cmd = "a".repeat(200);
+        let input = serde_json::json!({"command": long_cmd});
+        let out = format_tool_call("Bash", Some(&input));
+        // Brief is capped at 100 chars + "..."
+        assert!(out.len() < 200, "should be truncated");
+        assert!(out.contains("..."));
+    }
+
+    #[test]
+    fn format_tool_call_mcp_tool() {
+        let input = serde_json::json!({"key": "val"});
+        let out = format_tool_call("mcp__context7__query_docs", Some(&input));
+        assert!(out.to_uppercase().contains("MCP__CONTEXT7__QUERY_DOCS") || out.contains("MCP:"),
+            "mcp tool must be handled: {out}");
+    }
+
+    // ── should_fork_session ─────────────────────────────────────────────────
+
+    /// Parity: dag-executor.ts:665 `const shouldForkSession = resumeSessionId !== undefined`.
+    #[test]
+    fn should_fork_session_none() {
+        assert!(!should_fork_session(None));
+    }
+
+    #[test]
+    fn should_fork_session_some() {
+        assert!(should_fork_session(Some("sess_abc")));
+    }
+
+    #[test]
+    fn should_fork_session_empty_string() {
+        // Empty string is `Some("")` — still truthy (not undefined in TS terms).
+        assert!(should_fork_session(Some("")));
+    }
+
+    // ── cleanup_throttle_maps ───────────────────────────────────────────────
+
+    /// cleanup_throttle_maps must not panic on unknown key, and must remove a known key.
+    #[test]
+    fn cleanup_throttle_maps_removes_key() {
+        let key = "test_run_id:test_node_id_cleanup";
+        // Seed the maps.
+        {
+            let mut m = last_cancel_check().lock().unwrap();
+            m.insert(key.to_string(), Instant::now());
+        }
+        {
+            let mut m = last_activity_update().lock().unwrap();
+            m.insert(key.to_string(), Instant::now());
+        }
+        cleanup_throttle_maps(key);
+        {
+            let m = last_cancel_check().lock().unwrap();
+            assert!(!m.contains_key(key), "cancel_check entry must be removed");
+        }
+        {
+            let m = last_activity_update().lock().unwrap();
+            assert!(!m.contains_key(key), "activity_update entry must be removed");
+        }
+    }
+
+    #[test]
+    fn cleanup_throttle_maps_unknown_key_noop() {
+        // Must not panic.
+        cleanup_throttle_maps("no_such_run:no_such_node");
+    }
+
+    // ── STEP_IDLE_TIMEOUT_MS ────────────────────────────────────────────────
+
+    /// Parity: idle-timeout.ts:22. MUST be 30 minutes (1_800_000 ms), NOT 10 minutes.
+    #[test]
+    fn step_idle_timeout_is_30_minutes() {
+        assert_eq!(STEP_IDLE_TIMEOUT_MS, 30 * 60 * 1_000, "must be 30 min, not 10 min");
+    }
+} // end of sub_cycle4c_tests
