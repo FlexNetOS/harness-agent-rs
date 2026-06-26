@@ -552,12 +552,63 @@ pub(crate) fn is_transient_node_error(error_message: &str) -> bool {
 
 // ─── resolveNodeProviderAndModel — async helper ────────────────────────────────
 
+/// Workflow-level Claude SDK options — per-node overrides take precedence via `??`.
+///
+/// Source: `WorkflowLevelOptions` (dag-executor.ts:207-214), built from the workflow
+/// definition at dag-executor.ts:2781-2787 (`{ effort, thinking, fallbackModel, betas, sandbox }`).
+///
+/// NOTE: `effort`/`thinking`/`betas`/`sandbox` are not yet plumbed through
+/// `execute_dag_workflow`'s signature (its outer caller, SV-01/executor.ts, is unported) — they
+/// arrive as `None` today and reduce the cascade to the node-level values. This is an outer-caller
+/// plumbing limitation (same class as code-review finding #10), NOT a drop inside this unit:
+/// the `node.x ?? wlo.x` precedence is implemented faithfully and SV-01 only needs to populate
+/// the struct. `fallback_model` IS plumbed (from the workflow fallback model).
+#[derive(Debug, Clone, Default)]
+pub struct WorkflowLevelOptions {
+    pub effort: Option<har_workflow_schema::EffortLevel>,
+    pub thinking: Option<har_workflow_schema::ThinkingConfig>,
+    pub fallback_model: Option<String>,
+    pub betas: Option<Vec<String>>,
+    pub sandbox: Option<har_workflow_schema::SandboxSettings>,
+}
+
+/// Lowercase wire string for a Claude `EffortLevel` (matches `z.enum(['low','medium','high','max'])`
+/// serialization used for `nodeConfig.effort`). Source: dag-node.ts:40-42.
+fn effort_level_to_str(e: &har_workflow_schema::EffortLevel) -> String {
+    match e {
+        har_workflow_schema::EffortLevel::Low => "low",
+        har_workflow_schema::EffortLevel::Medium => "medium",
+        har_workflow_schema::EffortLevel::High => "high",
+        har_workflow_schema::EffortLevel::Max => "max",
+    }
+    .to_string()
+}
+
+/// Convert a workflow-schema `AgentDefinition` into the contract `InlineAgentDefinition`
+/// carried in `NodeConfig.agents` (field-by-field; the two structs share the same shape but
+/// use different serde wire names, so a `serde_json` round-trip would silently drop
+/// `disallowed_tools`/`max_turns`). Source: dag-executor.ts:550 (`agents: node.agents`).
+fn inline_agent_from_def(
+    a: &har_workflow_schema::AgentDefinition,
+) -> har_contract::InlineAgentDefinition {
+    har_contract::InlineAgentDefinition {
+        description: a.description.clone(),
+        prompt: a.prompt.clone(),
+        model: a.model.clone(),
+        tools: a.tools.clone(),
+        disallowed_tools: a.disallowed_tools.clone(),
+        skills: a.skills.clone(),
+        max_turns: a.max_turns,
+    }
+}
+
 /// Resolve per-node provider and model.
 ///
 /// Node-level overrides take precedence over workflow defaults.
 /// Provider-agnostic: builds universal base options + raw nodeConfig.
 /// The provider internally translates nodeConfig to SDK-specific options.
-/// Capability warnings inform users when features are unsupported.
+/// Capability warnings inform users when features are unsupported and are delivered to the
+/// user via `safe_send_message` (G2/G4/G5), matching the TypeScript source.
 ///
 /// This is the full async version that also handles provider conflict warnings.
 /// For sync-only testing, use `resolve_node_provider_and_model_sync`.
@@ -572,10 +623,13 @@ pub async fn resolve_node_provider_and_model(
     config_assistants: &std::collections::HashMap<String, serde_json::Value>,
     node_system_prompt: Option<&str>,
     node_max_budget_usd: Option<f64>,
-    node_fallback_model: Option<&str>,
     node_output_format: Option<&serde_json::Value>,
     ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
     workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
+    workflow_level_options: &WorkflowLevelOptions,
+    platform: &dyn WorkflowPlatform,
+    conversation_id: &str,
+    workflow_run_id: &str,
 ) -> Result<ResolvedProviderAndModel, String> {
     let configured_provider = node.base().provider.as_deref().unwrap_or(workflow_provider);
     let mut provider = configured_provider.to_string();
@@ -597,17 +651,61 @@ pub async fn resolve_node_provider_and_model(
                     preset = Some(preset_type);
                     provider = preset.as_ref().unwrap().provider.clone();
                     model = Some(preset.as_ref().unwrap().model.clone());
+
+                    // G4 — model/provider conflict: the node explicitly sets a provider that
+                    // differs from the provider the model reference resolves to. Warn AND deliver
+                    // the warning to the user. Source: dag-executor.ts:421-443.
+                    if let Some(node_provider) = node.base().provider.as_deref() {
+                        if node_provider != provider {
+                            warn!(
+                                node_id = node.id(),
+                                configured_provider = node_provider,
+                                resolved_provider = %provider,
+                                model_ref = %node_model,
+                                "dag.model_provider_conflict"
+                            );
+                            let msg = format!(
+                                "Warning: Node '{}' sets provider '{}' but model '{}' resolves to provider '{}' — using '{}'.",
+                                node.id(),
+                                node_provider,
+                                node_model,
+                                provider,
+                                provider
+                            );
+                            let delivered = match safe_send_message(
+                                platform,
+                                conversation_id,
+                                &msg,
+                                Some(&SendMessageContext {
+                                    workflow_id: Some(workflow_run_id.to_string()),
+                                    node_name: Some(node.id().to_string()),
+                                }),
+                                None,
+                                None,
+                            )
+                            .await
+                            {
+                                Ok(d) => d,
+                                // FATAL delivery error → rethrow as a resolve Err, matching TS
+                                // safeSendMessage rethrow (executor-shared.ts:632-634); the
+                                // `await` at dag-executor.ts:431 has no try/catch.
+                                Err(crate::executor_shared::SafeSendError::Fatal(e)) => {
+                                    return Err(format!(
+                                        "Platform authentication/permission error: {e}"
+                                    ));
+                                }
+                                Err(_) => false,
+                            };
+                            if !delivered {
+                                error!(
+                                    node_id = node.id(),
+                                    workflow_run_id,
+                                    "dag.model_provider_conflict_warning_delivery_failed"
+                                );
+                            }
+                        }
+                    }
                 }
-            }
-            if node.base().provider.as_deref() != Some(&provider) {
-                warn!(
-                    node_id = node.id(),
-                    configured_provider,
-                    resolved_provider = %provider,
-                    model_ref = %node_model,
-                    "dag.model_provider_conflict"
-                );
-                // Warning delivery would require platform — skip in this utility-only scope.
             }
         }
     }
@@ -646,8 +744,9 @@ pub async fn resolve_node_provider_and_model(
         None
     };
 
-    // Get provider capabilities.
-    let _caps = match har_provider::get_provider_capabilities(&provider) {
+    // Get provider capabilities for capability warnings (static lookup, no instantiation).
+    // Source: dag-executor.ts:468.
+    let caps = match har_provider::get_provider_capabilities(&provider) {
         Ok(c) => c,
         Err(_) => {
             return Err(format!(
@@ -658,43 +757,47 @@ pub async fn resolve_node_provider_and_model(
         }
     };
 
-    // Build capability warnings list.
+    // G1 — real capability checking. Each entry: (field label, capability supported, is_set).
+    // Warn ONLY when the option is set AND the provider lacks the capability — `isSet && !caps[cap]`.
+    // Source: dag-executor.ts:471-498.
     let base = node.base();
-    let cap_checks: Vec<(&str, bool)> = vec![
+    let effort_set = base.effort.is_some() || workflow_level_options.effort.is_some();
+    let thinking_set = base.thinking.is_some() || workflow_level_options.thinking.is_some();
+    let fallback_set =
+        base.fallback_model.is_some() || workflow_level_options.fallback_model.is_some();
+    let sandbox_set = base.sandbox.is_some() || workflow_level_options.sandbox.is_some();
+    let env_set = config_env_vars.map(|m| !m.is_empty()).unwrap_or(false);
+
+    let cap_checks: [(&str, bool, bool); 11] = [
         (
             "allowed_tools/denied_tools",
+            caps.tool_restrictions,
             base.allowed_tools.is_some() || base.denied_tools.is_some(),
         ),
-        ("hooks", base.hooks.is_some()),
-        ("mcp", base.mcp.is_some()),
+        ("hooks", caps.hooks, base.hooks.is_some()),
+        ("mcp", caps.mcp, base.mcp.is_some()),
         (
             "skills",
+            caps.skills,
             base.skills.as_ref().map(|s| !s.is_empty()).unwrap_or(false),
         ),
-        ("agents", base.agents.is_some()),
-        (
-            "effort",
-            (base.effort).is_some() || config_env_vars.is_some(),
-        ), // simplified: effort from workflow level always checked
-        (
-            "thinking",
-            (base.thinking).is_some() || config_env_vars.is_some(),
-        ), // simplified
-        ("maxBudgetUsd", node_max_budget_usd.is_some()),
-        ("fallbackModel", (node_fallback_model).is_some()),
-        ("sandbox", (base.sandbox).is_some()),
-        (
-            "env",
-            config_env_vars.map(|m| !m.is_empty()).unwrap_or(false),
-        ),
+        ("agents", caps.agents, base.agents.is_some()),
+        ("effort", caps.effort_control, effort_set),
+        ("thinking", caps.thinking_control, thinking_set),
+        ("maxBudgetUsd", caps.cost_control, base.max_budget_usd.is_some()),
+        ("fallbackModel", caps.fallback_model, fallback_set),
+        ("sandbox", caps.sandbox, sandbox_set),
+        ("env", caps.env_injection, env_set),
     ];
 
     let unsupported: Vec<&str> = cap_checks
-        .into_iter()
-        .filter(|(_, is_set)| *is_set)
-        .map(|(field, _)| field)
-        .collect(); // simplified — real impl checks caps fields
+        .iter()
+        .filter(|(_, supported, is_set)| *is_set && !*supported)
+        .map(|(field, _, _)| *field)
+        .collect();
 
+    // G2/G3 — deliver each capability warning to the user; log on delivery failure.
+    // Source: dag-executor.ts:500-511.
     if !unsupported.is_empty() {
         warn!(
             node_id = node.id(),
@@ -702,14 +805,80 @@ pub async fn resolve_node_provider_and_model(
             ?unsupported,
             "dag.unsupported_capabilities"
         );
+        let it_them = if unsupported.len() == 1 { "it" } else { "them" };
+        let these_will = if unsupported.len() == 1 {
+            "this will be"
+        } else {
+            "these will be"
+        };
+        let msg = format!(
+            "Warning: Node '{}' uses {} but {} doesn't support {} — {} ignored.",
+            node.id(),
+            unsupported.join(", "),
+            provider,
+            it_them,
+            these_will
+        );
+        let delivered = match safe_send_message(
+            platform,
+            conversation_id,
+            &msg,
+            Some(&SendMessageContext {
+                workflow_id: Some(workflow_run_id.to_string()),
+                node_name: Some(node.id().to_string()),
+            }),
+            None,
+            None,
+        )
+        .await
+        {
+            Ok(d) => d,
+            // FATAL delivery error → rethrow as a resolve Err (node fails before execution),
+            // matching TS safeSendMessage rethrow (executor-shared.ts:632-634). The `await`
+            // at dag-executor.ts:502 has no try/catch, so the throw propagates out of resolve.
+            Err(crate::executor_shared::SafeSendError::Fatal(e)) => {
+                return Err(format!("Platform authentication/permission error: {e}"));
+            }
+            Err(_) => false,
+        };
+        if !delivered {
+            error!(
+                node_id = node.id(),
+                workflow_run_id,
+                "dag.capability_warning_delivery_failed"
+            );
+        }
     }
 
-    // Agent + skills ID collision warning.
+    // G5 — agents + skills ID collision: user-defined `dag-node-skills` agent silently overrides
+    // Archon's skills wrapper. Warn AND deliver the reserved-ID message to the user.
+    // Source: dag-executor.ts:516-528.
     if let Some(agents) = &base.agents {
         if agents.contains_key("dag-node-skills")
             && base.skills.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
         {
             warn!(node_id = node.id(), "dag.agents_skills_id_collision");
+            let msg = format!(
+                "Warning: Node '{}' defines an agent with reserved ID 'dag-node-skills' AND uses 'skills:'. Your inline agent overrides Archon's automatic skills wrapper — the 'skills:' field will NOT take effect. Rename the agent or remove 'skills:' to fix.",
+                node.id()
+            );
+            // TS (dag-executor.ts:522) does not inspect the delivered flag, but the `await`
+            // still propagates a FATAL throw out of resolve — so rethrow on Fatal, ignore the rest.
+            if let Err(crate::executor_shared::SafeSendError::Fatal(e)) = safe_send_message(
+                platform,
+                conversation_id,
+                &msg,
+                Some(&SendMessageContext {
+                    workflow_id: Some(workflow_run_id.to_string()),
+                    node_name: Some(node.id().to_string()),
+                }),
+                None,
+                None,
+            )
+            .await
+            {
+                return Err(format!("Platform authentication/permission error: {e}"));
+            }
         }
     }
 
@@ -728,8 +897,13 @@ pub async fn resolve_node_provider_and_model(
     if let Some(budget) = node_max_budget_usd {
         base_options.max_budget_usd = Some(budget);
     }
-    if let Some(fb) = node_fallback_model {
-        base_options.fallback_model = Some(fb.to_string());
+    // fb = node.fallbackModel ?? workflowLevelOptions.fallbackModel. Source: dag-executor.ts:538.
+    let fb = base
+        .fallback_model
+        .clone()
+        .or_else(|| workflow_level_options.fallback_model.clone());
+    if let Some(ref fb) = fb {
+        base_options.fallback_model = Some(fb.clone());
     }
     if let Some(fmt) = node_output_format {
         use har_contract::OutputFormat;
@@ -742,7 +916,7 @@ pub async fn resolve_node_provider_and_model(
         });
     }
 
-    // Build node config. node_id is set at initialization; other fields populated conditionally.
+    // Build raw nodeConfig — provider translates internally. Source: dag-executor.ts:545-561.
     let mut node_config = har_contract::NodeConfig {
         node_id: Some(node.id().to_string()),
         ..har_contract::NodeConfig::default()
@@ -750,11 +924,21 @@ pub async fn resolve_node_provider_and_model(
     if let Some(ref mcp) = base.mcp {
         node_config.mcp = Some(mcp.clone());
     }
-    if base.hooks.is_some() {
-        // Full hooks serialization mapping deferred to sub-cycle 3 (WorkflowNodeHooks → Value).
+    // G7 — node hooks serialization. WorkflowNodeHooks serializes to the event-keyed map shape
+    // the provider's hook builder consumes (`{ "PreToolUse": [...], ... }`). Source: nodeConfig.hooks.
+    if let Some(ref hooks) = base.hooks {
+        node_config.hooks = serde_json::to_value(hooks).ok();
     }
     if let Some(ref skills) = base.skills {
         node_config.skills = Some(skills.clone());
+    }
+    if let Some(ref agents) = base.agents {
+        node_config.agents = Some(
+            agents
+                .iter()
+                .map(|(k, a)| (k.clone(), inline_agent_from_def(a)))
+                .collect(),
+        );
     }
     if let Some(ref at) = base.allowed_tools {
         node_config.allowed_tools = Some(at.clone());
@@ -762,22 +946,78 @@ pub async fn resolve_node_provider_and_model(
     if let Some(ref dt) = base.denied_tools {
         node_config.denied_tools = Some(dt.clone());
     }
-
-    // Apply preset options (thinking, effort cascade).
-    let assistant_config: Option<std::collections::HashMap<String, serde_json::Value>> = None;
-    if let Some(preset_ref) = &effective_preset {
-        if let Some(thinking) = &preset_ref.thinking {
-            // Would set node_config.thinking here.
-            let _ = thinking;
-        }
+    // effort/thinking/sandbox/betas: node-level value, falling back to the workflow level (`??`).
+    // Source: dag-executor.ts:553-556. These are the cascade BASELINE; applyPresetOptions may
+    // override effort / add modelReasoningEffort below.
+    node_config.effort = base
+        .effort
+        .as_ref()
+        .or(workflow_level_options.effort.as_ref())
+        .map(effort_level_to_str);
+    if let Some(thinking) = base
+        .thinking
+        .as_ref()
+        .or(workflow_level_options.thinking.as_ref())
+    {
+        node_config.thinking = serde_json::to_value(thinking).ok();
     }
+    if let Some(sandbox) = base
+        .sandbox
+        .as_ref()
+        .or(workflow_level_options.sandbox.as_ref())
+    {
+        node_config.sandbox = serde_json::to_value(sandbox).ok();
+    }
+    if let Some(betas) = base.betas.as_ref().or(workflow_level_options.betas.as_ref()) {
+        node_config.betas = Some(betas.clone());
+    }
+    if let Some(of) = base.output_format.as_ref() {
+        node_config.output_format = Some(of.clone().into_iter().collect());
+    }
+    if let Some(mb) = base.max_budget_usd {
+        node_config.max_budget_usd = Some(mb);
+    }
+    if let Some(sp) = base.system_prompt.as_ref() {
+        node_config.system_prompt = Some(har_contract::SystemPromptInput::Single(sp.clone()));
+    }
+    if let Some(fb) = fb {
+        node_config.fallback_model = Some(fb);
+    }
+
+    // assistantConfig — spread the provider's assistant defaults, then the preset cascade may add
+    // `modelReasoningEffort`. Source: dag-executor.ts:564.
+    let mut assistant_config: std::collections::HashMap<String, serde_json::Value> =
+        match config_assistants.get(&provider).and_then(|v| v.as_object()) {
+            Some(obj) => obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            None => std::collections::HashMap::new(),
+        };
+
+    // G6 — preset thinking/effort cascade. Source: dag-executor.ts:110-152, 565-572.
+    apply_preset_options(
+        &provider,
+        effective_preset.as_ref(),
+        base.thinking.as_ref(),
+        base.effort.as_ref(),
+        workflow_level_options.thinking.as_ref(),
+        workflow_level_options.effort.as_ref(),
+        node.id(),
+        &mut node_config,
+        &mut assistant_config,
+    );
+
+    // Embed nodeConfig + assistantConfig into the single options bag the provider receives —
+    // matching TS `options = { ...baseOptions, nodeConfig, assistantConfig }` (dag-executor.ts:574-578).
+    // The dispatch forwards only `base_options`, so without this the resolved config never reaches
+    // the provider call.
+    base_options.node_config = Some(node_config);
+    base_options.assistant_config = Some(assistant_config);
 
     Ok(ResolvedProviderAndModel {
         provider,
         model,
         base_options,
-        node_config: Some(node_config),
-        assistant_config,
+        node_config: None,
+        assistant_config: None,
     })
 }
 
@@ -858,67 +1098,72 @@ pub struct ResolvedProviderAndModel {
 
 // ─── applyPresetOptions helper ─────────────────────────────────────────────────
 
-/// Apply preset options to node config during `resolve_node_provider_and_model`.
+/// Apply preset thinking/effort cascade onto `node_config` / `assistant_config`.
 ///
 /// Cascade rules (dag-executor.ts:110-152):
-/// 1. If preset exists and node/workflow don't already set thinking → apply preset.thinking.
-/// 2. If preset.effort is undefined OR node/workflow already sets effort → return early.
+/// 1. If `preset.thinking` is set AND neither node nor workflow set `thinking` → apply it to
+///    `nodeConfig.thinking`.
+/// 2. If `preset.effort` is unset, OR node/workflow already set `effort` → return early.
 /// 3. Route the preset effort through the provider's routing table.
-///    On mismatch → warn + return (fail-loud).
-/// 4. Apply routed value to either nodeConfig.effort or assistantConfig.modelReasoningEffort.
+///    On cross-provider mismatch → warn (`dag.preset_effort_unsupported`) + return (fail-loud).
+/// 4. Apply the routed value to either `nodeConfig.effort` (field `effort`) or
+///    `assistantConfig.modelReasoningEffort` (field `modelReasoningEffort`).
 ///
 /// Source: dag-executor.ts:110-152.
-#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_preset_options(
     provider: &str,
     preset: Option<&crate::model_validation::ModelAliasPreset>,
+    node_thinking: Option<&har_workflow_schema::ThinkingConfig>,
     node_effort: Option<&har_workflow_schema::EffortLevel>,
+    workflow_thinking: Option<&har_workflow_schema::ThinkingConfig>,
     workflow_effort: Option<&har_workflow_schema::EffortLevel>,
-) -> PresetEffect {
-    let Some(preset_ref) = preset else {
-        return PresetEffect::None;
+    node_id: &str,
+    node_config: &mut har_contract::NodeConfig,
+    assistant_config: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    let Some(preset) = preset else {
+        return;
     };
 
-    // Rule 1: Apply thinking if unset at both node and workflow level.
-    if preset_ref.thinking.is_some() && node_effort.is_none() && workflow_effort.is_none() {
-        // Thinking would be set on the node config (handled upstream).
+    // Rule 1: apply preset.thinking only when unset at both node and workflow level.
+    // Source: dag-executor.ts:120-126.
+    if let Some(preset_thinking) = preset.thinking.as_ref() {
+        if node_thinking.is_none() && workflow_thinking.is_none() {
+            node_config.thinking = serde_json::to_value(preset_thinking).ok();
+        }
     }
 
-    // Rule 2: If effort is undefined or already set, return early.
-    let preset_effort = match &preset_ref.effort {
-        Some(e) => e,
-        None => return PresetEffect::None,
+    // Rule 2: if preset.effort is unset, or effort already set at node/workflow level → return.
+    // Source: dag-executor.ts:128-134.
+    let Some(preset_effort) = preset.effort.as_deref() else {
+        return;
     };
-
     if node_effort.is_some() || workflow_effort.is_some() {
-        return PresetEffect::None;
+        return;
     }
 
-    // Rule 3: Route through provider.
-    let routed = crate::model_validation::route_preset_effort(provider, preset_effort);
-    let Some(routed_val) = routed else {
-        warn!(provider, effort = ?preset_ref.effort, "dag.preset_effort_unsupported");
-        return PresetEffect::None;
+    // Rule 3: route the effort through the provider; warn-and-skip on cross-provider mismatch.
+    // Source: dag-executor.ts:136-151.
+    let Some(routed) = crate::model_validation::route_preset_effort(provider, preset_effort) else {
+        warn!(
+            provider,
+            effort = preset_effort,
+            node_id,
+            "dag.preset_effort_unsupported"
+        );
+        return;
     };
 
-    // The routed value is a raw effort string (e.g., "high", "max").
-    // Providers translate these to SDK-specific values internally.
-    if routed_val.field == crate::model_validation::EffortField::Effort {
-        PresetEffect::Direct(routed_val.value.clone())
+    // Rule 4: routed value is a raw effort string; providers translate it internally.
+    if routed.field == crate::model_validation::EffortField::Effort {
+        node_config.effort = Some(routed.value);
     } else {
-        PresetEffect::Assistant(routed_val.value.clone())
+        assistant_config.insert(
+            "modelReasoningEffort".to_string(),
+            serde_json::Value::String(routed.value),
+        );
     }
-}
-
-/// Result of preset option application.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub(crate) enum PresetEffect {
-    None,
-    /// Effort string to set directly on node config.effort.
-    Direct(String),
-    /// Effort string to set as modelReasoningEffort in assistant config.
-    Assistant(String),
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
@@ -946,6 +1191,20 @@ mod tests {
         assert_eq!(STRUCTURED_OUTPUT_MAX_REASKS, 3);
         assert_eq!(SUBPROCESS_DEFAULT_TIMEOUT, 120_000);
         assert_eq!(NODE_OUTPUT_FILE_THRESHOLD, 32_768);
+    }
+
+    // #2 (code-review WF-09-s5a): the between-layer workflow-stopped status string must use the
+    // exhaustive shared helper — every variant maps to its exact lowercase wire string, including
+    // Pending → "pending" (a local match collapsing it to "unknown" is a dropped branch).
+    #[test]
+    fn workflow_run_status_str_is_exhaustive_incl_pending() {
+        use har_workflow_schema::WorkflowRunStatus::*;
+        assert_eq!(workflow_run_status_str(&Pending), "pending");
+        assert_eq!(workflow_run_status_str(&Running), "running");
+        assert_eq!(workflow_run_status_str(&Paused), "paused");
+        assert_eq!(workflow_run_status_str(&Completed), "completed");
+        assert_eq!(workflow_run_status_str(&Failed), "failed");
+        assert_eq!(workflow_run_status_str(&Cancelled), "cancelled");
     }
 
     // ─── parse_mcp_failure_server_names ─────────────────────────────────────────
@@ -3491,7 +3750,16 @@ pub async fn execute_dag_workflow(
             let config_assistants_owned = config_assistants.clone();
             let node_system_prompt_owned = node_system_prompt.map(str::to_string);
             let node_max_budget_usd_copy = node_max_budget_usd;    // Option<f64>: Copy
-            let node_fallback_model_owned = node_fallback_model.map(str::to_string);
+            // workflowLevelOptions (dag-executor.ts:2781-2787). effort/thinking/betas/sandbox are
+            // not yet plumbed through execute_dag_workflow's signature (its outer caller SV-01 is
+            // unported) → None; fallbackModel is the workflow-level fallback model param.
+            let workflow_level_options_owned = WorkflowLevelOptions {
+                effort: None,
+                thinking: None,
+                fallback_model: node_fallback_model.map(str::to_string),
+                betas: None,
+                sandbox: None,
+            };
             let node_output_format_owned = node_output_format.cloned();
             let ai_profile_owned = ai_profile.cloned();
             let workflow_preset_owned = workflow_preset.cloned();
@@ -3856,10 +4124,13 @@ pub async fn execute_dag_workflow(
                             &config_assistants_owned,
                             node_system_prompt_owned.as_deref(),
                             node_max_budget_usd_copy,
-                            node_fallback_model_owned.as_deref(),
                             node_output_format_owned.as_ref(),
                             ai_profile_owned.as_ref(),
                             workflow_preset_owned.as_ref(),
+                            &workflow_level_options_owned,
+                            platform_clone.as_ref() as &dyn WorkflowPlatform,
+                            &conversation_id_owned,
+                            &workflow_run_id,
                         ).await;
 
                         let resolved = match resolve_result {
@@ -4134,10 +4405,13 @@ pub async fn execute_dag_workflow(
                             &config_assistants_owned,
                             node_system_prompt_owned.as_deref(),
                             node_max_budget_usd_copy,
-                            node_fallback_model_owned.as_deref(),
                             node_output_format_owned.as_ref(),
                             ai_profile_owned.as_ref(),
                             workflow_preset_owned.as_ref(),
+                            &workflow_level_options_owned,
+                            platform_clone.as_ref() as &dyn WorkflowPlatform,
+                            &conversation_id_owned,
+                            &workflow_run_id,
                         ).await;
 
                         let resolved = match resolve_result {
@@ -4234,6 +4508,7 @@ pub async fn execute_dag_workflow(
                             issue_context_owned.as_deref(),
                             ai_profile_owned.as_ref(),
                             workflow_preset_owned.as_ref(),
+                            &workflow_level_options_owned,
                         )
                         .await;
                         (nid.clone(), output, None)
@@ -4313,13 +4588,11 @@ pub async fn execute_dag_workflow(
 
         match deps.store.get_workflow_run_status(&workflow_run.id).await {
             Ok(Some(status)) if status != har_workflow_schema::WorkflowRunStatus::Running => {
-                let status_str = match &status {
-                    har_workflow_schema::WorkflowRunStatus::Cancelled => "cancelled",
-                    har_workflow_schema::WorkflowRunStatus::Failed => "failed",
-                    har_workflow_schema::WorkflowRunStatus::Completed => "completed",
-                    har_workflow_schema::WorkflowRunStatus::Paused => "paused",
-                    _ => "unknown",
-                };
+                // Reuse the exhaustive shared helper so every variant (incl. Pending) renders its
+                // exact lowercase wire string — TS interpolates the raw lowercase store status
+                // (code-review WF-09-s5a finding #2). A local match collapsing Pending→"unknown"
+                // is a dropped branch.
+                let status_str = workflow_run_status_str(&status);
                 info!(
                     workflow_run_id = workflow_run.id,
                     layer_idx,
@@ -7313,6 +7586,7 @@ pub async fn execute_approval_node(
     issue_context: Option<&str>,
     ai_profile: Option<&crate::model_validation::ResolvedAiProfile>,
     workflow_preset: Option<&crate::model_validation::ModelAliasPreset>,
+    workflow_level_options: &WorkflowLevelOptions,
 ) -> NodeOutput {
     let node_id = &node.base.id;
     let msg_context = SendMessageContext {
@@ -7468,10 +7742,13 @@ pub async fn execute_approval_node(
                 config_assistants,
                 None, // node_system_prompt — synthetic node has none
                 None, // node_max_budget_usd
-                None, // node_fallback_model
                 None, // node_output_format
                 ai_profile,
                 workflow_preset,
+                workflow_level_options,
+                platform.as_ref(),
+                conversation_id,
+                &workflow_run.id,
             )
             .await
             {
