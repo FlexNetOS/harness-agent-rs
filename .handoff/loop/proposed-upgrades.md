@@ -57,7 +57,13 @@ sub-cycle 4c (AI-node live-streaming body of `execute_node_internal`). Handed of
 was the largest sub-cycle and context is heavy. Two high-signal events drive these proposals.
 **Nothing here is applied; none weaken a gate (P5/P6 STRENGTHEN the gate boundary).**
 
-## P5 — Porter MUST NOT run git / self-certify (STRUCTURAL — propose; only STRENGTHENS the gate)
+## P5 — Porter MUST NOT run git / self-certify (STRUCTURAL — ✅ APPLIED 2026-06-26, owner-approved)
+**APPLIED:** owner approved 2026-06-26. Both edits landed in `harness_hub/harness/agents/rust-port-porter.md`:
+(1) new "Git boundary — you MUST NOT commit" section prohibiting `git commit/push/add/merge`; (2) the
+orchestrator HEAD-unchanged assertion is documented there and is now standing orchestrator behavior
+(assert `HEAD` unchanged between porter return and verifier dispatch). Same PR also set the porter to
+`model: opus` per the owner's opus-only directive. (Original proposal text retained below.)
+
 In cycle 39 the `rust-port-porter` ran `git commit` + `git push` of 4c straight to origin/main
 (commit `4fb5cf5`), bypassing BOTH the parity-verifier gate AND the PR pipeline. The agent runtime
 contract already says the porter's claim is "never self-certified" and it may only flip ledger rows
