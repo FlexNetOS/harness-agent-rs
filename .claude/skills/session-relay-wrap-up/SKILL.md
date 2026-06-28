@@ -4,12 +4,17 @@ description: >-
   Full end-of-session wrap-up + handoff for a harness loop (invoked as /session-relay-wrap-up, or
   /harness:session-relay-wrap-up). ALWAYS use to close a session at cycle budget, on STOP, or when
   the owner says "wrap up", "wrap up the session", "hand off", "checkpoint and stop", "prep handoff",
-  "close out". Runs the retro, persists durable memory to ICM, writes + commits the authoritative
-  HANDOFF.md, broadcasts the weave heartbeat, arms a best-effort successor, then stops. The committed
-  HANDOFF.md is the resume signal — weave is only the heartbeat.
+  "close out". Runs the retro, persists durable memory to ICM, renders + commits the authoritative
+  handoff from the witnessed `hf` ledger, broadcasts the weave heartbeat, arms a best-effort
+  successor, then stops. The witnessed `hf` packet (committed) is the resume signal — weave is only
+  the heartbeat.
 ---
 
 # session-relay-wrap-up — the full wrap-up + handoff
+
+**CANONICAL SOURCE: this template is owned by handoff (ADR-0018 D5).** It is deployed +
+byte-enforced to every fleet member by `handoff-loop-init.sh::deploy_session_relay()`. The handoff
+payload is **rendered from the witnessed `hf` ledger/packet**, never hand-authored prose.
 
 The clean way to end a loop session so the next one resumes cold with zero loss. It composes the
 harness's continuity primitives into one ordered, idempotent sequence. Pairs with
@@ -38,15 +43,27 @@ just the loop state.)
    Prefer the MCP tools (`mcp__icm__icm_memory_store`) when available. Do NOT store ephemeral state
    (build logs, git status) — that lives in `.handoff/loop/`. ICM holds the *why* and the lessons.
 
-4. **Write the checkpoint** — spawn `continuity-steward` with the worktree, the in-flight cycle, and
-   the orchestrator pipeline state. It writes the cold-start `.handoff/loop/HANDOFF.md` (layout below)
-   in one pass, keeping the orchestrator's context lean. Overwrite — the steward body is authoritative.
-   If the meta handoff kernel (`hf`) is reachable, prefer `hf checkpoint` / `hf handoff` to render the
-   packet from the witnessed ledger; the file-based form is the fallback.
+4. **Render + write the checkpoint from the witnessed ledger (AUTHORITATIVE — not "if reachable").**
+   The handoff payload is rendered from the witnessed `hf` ledger, never hand-authored:
+   ```bash
+   hf checkpoint <id> "<one-line state note>"   # witness this session's landed state
+   hf handoff                                    # render handoff.packet.v2 from the ledger replay
+   ```
+   The rendered packet IS the cycle summary — derive every field from it, never from prose:
+   - **cycle summary (Done N/M + witnessed event count)** ← packet `## 3. Progress`.
+   - **next_item** ← packet `## 5. Next Best Task` / JSON `next_command`.
+   - **resume_command** ← packet `## 6. Resume Commands` (`hf resume`).
+   - **checkpoint/handoff state** ← the latest witnessed `hf checkpoint`/`hf handoff` events (≥1
+     checkpoint is required for the done-gate, ADR-0011).
 
-5. **Commit** — `chore(<harness>): handoff (at <item>)`, including `HANDOFF.md` + `.handoff/loop/`
-   state + any wrap-up edits. **A fresh process must resume from this commit alone** — this is the
-   real payload.
+   Only if `hf` is genuinely unreachable, fall back to the file-based `.handoff/loop/HANDOFF.md`
+   schema below — and say so, because the prose form is the degraded path. When falling back, spawn
+   `continuity-steward` with the worktree, the in-flight cycle, and the orchestrator pipeline state;
+   overwrite — the steward body is authoritative for the file form.
+
+5. **Commit** — `chore(<harness>): handoff (at <item>)`, including the rendered packet / `HANDOFF.md`
+   + `.handoff/loop/` state + any wrap-up edits. **A fresh process must resume from this commit alone**
+   — this is the real payload.
 
 6. **Weave heartbeat (best-effort)** — broadcast `to:"all"`:
    `weave send --to all --subject "relay:handoff" --body "worktree=<abs> item=<next> reason=<budget|stop>"`.
@@ -55,15 +72,16 @@ just the loop state.)
 
 7. **Best-effort one-shot successor** — `CronCreate {recurring:false}` ~3 min out, self-describing:
    `"/session-relay-resume from .handoff/loop/HANDOFF.md (worktree=<abs>, model=opus)"`. Session-only
-   in this runtime; the committed HANDOFF.md is the survives-restart signal (a human or the external
+   in this runtime; the committed packet is the survives-restart signal (a human or the external
    runner resumes from it).
 
 8. **Stop** — no `ScheduleWakeup`. The next runner iteration spawns a fresh `claude -p` (the `/new`
    effect) which enters `session-relay-resume`.
 
-## What `HANDOFF.md` must contain (cold-start test)
+## What the handoff must contain (cold-start test)
 
-A successor given ONLY this file + the repo must resume correctly. Required:
+A successor given ONLY the committed packet (or, in the degraded fallback, this `HANDOFF.md`) + the
+repo must resume correctly. The fallback `HANDOFF.md` schema (mirrors the `hf` packet fields):
 ```markdown
 # HANDOFF — <harness>
 closed_utc: <UTC>           branch: <branch>      worktree: <abs path>
@@ -80,8 +98,11 @@ resume_command: /session-relay-resume from .handoff/loop/HANDOFF.md
 ```
 
 ## Non-negotiables
+- **The witnessed `hf` packet (committed) is authoritative** — rendered from the ledger replay, not
+  the weave inbox (a self-addressed message doesn't land in your own inbox; a same-machine successor
+  shares your identity). The file-based `HANDOFF.md` is only the fallback when `hf` is unreachable.
 - **Write state down, then commit** — never hold the plan only in context.
-- **The committed HANDOFF.md (or `hf` packet) is authoritative** — not the weave inbox (a self-
-  addressed message doesn't land in your own inbox; a same-machine successor shares your identity).
 - **Capture lessons + store memory before stopping** — the retro and ICM store are part of wrap-up,
   not optional afterthoughts; they're what makes the *next* session smarter, not just unblocked.
+- **Never hand-author packet fields** — render the cycle summary + next_item from `hf checkpoint`/
+  `hf handoff` (ADR-0018 D5: render from the witnessed ledger/packet, never prose).
