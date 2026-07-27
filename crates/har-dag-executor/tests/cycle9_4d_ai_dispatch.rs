@@ -51,7 +51,7 @@ fn set_script(cwd: &str, steps: Vec<Step>) {
     q.push_back(steps);
     script_queues()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(cwd.to_string(), q);
 }
 
@@ -60,7 +60,7 @@ fn set_script_sequence(cwd: &str, attempts: Vec<Vec<Step>>) {
     let q: std::collections::VecDeque<Vec<Step>> = attempts.into_iter().collect();
     script_queues()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(cwd.to_string(), q);
 }
 
@@ -117,7 +117,7 @@ impl AgentProvider for ScriptedProvider {
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
         // Pop the front sequence; if empty replay the last one if we can, else empty.
         let steps = {
-            let mut guard = script_queues().lock().unwrap();
+            let mut guard = script_queues().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(q) = guard.get_mut(&cwd) {
                 if q.len() > 1 {
                     // consume the front; leave the last for replay
@@ -166,7 +166,7 @@ impl RecPlatform {
         })
     }
     fn msgs(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -177,7 +177,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -404,20 +404,20 @@ impl WorkflowStore for SessionFakeStore {
         &self,
         _k: &WorkflowNodeSessionKey,
     ) -> Result<Option<WorkflowNodeSession>, StoreError> {
-        Ok(self.session.lock().unwrap().clone())
+        Ok(self.session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone())
     }
     async fn upsert_workflow_node_session(
         &self,
         p: UpsertNodeSessionParams,
     ) -> Result<(), StoreError> {
-        self.upserted.lock().unwrap().push(p);
+        self.upserted.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(p);
         Ok(())
     }
     async fn delete_workflow_node_sessions(
         &self,
         f: DeleteSessionsFilter,
     ) -> Result<DeleteSessionsResult, StoreError> {
-        self.deleted.lock().unwrap().push(f);
+        self.deleted.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(f);
         Ok(DeleteSessionsResult { deleted: 1 })
     }
 }
@@ -779,7 +779,7 @@ async fn session_persist_upsert_on_completed_with_session() {
     )
     .await;
 
-    let upserted = store.upserted.lock().unwrap();
+    let upserted = store.upserted.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         !upserted.is_empty(),
         "expected upsert_workflow_node_session call; got 0 upserts"
@@ -836,7 +836,7 @@ async fn session_persist_delete_on_completed_no_session() {
     )
     .await;
 
-    let deleted = store.deleted.lock().unwrap();
+    let deleted = store.deleted.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         !deleted.is_empty(),
         "expected delete_workflow_node_sessions call; got 0 deletes"

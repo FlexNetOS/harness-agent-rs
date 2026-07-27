@@ -5585,7 +5585,7 @@ pub async fn execute_node_internal(
             // ── Cancel/pause check (every 10s). Source: dag-executor.ts:857-875. ──
             // Lock is taken, read/updated, then DROPPED before any await point.
             let should_cancel_check = {
-                let mut m = last_cancel_check().lock().unwrap();
+                let mut m = last_cancel_check().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 let elapsed = m
                     .get(&node_key)
                     .map(|t| tick_now.duration_since(*t).as_millis() as u64)
@@ -5633,7 +5633,7 @@ pub async fn execute_node_internal(
 
             // ── Activity heartbeat (every 60s). Source: dag-executor.ts:877-888. ──
             let should_heartbeat = {
-                let mut m = last_activity_update().lock().unwrap();
+                let mut m = last_activity_update().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 let elapsed = m
                     .get(&node_key)
                     .map(|t| tick_now.duration_since(*t).as_millis() as u64)
@@ -8569,20 +8569,20 @@ mod sub_cycle4c_tests {
         let key = "test_run_id:test_node_id_cleanup";
         // Seed the maps.
         {
-            let mut m = last_cancel_check().lock().unwrap();
+            let mut m = last_cancel_check().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             m.insert(key.to_string(), Instant::now());
         }
         {
-            let mut m = last_activity_update().lock().unwrap();
+            let mut m = last_activity_update().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             m.insert(key.to_string(), Instant::now());
         }
         cleanup_throttle_maps(key);
         {
-            let m = last_cancel_check().lock().unwrap();
+            let m = last_cancel_check().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             assert!(!m.contains_key(key), "cancel_check entry must be removed");
         }
         {
-            let m = last_activity_update().lock().unwrap();
+            let m = last_activity_update().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             assert!(
                 !m.contains_key(key),
                 "activity_update entry must be removed"

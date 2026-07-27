@@ -47,7 +47,7 @@ fn scripts() -> &'static Mutex<HashMap<String, Vec<Step>>> {
 }
 
 fn set_script(cwd: &str, steps: Vec<Step>) {
-    scripts().lock().unwrap().insert(cwd.to_string(), steps);
+    scripts().lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(cwd.to_string(), steps);
 }
 
 struct ScriptedProvider;
@@ -70,7 +70,7 @@ impl AgentProvider for ScriptedProvider {
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
         let steps = scripts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&cwd)
             .cloned()
             .unwrap_or_default();
@@ -108,7 +108,7 @@ impl RecPlatform {
         })
     }
     fn msgs(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -119,7 +119,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -163,7 +163,7 @@ impl WorkflowStore for FakeStore {
     }
     async fn create_workflow_event(&self, data: CreateWorkflowEventData) {
         let name = format!("{:?}", data.event_type);
-        self.events.lock().unwrap().push((name, data.data));
+        self.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((name, data.data));
     }
     // ── unreachable stubs ──
     async fn create_workflow_run(

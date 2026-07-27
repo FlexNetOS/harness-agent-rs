@@ -77,7 +77,7 @@ impl AgentProvider for NeverProvider {
         _opts: Option<SendQueryOptions>,
         _cancel: Arc<dyn CancelToken>,
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
-        *self.invoked.lock().unwrap() = true;
+        *self.invoked.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = true;
         Box::pin(stream::iter(Vec::<MessageChunk>::new()))
     }
     fn get_type(&self) -> &str {
@@ -111,7 +111,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -150,15 +150,15 @@ impl WorkflowStore for RecStore {
     async fn create_workflow_event(&self, data: CreateWorkflowEventData) {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((data.event_type, data.step_name));
     }
     async fn pause_workflow_run(&self, _id: &str, a: ApprovalContext) -> Result<(), StoreError> {
-        self.paused.lock().unwrap().push(a);
+        self.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(a);
         Ok(())
     }
     async fn cancel_workflow_run(&self, id: &str) -> Result<CancelResult, StoreError> {
-        self.cancelled.lock().unwrap().push(id.to_string());
+        self.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(id.to_string());
         Ok(CancelResult { cancelled: true })
     }
     async fn create_workflow_run(
@@ -264,7 +264,7 @@ fn make_run(id: &str, conv: &str, metadata: Map<String, Value>) -> WorkflowRun {
 
 #[tokio::test]
 async fn on_reject_substitute_throw_yields_pre_exec_failure() {
-    *invoked_flag().lock().unwrap() = false;
+    *invoked_flag().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = false;
     har_provider::register_builtin_providers();
 
     // Rejection-resume metadata that MATCHES the gate (so the on_reject branch is taken),
@@ -331,12 +331,12 @@ async fn on_reject_substitute_throw_yields_pre_exec_failure() {
 
     // The AI provider must NEVER be reached — substitute throws before resolve/run.
     assert!(
-        !*invoked_flag().lock().unwrap(),
+        !*invoked_flag().lock().unwrap_or_else(std::sync::PoisonError::into_inner),
         "pre-exec failure must short-circuit before the AI re-run"
     );
 
     // The pre-exec-failure message (dispatch catch, ts:3410) must be delivered.
-    let msgs = platform.messages.lock().unwrap();
+    let msgs = platform.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         msgs.iter().any(|m| m
             .contains("Node 'gate' failed before execution:")
@@ -345,7 +345,7 @@ async fn on_reject_substitute_throw_yields_pre_exec_failure() {
     );
 
     // node_failed store event for the gate id (ts:3391-3396).
-    let events = store.events.lock().unwrap();
+    let events = store.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         events
             .iter()
@@ -355,11 +355,11 @@ async fn on_reject_substitute_throw_yields_pre_exec_failure() {
 
     // The gate must NOT pause and must NOT cancel on the pre-exec-failure path.
     assert!(
-        store.paused.lock().unwrap().is_empty(),
+        store.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty(),
         "pre-exec failure must not pause the gate"
     );
     assert!(
-        store.cancelled.lock().unwrap().is_empty(),
+        store.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty(),
         "pre-exec failure must not cancel the run"
     );
 }

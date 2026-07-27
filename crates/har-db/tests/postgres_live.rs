@@ -119,11 +119,11 @@ async fn listen_invalid_channel_exact_message() {
             "bad-name!",
             Box::new(|_p| {}),
             Box::new(move |e| {
-                *cap.lock().unwrap() = Some(e.to_string());
+                *cap.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e.to_string());
             }),
         )
         .await;
-    let msg = captured.lock().unwrap().clone();
+    let msg = captured.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     assert_eq!(
         msg.as_deref(),
         Some("Invalid LISTEN channel name: bad-name!"),
@@ -170,7 +170,7 @@ async fn listen_receives_trigger_notification() {
         .listen(
             "archon_dashboard_event",
             Box::new(move |payload| {
-                rcv.lock().unwrap().push(payload);
+                rcv.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(payload);
                 flag.store(true, Ordering::SeqCst);
             }),
             Box::new(|e| eprintln!("listen error: {e}")),
@@ -196,7 +196,7 @@ async fn listen_receives_trigger_notification() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     {
-        let g = received.lock().unwrap();
+        let g = received.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(g.len(), 1, "expected exactly one notification");
         assert_eq!(g[0], run_id, "payload must be the workflow run id");
     }
@@ -212,7 +212,7 @@ async fn listen_receives_trigger_notification() {
     .expect("insert event 2");
     tokio::time::sleep(Duration::from_millis(500)).await;
     {
-        let g = received.lock().unwrap();
+        let g = received.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(
             g.len(),
             1,

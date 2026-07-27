@@ -30,7 +30,7 @@ impl ArchonUIBridge {
     ///
     /// PORT of `emit(chunk)` (ui-context-stub.ts:18-20).
     pub fn emit(&self, chunk: MessageChunk) {
-        let guard = self.emitter.lock().unwrap();
+        let guard = self.emitter.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(f) = guard.as_ref() {
             f(chunk);
         }
@@ -40,7 +40,7 @@ impl ArchonUIBridge {
     ///
     /// PORT of `setEmitter(fn)` (ui-context-stub.ts:21-23).
     pub fn set_emitter(&self, f: Option<EmitterFn>) {
-        *self.emitter.lock().unwrap() = f;
+        *self.emitter.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = f;
     }
 }
 
@@ -165,13 +165,13 @@ mod tests {
         let captured_clone = captured.clone();
 
         bridge.set_emitter(Some(Box::new(move |chunk| {
-            captured_clone.lock().unwrap().push(chunk);
+            captured_clone.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(chunk);
         })));
 
         let ctx = ArchonUiContextSpec::new(bridge);
         ctx.notify("PR review complete", NotifyType::Info);
 
-        let chunks = captured.lock().unwrap();
+        let chunks = captured.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(chunks.len(), 1);
         match &chunks[0] {
             MessageChunk::Assistant { content, flush } => {
@@ -190,13 +190,13 @@ mod tests {
         let captured: Arc<Mutex<Vec<MessageChunk>>> = Arc::new(Mutex::new(vec![]));
         let captured_clone = captured.clone();
         bridge.set_emitter(Some(Box::new(move |chunk| {
-            captured_clone.lock().unwrap().push(chunk);
+            captured_clone.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(chunk);
         })));
 
         let ctx = ArchonUiContextSpec::new(bridge);
         ctx.notify("rate limit approaching", NotifyType::Warning);
 
-        let chunks = captured.lock().unwrap();
+        let chunks = captured.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match &chunks[0] {
             MessageChunk::Assistant { content, .. } => {
                 assert!(content.contains("⚠️"));
@@ -211,13 +211,13 @@ mod tests {
         let captured: Arc<Mutex<Vec<MessageChunk>>> = Arc::new(Mutex::new(vec![]));
         let captured_clone = captured.clone();
         bridge.set_emitter(Some(Box::new(move |chunk| {
-            captured_clone.lock().unwrap().push(chunk);
+            captured_clone.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(chunk);
         })));
 
         let ctx = ArchonUiContextSpec::new(bridge);
         ctx.notify("fatal error", NotifyType::Error);
 
-        let chunks = captured.lock().unwrap();
+        let chunks = captured.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match &chunks[0] {
             MessageChunk::Assistant { content, .. } => {
                 assert!(content.contains("❌"));

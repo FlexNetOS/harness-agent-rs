@@ -151,7 +151,7 @@ pub async fn get_or_create_reloaded_extension_loader(
     );
 
     let cell: Arc<tokio::sync::OnceCell<ResourceLoaderStub>> = {
-        let mut cache = extension_loader_cache().lock().unwrap();
+        let mut cache = extension_loader_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         cache
             .entry(key.clone())
             .or_insert_with(|| Arc::new(tokio::sync::OnceCell::new()))
@@ -186,7 +186,7 @@ pub async fn get_or_create_reloaded_extension_loader(
 ///
 /// PORT of `resetReloadedExtensionLoaderCache()` (resource-loader.ts:205-207).
 pub fn reset_reloaded_extension_loader_cache() {
-    let mut cache = extension_loader_cache().lock().unwrap();
+    let mut cache = extension_loader_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cache.clear();
 }
 

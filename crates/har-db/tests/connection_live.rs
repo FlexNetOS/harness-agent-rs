@@ -102,7 +102,7 @@ async fn connection_pg_branch_end_to_end() {
         .listen(
             "archon_dashboard_event",
             Box::new(move |payload| {
-                rcv.lock().unwrap().push(payload);
+                rcv.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(payload);
                 flag.store(true, Ordering::SeqCst);
             }),
             Box::new(|e| eprintln!("listen error: {e}")),
@@ -124,7 +124,7 @@ async fn connection_pg_branch_end_to_end() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     {
-        let g = received.lock().unwrap();
+        let g = received.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(g.len(), 1, "listener from connection layer must receive 1");
         assert_eq!(g[0], run_id, "payload must be the run id");
     }

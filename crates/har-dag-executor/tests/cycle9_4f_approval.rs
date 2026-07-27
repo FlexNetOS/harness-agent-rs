@@ -48,7 +48,7 @@ fn script_queues() -> &'static Mutex<HashMap<String, Vec<Step>>> {
 }
 
 fn set_script(cwd: &str, steps: Vec<Step>) {
-    script_queues().lock().unwrap().insert(cwd.to_string(), steps);
+    script_queues().lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(cwd.to_string(), steps);
 }
 
 struct ScriptedProvider {
@@ -85,7 +85,7 @@ impl AgentProvider for ScriptedProvider {
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
         let steps = script_queues()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&cwd)
             .cloned()
             .unwrap_or_default();
@@ -147,7 +147,7 @@ impl RecPlatform {
         })
     }
     fn msgs(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -158,7 +158,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -200,15 +200,15 @@ impl WorkflowStore for RecStore {
     async fn create_workflow_event(&self, data: CreateWorkflowEventData) {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((data.event_type, data.step_name));
     }
     async fn pause_workflow_run(&self, _id: &str, a: ApprovalContext) -> Result<(), StoreError> {
-        self.paused.lock().unwrap().push(a);
+        self.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(a);
         Ok(())
     }
     async fn cancel_workflow_run(&self, id: &str) -> Result<CancelResult, StoreError> {
-        self.cancelled.lock().unwrap().push(id.to_string());
+        self.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(id.to_string());
         Ok(CancelResult { cancelled: true })
     }
     // ── Unused store surface ──
@@ -389,7 +389,7 @@ async fn standard_gate_pauses_and_messages() {
     );
 
     // pause_workflow_run must have been called exactly once with the approval context.
-    let paused = store.paused.lock().unwrap();
+    let paused = store.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert_eq!(paused.len(), 1, "expected one pause; got {}", paused.len());
     let ctx = &paused[0];
     assert_eq!(ctx.node_id, "gate");
@@ -403,9 +403,9 @@ async fn standard_gate_pauses_and_messages() {
     assert_eq!(ctx.on_reject_max_attempts, None);
 
     // No cancel on the standard gate path.
-    assert!(store.cancelled.lock().unwrap().is_empty());
+    assert!(store.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty());
     // approval_requested + approval_pending(emitter) — approval_requested is a store event.
-    let events = store.events.lock().unwrap();
+    let events = store.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         events
             .iter()
@@ -432,7 +432,7 @@ async fn pause_context_carries_capture_and_on_reject() {
     );
     let _ = drive("t2-approval-capture", store.clone(), vec![node], &run).await;
 
-    let paused = store.paused.lock().unwrap();
+    let paused = store.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert_eq!(paused.len(), 1);
     let ctx = &paused[0];
     assert_eq!(ctx.capture_response, Some(true));
@@ -478,17 +478,17 @@ async fn on_reject_reruns_ai_then_repauses() {
     );
 
     // After the AI re-run, the gate re-pauses (human gate preserved).
-    let paused = store.paused.lock().unwrap();
+    let paused = store.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert_eq!(paused.len(), 1, "expected re-pause after on_reject AI run");
     assert_eq!(paused[0].node_id, "gate");
 
     // No cancel (count 1 < max_attempts 3).
-    assert!(store.cancelled.lock().unwrap().is_empty());
+    assert!(store.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty());
 
     // Synthetic-id non-collision: execute_node_internal emits node_started/node_completed
     // for the synthetic `gate:on_reject` id, NEVER `gate` — so a resumed run does not see
     // a node_completed for `gate` and bypass the human gate.
-    let events = store.events.lock().unwrap();
+    let events = store.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         events
             .iter()
@@ -533,7 +533,7 @@ async fn max_attempts_exhausted_cancels() {
     let plat = drive("t4-exhausted", store.clone(), vec![node], &run).await;
 
     // cancel_workflow_run called once for this run.
-    let cancelled = store.cancelled.lock().unwrap();
+    let cancelled = store.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert_eq!(cancelled.len(), 1, "expected one cancel; got {cancelled:?}");
     assert_eq!(cancelled[0], "r4");
 
@@ -547,12 +547,12 @@ async fn max_attempts_exhausted_cancels() {
 
     // The gate must NOT pause on the exhaustion path.
     assert!(
-        store.paused.lock().unwrap().is_empty(),
+        store.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty(),
         "exhaustion path must not pause"
     );
 
     // workflow_cancelled store event recorded for the node.
-    let events = store.events.lock().unwrap();
+    let events = store.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(
         events
             .iter()
@@ -591,12 +591,12 @@ async fn mismatched_metadata_uses_standard_gate() {
     let _ = drive("t5-mismatch", store.clone(), vec![node], &run).await;
 
     assert_eq!(
-        store.paused.lock().unwrap().len(),
+        store.paused.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len(),
         1,
         "mismatched node id must fall through to the standard gate (pause)"
     );
     assert!(
-        store.cancelled.lock().unwrap().is_empty(),
+        store.cancelled.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty(),
         "mismatched metadata must not cancel"
     );
 }

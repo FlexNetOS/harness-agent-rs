@@ -34,7 +34,7 @@ impl MessagePlatform for RecordingPlatform {
         message: &str,
         _metadata: Option<&serde_json::Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
 
@@ -86,7 +86,7 @@ async fn workflow_platform_send_structured_event_noop_default() {
     // Should complete without error.
     p.send_structured_event("conv-id", &chunk).await;
     // No messages captured (send_message was not called by the no-op).
-    assert!(p.messages.lock().unwrap().is_empty());
+    assert!(p.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty());
 }
 
 // ─── D1: MessagePlatform upcast (Rust 1.86+ trait object upcasting) ──────────

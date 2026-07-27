@@ -58,7 +58,7 @@ impl Spawner for CountingSpawner {
         _cwd: &str,
     ) -> Result<SpawnOutcome, std::io::Error> {
         self.spawn_count.fetch_add(1, Ordering::SeqCst);
-        let script = self.scripts.lock().unwrap().pop_front();
+        let script = self.scripts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop_front();
         match script {
             Some(Script::Success(lines)) => {
                 let data: Vec<u8> = lines

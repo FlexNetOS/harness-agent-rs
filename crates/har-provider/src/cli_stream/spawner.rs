@@ -136,7 +136,7 @@ impl Spawner for FakeSpawner {
         _cwd: &str,
     ) -> Result<SpawnOutcome, std::io::Error> {
         let script = {
-            let mut guard = self.scripts.lock().unwrap();
+            let mut guard = self.scripts.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             guard.pop_front()
         };
 

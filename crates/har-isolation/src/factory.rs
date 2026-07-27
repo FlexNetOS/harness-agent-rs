@@ -56,7 +56,7 @@ fn default_loader() -> RepoConfigLoader {
 ///
 /// Source: `configureIsolation(loader)` at `factory.ts:19-22`.
 pub fn configure_isolation(loader: RepoConfigLoader) {
-    let mut state = global_state().lock().unwrap();
+    let mut state = global_state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     state.loader = loader;
     state.provider = None; // reset so next call picks up new loader
 }
@@ -69,7 +69,7 @@ pub fn configure_isolation(loader: RepoConfigLoader) {
 /// IS-02 (WorktreeProvider impl) is ported next cycle; here we return the
 /// stored singleton or create a placeholder that will be replaced by IS-02.
 pub fn get_isolation_provider() -> Arc<dyn IsolationProvider> {
-    let mut state = global_state().lock().unwrap();
+    let mut state = global_state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if state.provider.is_none() {
         // IS-02 WorktreeProvider is now implemented.
         // Source: `getIsolationProvider() { provider ??= new WorktreeProvider(configuredLoader); }`
@@ -81,20 +81,20 @@ pub fn get_isolation_provider() -> Arc<dyn IsolationProvider> {
 
 /// Install a pre-built provider into the singleton (used by IS-02 init + tests).
 pub fn set_isolation_provider(provider: Arc<dyn IsolationProvider>) {
-    let mut state = global_state().lock().unwrap();
+    let mut state = global_state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     state.provider = Some(provider);
 }
 
 /// Get a clone of the currently-configured loader (used by IS-02 WorktreeProvider).
 pub fn get_configured_loader() -> RepoConfigLoader {
-    global_state().lock().unwrap().loader.clone()
+    global_state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).loader.clone()
 }
 
 /// Reset the isolation provider singleton (for testing).
 ///
 /// Source: `resetIsolationProvider()` at `factory.ts:36-38`.
 pub fn reset_isolation_provider() {
-    let mut state = global_state().lock().unwrap();
+    let mut state = global_state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     state.provider = None;
 }
 

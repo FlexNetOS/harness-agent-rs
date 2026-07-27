@@ -71,7 +71,7 @@ pub mod test_support {
     #[async_trait]
     impl IsolationStore for InMemoryIsolationStore {
         async fn get_by_id(&self, id: &str) -> Result<Option<IsolationEnvironmentRow>> {
-            Ok(self.rows.lock().unwrap().get(id).cloned())
+            Ok(self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(id).cloned())
         }
 
         async fn find_active_by_workflow(
@@ -80,7 +80,7 @@ pub mod test_support {
             workflow_type: IsolationWorkflowType,
             workflow_id: &str,
         ) -> Result<Option<IsolationEnvironmentRow>> {
-            let rows = self.rows.lock().unwrap();
+            let rows = self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             Ok(rows
                 .values()
                 .find(|r| {
@@ -109,7 +109,7 @@ pub mod test_support {
             };
             self.rows
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(row.id.clone(), row.clone());
             Ok(row)
         }
@@ -122,7 +122,7 @@ pub mod test_support {
                     return Err(crate::IsolationError::InvalidStatus(other.to_string()));
                 }
             };
-            let mut rows = self.rows.lock().unwrap();
+            let mut rows = self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(row) = rows.get_mut(id) {
                 row.status = new_status;
             }
@@ -130,7 +130,7 @@ pub mod test_support {
         }
 
         async fn count_active_by_codebase(&self, codebase_id: &str) -> Result<u32> {
-            let rows = self.rows.lock().unwrap();
+            let rows = self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let count = rows
                 .values()
                 .filter(|r| r.codebase_id == codebase_id && r.status == EnvironmentStatus::Active)

@@ -41,7 +41,7 @@ fn scripts() -> &'static Mutex<HashMap<String, VecDeque<Vec<Step>>>> {
 fn set_scripts(cwd: &str, iters: Vec<Vec<Step>>) {
     scripts()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(cwd.to_string(), iters.into_iter().collect());
 }
 
@@ -64,7 +64,7 @@ impl AgentProvider for ScriptedProvider {
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
         let steps = scripts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get_mut(&cwd)
             .and_then(|q| q.pop_front())
             .unwrap_or_default();
@@ -128,7 +128,7 @@ impl FakeStore {
     fn events_of(&self, ty: &str) -> Vec<Map<String, Value>> {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter(|(t, _)| t == ty)
             .filter_map(|(_, d)| d.clone())
@@ -149,7 +149,7 @@ impl WorkflowStore for FakeStore {
     async fn create_workflow_event(&self, data: CreateWorkflowEventData) {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((data.event_type.as_str().to_string(), data.data));
     }
     async fn pause_workflow_run(&self, _id: &str, _a: ApprovalContext) -> Result<(), StoreError> {

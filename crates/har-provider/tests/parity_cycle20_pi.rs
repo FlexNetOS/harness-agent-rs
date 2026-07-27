@@ -732,14 +732,14 @@ fn area8_ui_context_notify_byte_exact() {
     let bridge = create_archon_ui_bridge();
     let captured: Arc<Mutex<Vec<MessageChunk>>> = Arc::new(Mutex::new(vec![]));
     let cc = captured.clone();
-    bridge.set_emitter(Some(Box::new(move |c| cc.lock().unwrap().push(c))));
+    bridge.set_emitter(Some(Box::new(move |c| cc.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(c))));
     let ctx = ArchonUiContextSpec::new(bridge);
 
     ctx.notify("PR review complete", NotifyType::Info);
     ctx.notify("rate limit", NotifyType::Warning);
     ctx.notify("fatal", NotifyType::Error);
 
-    let chunks = captured.lock().unwrap();
+    let chunks = captured.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     assert_eq!(chunks.len(), 3);
     assert_eq!(
         chunk_wire(&chunks[0]),

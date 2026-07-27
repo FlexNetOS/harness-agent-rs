@@ -73,7 +73,7 @@ fn script_for(prompt: &str) -> Vec<MessageChunk> {
     if prompt.contains("ANALYZE") {
         received_prompts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert("analyze".into(), prompt.to_string());
         vec![
             MessageChunk::Assistant {
@@ -95,7 +95,7 @@ fn script_for(prompt: &str) -> Vec<MessageChunk> {
     } else if prompt.contains("SUMMARY") {
         received_prompts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert("summary".into(), prompt.to_string());
         vec![
             MessageChunk::Assistant {
@@ -107,7 +107,7 @@ fn script_for(prompt: &str) -> Vec<MessageChunk> {
     } else if prompt.contains("BOOM") {
         received_prompts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert("boom".into(), prompt.to_string());
         vec![MessageChunk::Result {
             session_id: None,
@@ -127,7 +127,7 @@ fn script_for(prompt: &str) -> Vec<MessageChunk> {
         // revert to `f64 = 0.0` would surface `cost_usd: 0.0` and diverge from the bun golden.
         received_prompts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert("costq".into(), prompt.to_string());
         vec![
             MessageChunk::Assistant {
@@ -245,7 +245,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -268,7 +268,7 @@ impl WorkflowPlatform for RecPlatform {
             .get("toolName")
             .and_then(|t| t.as_str())
             .map(|s| s.to_string());
-        self.structured.lock().unwrap().push((ty, tool));
+        self.structured.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((ty, tool));
     }
 }
 
@@ -296,7 +296,7 @@ impl WorkflowStore for RecStore {
         &self,
         _id: &str,
     ) -> Result<Option<WorkflowRunStatus>, StoreError> {
-        Ok(Some(self.status.lock().unwrap().clone()))
+        Ok(Some(self.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()))
     }
     async fn update_workflow_activity(&self, _id: &str) -> Result<(), StoreError> {
         Ok(())
@@ -313,17 +313,17 @@ impl WorkflowStore for RecStore {
             .unwrap_or(Value::Null);
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((event_type, data.step_name, payload));
     }
     async fn pause_workflow_run(&self, _id: &str, a: ApprovalContext) -> Result<(), StoreError> {
-        *self.status.lock().unwrap() = WorkflowRunStatus::Paused;
-        self.pauses.lock().unwrap().push(a);
+        *self.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = WorkflowRunStatus::Paused;
+        self.pauses.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(a);
         Ok(())
     }
     async fn cancel_workflow_run(&self, id: &str) -> Result<CancelResult, StoreError> {
-        *self.status.lock().unwrap() = WorkflowRunStatus::Cancelled;
-        self.cancels.lock().unwrap().push(id.to_string());
+        *self.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = WorkflowRunStatus::Cancelled;
+        self.cancels.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(id.to_string());
         Ok(CancelResult { cancelled: true })
     }
     async fn complete_workflow_run(
@@ -485,7 +485,7 @@ fn build_snapshot(
     store: &RecStore,
     platform: &RecPlatform,
 ) -> Value {
-    let events = store.events.lock().unwrap();
+    let events = store.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut node_events: Map<String, Value> = Map::new();
     let mut workflow_events: Vec<Value> = Vec::new();
     for (event_type, step_name, data) in events.iter() {
@@ -501,13 +501,13 @@ fn build_snapshot(
         }
     }
 
-    let mut messages: Vec<String> = platform.messages.lock().unwrap().clone();
+    let mut messages: Vec<String> = platform.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     messages.sort();
 
     let mut structured: Vec<Value> = platform
         .structured
         .lock()
-        .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .map(|(ty, tool)| json!({ "type": ty, "toolName": tool }))
         .collect();
@@ -516,21 +516,21 @@ fn build_snapshot(
     let pauses: Vec<Value> = store
         .pauses
         .lock()
-        .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .map(|p| serde_json::to_value(p).unwrap())
         .collect();
     let cancels: Vec<Value> = store
         .cancels
         .lock()
-        .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .map(|c| Value::String(c.clone()))
         .collect();
 
     let received: Map<String, Value> = received_prompts()
         .lock()
-        .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .map(|(k, v)| (k.clone(), Value::String(v.clone())))
         .collect();
@@ -717,7 +717,7 @@ async fn wholedag_differential_vs_live_bun() {
 /// `drive` but with an explicit workflow name (the golden uses distinct names).
 #[allow(clippy::too_many_arguments)]
 async fn drive_named(nodes: Vec<DagNode>, run: &WorkflowRun, cwd: &str, wf_name: &str) -> Value {
-    received_prompts().lock().unwrap().clear();
+    received_prompts().lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     har_provider::register_builtin_providers();
     let store = RecStore::new();
     let deps = WorkflowDeps::new(store.clone() as Arc<dyn WorkflowStore>, provider_fn);

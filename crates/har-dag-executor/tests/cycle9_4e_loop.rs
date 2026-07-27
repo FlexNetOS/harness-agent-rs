@@ -54,13 +54,13 @@ fn resume_ids() -> &'static Mutex<HashMap<String, Vec<Option<String>>>> {
 fn set_scripts(cwd: &str, iters: Vec<Vec<Step>>) {
     scripts()
         .lock()
-        .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(cwd.to_string(), iters.into_iter().collect());
-    resume_ids().lock().unwrap().insert(cwd.to_string(), Vec::new());
+    resume_ids().lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(cwd.to_string(), Vec::new());
 }
 
 fn recorded_resume_ids(cwd: &str) -> Vec<Option<String>> {
-    resume_ids().lock().unwrap().get(cwd).cloned().unwrap_or_default()
+    resume_ids().lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(cwd).cloned().unwrap_or_default()
 }
 
 struct ScriptedProvider;
@@ -82,13 +82,13 @@ impl AgentProvider for ScriptedProvider {
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
         resume_ids()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .entry(cwd.clone())
             .or_default()
             .push(resume_session_id);
         let steps = scripts()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get_mut(&cwd)
             .and_then(|q| q.pop_front())
             .unwrap_or_default();
@@ -125,7 +125,7 @@ impl RecPlatform {
         })
     }
     fn msgs(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -136,7 +136,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -168,19 +168,19 @@ impl FakeStore {
         })
     }
     fn event_types(&self) -> Vec<String> {
-        self.events.lock().unwrap().iter().map(|(t, _)| t.clone()).collect()
+        self.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().map(|(t, _)| t.clone()).collect()
     }
     fn events_of(&self, ty: &str) -> Vec<Map<String, Value>> {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter(|(t, _)| t == ty)
             .filter_map(|(_, d)| d.clone())
             .collect()
     }
     fn pauses(&self) -> Vec<ApprovalContext> {
-        self.pauses.lock().unwrap().clone()
+        self.pauses.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -197,11 +197,11 @@ impl WorkflowStore for FakeStore {
     async fn create_workflow_event(&self, data: CreateWorkflowEventData) {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((data.event_type.as_str().to_string(), data.data));
     }
     async fn pause_workflow_run(&self, _id: &str, a: ApprovalContext) -> Result<(), StoreError> {
-        self.pauses.lock().unwrap().push(a);
+        self.pauses.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(a);
         Ok(())
     }
     // ── unreachable stubs ──

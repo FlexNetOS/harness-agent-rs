@@ -100,7 +100,7 @@ fn pi_semaphore() -> &'static Mutex<Option<Arc<tokio::sync::Semaphore>>> {
 ///
 /// PORT of the lazy-init block in `sendQuery` (provider.ts:587-592).
 fn get_or_init_semaphore(max_concurrent: u32) -> Arc<tokio::sync::Semaphore> {
-    let mut guard = pi_semaphore().lock().unwrap();
+    let mut guard = pi_semaphore().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(sem) = guard.as_ref() {
         return sem.clone();
     }
@@ -112,7 +112,7 @@ fn get_or_init_semaphore(max_concurrent: u32) -> Arc<tokio::sync::Semaphore> {
 
 /// Reset the module-level semaphore (test-only).
 pub fn reset_pi_semaphore() {
-    *pi_semaphore().lock().unwrap() = None;
+    *pi_semaphore().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 // ─── Package dir shim ─────────────────────────────────────────────────────────

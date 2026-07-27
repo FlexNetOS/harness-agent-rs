@@ -35,7 +35,7 @@ impl RecPlatform {
         }
     }
     fn msgs(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -46,7 +46,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {

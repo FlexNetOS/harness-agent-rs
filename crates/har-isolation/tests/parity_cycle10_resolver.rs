@@ -32,7 +32,7 @@ impl InMemStore {
 #[async_trait::async_trait]
 impl IsolationStore for InMemStore {
     async fn get_by_id(&self, id: &str) -> har_isolation::Result<Option<IsolationEnvironmentRow>> {
-        Ok(self.rows.lock().unwrap().get(id).cloned())
+        Ok(self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(id).cloned())
     }
     async fn find_active_by_workflow(
         &self,
@@ -40,7 +40,7 @@ impl IsolationStore for InMemStore {
         wt: IsolationWorkflowType,
         wid: &str,
     ) -> har_isolation::Result<Option<IsolationEnvironmentRow>> {
-        let rows = self.rows.lock().unwrap();
+        let rows = self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         Ok(rows
             .values()
             .find(|r| {
@@ -72,7 +72,7 @@ impl IsolationStore for InMemStore {
         };
         self.rows
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(row.id.clone(), row.clone());
         Ok(row)
     }
@@ -82,7 +82,7 @@ impl IsolationStore for InMemStore {
             "destroyed" => EnvironmentStatus::Destroyed,
             o => return Err(har_isolation::IsolationError::InvalidStatus(o.to_string())),
         };
-        if let Some(r) = self.rows.lock().unwrap().get_mut(id) {
+        if let Some(r) = self.rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get_mut(id) {
             r.status = s;
         }
         Ok(())
@@ -91,7 +91,7 @@ impl IsolationStore for InMemStore {
         Ok(self
             .rows
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
             .filter(|r| r.codebase_id == codebase_id && r.status == EnvironmentStatus::Active)
             .count() as u32)

@@ -221,7 +221,7 @@ impl AgentProvider for UnimplementedProvider {
 /// registry.set(entry.id, entry);
 /// ```
 pub fn register_provider(entry: ProviderRegistration) -> Result<(), String> {
-    let mut guard = registry().lock().unwrap();
+    let mut guard = registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if guard.contains_key(&entry.id) {
         return Err(format!("Provider '{}' is already registered", entry.id));
     }
@@ -235,7 +235,7 @@ pub fn register_provider(entry: ProviderRegistration) -> Result<(), String> {
 /// Source: `packages/providers/src/registry.ts:51-58`
 /// Throws `UnknownProviderError` if not registered.
 pub fn get_agent_provider(id: &str) -> Result<Arc<dyn AgentProvider>, UnknownProviderError> {
-    let guard = registry().lock().unwrap();
+    let guard = registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     match guard.get(id) {
         Some(entry) => {
             tracing::debug!(provider = %id, "provider_selected");
@@ -256,7 +256,7 @@ pub fn get_agent_provider(id: &str) -> Result<Arc<dyn AgentProvider>, UnknownPro
 /// Note: Returns a `ProviderInfo` projection (serializable subset) because `ProviderRegistration`
 /// contains a non-Clone factory closure. The factory is exposed separately via `get_agent_provider`.
 pub fn get_registration_info(id: &str) -> Result<ProviderInfo, UnknownProviderError> {
-    let guard = registry().lock().unwrap();
+    let guard = registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     match guard.get(id) {
         Some(entry) => Ok(ProviderInfo {
             id: entry.id.clone(),
@@ -276,7 +276,7 @@ pub fn get_registration_info(id: &str) -> Result<ProviderInfo, UnknownProviderEr
 /// Source: `packages/providers/src/registry.ts:76-78`
 /// Throws `UnknownProviderError` if not registered.
 pub fn get_provider_capabilities(id: &str) -> Result<ProviderCapabilities, UnknownProviderError> {
-    let guard = registry().lock().unwrap();
+    let guard = registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     match guard.get(id) {
         Some(entry) => Ok(entry.capabilities.clone()),
         None => Err(UnknownProviderError {
@@ -299,7 +299,7 @@ pub fn get_provider_capabilities(id: &str) -> Result<ProviderCapabilities, Unkno
 /// - `get_registered_providers()` → `Vec<ProviderInfo>` (the serializable info projection)
 /// - `get_provider_info_list()` → same (alias; matches the TS `getProviderInfoList` name)
 pub fn get_registered_providers() -> Vec<ProviderInfo> {
-    let guard = registry().lock().unwrap();
+    let guard = registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     guard
         .values()
         .map(|entry| ProviderInfo {
@@ -321,7 +321,7 @@ pub fn get_provider_info_list() -> Vec<ProviderInfo> {
 ///
 /// Source: `packages/providers/src/registry.ts:102-104`.
 pub fn is_registered_provider(id: &str) -> bool {
-    registry().lock().unwrap().contains_key(id)
+    registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner).contains_key(id)
 }
 
 /// Register built-in providers (Claude, Codex). Idempotent — skips already-registered IDs.
@@ -332,7 +332,7 @@ pub fn is_registered_provider(id: &str) -> bool {
 /// PR-03 cycle-14: `ClaudeProvider` now wired — replaces `UnimplementedProvider` for "claude".
 /// PR-07 cycle-17: `CodexProvider` now wired — replaces `UnimplementedProvider` for "codex".
 pub fn register_builtin_providers() {
-    let mut guard = registry().lock().unwrap();
+    let mut guard = registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 
     // Claude (Anthropic) — PR-03 WIRED (cycle 14)
     if !guard.contains_key("claude") {
@@ -452,7 +452,7 @@ pub fn register_community_providers() {
 ///
 /// Source: `packages/providers/src/registry.ts:163-165`.
 pub fn clear_registry() {
-    registry().lock().unwrap().clear();
+    registry().lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

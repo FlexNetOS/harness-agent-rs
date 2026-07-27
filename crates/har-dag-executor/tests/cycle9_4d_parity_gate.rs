@@ -56,7 +56,7 @@ fn script_queues() -> &'static Mutex<HashMap<String, Vec<Step>>> {
     S.get_or_init(|| Mutex::new(HashMap::new()))
 }
 fn set_script(cwd: &str, steps: Vec<Step>) {
-    script_queues().lock().unwrap().insert(cwd.to_string(), steps);
+    script_queues().lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(cwd.to_string(), steps);
 }
 
 struct ScriptedProvider {
@@ -112,7 +112,7 @@ impl AgentProvider for ScriptedProvider {
     ) -> Pin<Box<dyn Stream<Item = MessageChunk> + Send + '_>> {
         let steps = script_queues()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&cwd)
             .cloned()
             .unwrap_or_default();
@@ -149,7 +149,7 @@ impl RecPlatform {
         })
     }
     fn msgs(&self) -> Vec<String> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 }
 #[async_trait]
@@ -160,7 +160,7 @@ impl MessagePlatform for RecPlatform {
         message: &str,
         _metadata: Option<&Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.messages.lock().unwrap().push(message.to_string());
+        self.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(message.to_string());
         Ok(())
     }
     fn get_platform_type(&self) -> &str {
@@ -243,7 +243,7 @@ impl WorkflowStore for GateStore {
         _id: &str,
         m: Option<Map<String, Value>>,
     ) -> Result<(), StoreError> {
-        *self.completed_meta.lock().unwrap() = m;
+        *self.completed_meta.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = m;
         Ok(())
     }
     async fn fail_workflow_run(&self, _id: &str, _e: &str) -> Result<(), StoreError> {
@@ -426,7 +426,7 @@ async fn d2_ai_node_cost_in_completion_metadata() {
     )
     .await;
 
-    let meta = store.completed_meta.lock().unwrap().clone();
+    let meta = store.completed_meta.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     let meta = meta.expect("workflow should have completed with metadata");
     // TS (dag-executor.ts:3651) writes total_cost_usd when any node reported cost.
     let cost = meta
@@ -463,7 +463,7 @@ async fn d2b_multi_node_layer_cost_accumulates_once() {
     let meta = store
         .completed_meta
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
         .expect("workflow should have completed with metadata");
     let cost = meta
